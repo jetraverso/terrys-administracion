@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Terry's Administración</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#f4f2ed; --surface:#ffffff; --surface-2:#ebe8e1; --ink:#15130f; --ink-2:#4a463f; --muted:#7d786f; --line:#d8d3c8; --line-2:#c6c0b2;
+  --brand:#15130f; --brand-ink:#f4f2ed;
+  --out:#c4502a; --out-soft:#f7ddd2; --out-ink:#7a2c12;
+  --accent:#2c6a8c; --accent-soft:#d5e5ee; --accent-ink:#163d53;
+  --ok:#2f7d4f; --ok-soft:#d8ecdf; --warn:#b85c00; --warn-soft:#f8ecc2; --danger:#b3261e;
+  --row-hover:#faf8f3; --shadow:0 12px 30px rgba(21,19,15,.14);
+  --display:"Bebas Neue","Impact","Arial Narrow",sans-serif; --body:"Barlow","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --paper:#141311; --surface:#1d1b18; --surface-2:#26231f; --ink:#f1ede5; --ink-2:#c9c3b7; --muted:#8f887b; --line:#332f29; --line-2:#453f37;
+  --brand:#f1ede5; --brand-ink:#141311;
+  --out:#e0693f; --out-soft:#40221a; --out-ink:#f4b9a1;
+  --accent:#5c9fc4; --accent-soft:#1b2f3b; --accent-ink:#b6d6e8;
+  --ok:#5cb47f; --ok-soft:#1c3326; --warn:#e29a4a; --warn-soft:#3a3010; --danger:#e5665e;
+  --row-hover:#22201c; --shadow:0 12px 30px rgba(0,0,0,.5);
+}}
+:root[data-theme="dark"]{
+  --paper:#141311; --surface:#1d1b18; --surface-2:#26231f; --ink:#f1ede5; --ink-2:#c9c3b7; --muted:#8f887b; --line:#332f29; --line-2:#453f37;
+  --brand:#f1ede5; --brand-ink:#141311;
+  --out:#e0693f; --out-soft:#40221a; --out-ink:#f4b9a1;
+  --accent:#5c9fc4; --accent-soft:#1b2f3b; --accent-ink:#b6d6e8;
+  --ok:#5cb47f; --ok-soft:#1c3326; --warn:#e29a4a; --warn-soft:#3a3010; --danger:#e5665e;
+  --row-hover:#22201c; --shadow:0 12px 30px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased}
+button,input,select,textarea{font:inherit;color:inherit}
+button{cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+button:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+h1,h2,h3{margin:0;font-weight:400;text-wrap:balance}
+.num{font-variant-numeric:tabular-nums}
+[hidden]{display:none!important}
+
+/* ---------- login ---------- */
+.login{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px}
+.login-card{width:100%;max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);padding:28px 26px 24px}
+.login-card .wordmark{color:var(--ink);font-size:44px;display:block}
+.login-card .wordmark small{display:block;margin-top:4px}
+.login-card label{display:block;font-size:12px;color:var(--muted);margin:16px 0 5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+.login-card input{width:100%;padding:11px 12px;border:1px solid var(--line-2);border-radius:9px;background:var(--paper);font-size:16px}
+.login-card input:focus{outline:2px solid var(--accent);outline-offset:1px}
+.login-card .btn{width:100%;margin-top:20px;padding:12px;font-size:16px}
+.login-err{color:var(--danger);font-weight:600;font-size:14px;margin-top:12px;min-height:20px}
+.mfa-p{margin:14px 0 0;font-size:14px;color:var(--ink-2)}
+.mfa-p.small{font-size:13px;color:var(--muted)}
+.mfa-p code{display:block;margin-top:6px;padding:8px 10px;background:var(--paper);border:1px solid var(--line);border-radius:8px;font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--ink);word-break:break-all;user-select:all;-webkit-user-select:all}
+.qr{margin:14px auto 0;width:196px;height:196px;background:#fff;border-radius:12px;padding:10px;border:1px solid var(--line)}
+.qr img{display:block;width:100%;height:100%}
+.login-card input.code{font-size:26px;letter-spacing:.35em;text-align:center;font-variant-numeric:tabular-nums;font-weight:600}
+.lock-links{display:flex;gap:10px;justify-content:center;margin-top:6px}
+.lock-links button{background:none;border:0;color:var(--muted);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.login-demo{margin-top:6px;background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:9px 11px;font-size:13px;font-weight:600}
+
+/* ---------- top bar ---------- */
+.top{position:sticky;top:0;z-index:30;background:var(--brand);color:var(--brand-ink);display:flex;align-items:center;gap:18px;padding:10px 20px;flex-wrap:wrap}
+.wordmark{font-family:var(--display);font-size:30px;letter-spacing:.04em;line-height:1;display:flex;align-items:baseline;gap:10px}
+.wordmark small{font-family:var(--body);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.7}
+.tabs{display:flex;gap:4px;flex-wrap:wrap}
+.tab{background:transparent;border:1px solid transparent;color:inherit;padding:7px 14px;border-radius:999px;font-weight:600;letter-spacing:.02em;opacity:.7}
+.tab:hover{opacity:1}
+.tab.on{background:var(--brand-ink);color:var(--brand);opacity:1}
+.top-right{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.sync{font-size:12px;opacity:.6;letter-spacing:.06em;text-transform:uppercase}
+.sync.err{opacity:1;color:#ff9d8a}
+.who{font-size:13px;opacity:.75}
+.btn-top{border:1px solid rgba(255,255,255,.35);background:transparent;color:inherit;padding:6px 13px;border-radius:999px;font-weight:600;font-size:14px}
+.btn-top:hover{border-color:currentColor}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .btn-top{border-color:rgba(0,0,0,.35)} }
+:root[data-theme="dark"] .btn-top{border-color:rgba(0,0,0,.35)}
+
+/* ---------- layout ---------- */
+main{max-width:1680px;margin:0 auto;padding:22px 20px 40px}
+.demo-bar{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600;margin-bottom:16px}
+.toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.period{font-family:var(--display);font-size:38px;letter-spacing:.03em;line-height:1}
+.period small{font-family:var(--body);font-size:14px;letter-spacing:.02em;color:var(--muted);margin-left:10px}
+.nav{display:flex;gap:4px}
+.nav button,.btn{background:var(--surface);border:1px solid var(--line-2);border-radius:8px;padding:7px 12px;font-weight:600}
+.nav button:hover,.btn:hover{border-color:var(--ink-2)}
+.btn.primary{background:var(--brand);color:var(--brand-ink);border-color:var(--brand)}
+.btn:disabled{opacity:.5;cursor:default}
+.tools{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.tools input[type=search],.tools select{padding:7px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface)}
+.tools input[type=search]{width:200px}
+.tools input:focus{outline:2px solid var(--accent);outline-offset:1px}
+
+/* ---------- meses ---------- */
+.months{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px}
+.mchip{flex:0 0 auto;min-width:76px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 10px 5px;text-align:left;line-height:1.15}
+.mchip b{display:block;font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.05em}
+.mchip small{display:block;font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.mchip.vacio b{color:var(--muted)}
+.mchip:hover{border-color:var(--ink-2)}
+.mchip.on{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+.mchip.on b,.mchip.on small{color:inherit}
+.mchip.on small{opacity:.75}
+.mchip.hoy:not(.on){border-color:var(--accent)}
+
+/* ---------- tarjetas ---------- */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.card .k{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.card .v{font-family:var(--display);font-size:34px;line-height:1;margin-top:4px;white-space:nowrap}
+.card .s{font-size:12px;color:var(--muted);margin-top:4px}
+.card.in .v{color:var(--ok)}
+.card.out .v{color:var(--out)}
+.card.neg .v{color:var(--danger)}
+.card.alert{background:var(--warn-soft);border-color:transparent}
+.card.alert .v{color:var(--warn)}
+
+/* ---------- planilla ---------- */
+.sheetwrap{overflow:auto;max-height:calc(100vh - 78px);min-height:260px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed}
+.sheet th,.sheet td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;background:var(--surface)}
+.sheet th:last-child,.sheet td:last-child{border-right:0}
+.sheet thead th{position:sticky;top:0;z-index:4;background:var(--surface-2);text-align:left;padding:10px 10px 9px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);font-weight:700;white-space:nowrap;border-bottom:1px solid var(--line-2)}
+.sheet thead th.r{text-align:right}
+.sheet thead th.c{text-align:center}
+.sheet .c-date{position:sticky;left:0;z-index:2;border-right:1px solid var(--line-2)}
+.sheet thead th.c-date{z-index:6}
+.sheet tbody tr:hover td{background:var(--row-hover)}
+.sheet td input[type=text],.sheet td input[type=date]{display:block;width:100%;border:0;background:transparent;padding:9px 10px;border-radius:0;min-height:38px;text-overflow:ellipsis}
+.sheet td input[type=date]{font-variant-numeric:tabular-nums;padding-right:4px}
+.sheet td input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface)}
+.sheet td input.bad{outline:2px solid var(--danger);outline-offset:-2px}
+.sheet td.c-money input{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
+.sheet td.ingreso input{color:var(--ok)}
+.sheet td.egreso input{color:var(--out)}
+.sheet td.c-check{text-align:center;vertical-align:middle}
+.sheet td.c-check input{width:19px;height:19px;accent-color:var(--ok);cursor:pointer;vertical-align:middle}
+.sheet td.c-check input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sheet td input.est-pend{color:var(--warn);font-weight:700}
+.sheet td input.est-ok{color:var(--ok);font-weight:700}
+.sheet td.c-fact{position:relative}
+.sheet td.c-fact a{position:absolute;right:4px;top:50%;transform:translateY(-50%);background:var(--accent-soft);color:var(--accent-ink);border-radius:6px;padding:2px 7px;font-size:12px;font-weight:700;text-decoration:none}
+.sheet td.c-fact.link input{padding-right:40px}
+.sheet td.c-act{white-space:nowrap;text-align:center;vertical-align:middle}
+.sheet td.c-act button{background:none;border:0;color:var(--muted);padding:4px 7px;border-radius:6px;font-size:15px;line-height:1}
+.sheet td.c-act button:hover{background:var(--surface-2);color:var(--ink)}
+.sheet td.c-act button.del:hover{color:var(--danger)}
+.sheet tr.nuevo td{background:var(--paper)}
+.sheet tr.nuevo input::placeholder{color:var(--muted);font-style:italic}
+.sheet tr.err td{box-shadow:inset 0 -2px 0 var(--danger)}
+.sheet tr.mes td{background:var(--surface-2);padding:8px 12px;font-weight:700;font-size:13px;letter-spacing:.04em;border-right:0}
+.sheet tr.mes td .mn{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.05em;margin-right:14px;position:sticky;left:12px}
+.sheet tr.mes td .ms{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums;position:sticky;left:140px}
+.sheet tr.mes td .ms i{font-style:normal;margin-right:14px}
+.sheet tr.mes td .ms i.in{color:var(--ok)}.sheet tr.mes td .ms i.out{color:var(--out)}
+.sheet tfoot td{position:sticky;bottom:0;z-index:3;background:var(--surface-2);border-top:1px solid var(--line-2);border-bottom:0;padding:9px 10px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sheet tfoot td.c-date{z-index:5;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.sheet tfoot td.r{text-align:right}
+.sheet tfoot td .fb{position:sticky;left:152px}
+.sheet tfoot td.in{color:var(--ok)}.sheet tfoot td.out{color:var(--out)}
+.empty{padding:36px 16px;text-align:center;color:var(--muted)}
+.hint{color:var(--muted);font-size:13px;margin-top:10px}
+
+/* ---------- modal ---------- */
+.overlay{position:fixed;inset:0;z-index:60;background:rgba(21,19,15,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{width:100%;max-width:640px;max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow);padding:20px 22px}
+.modal.sm{max-width:380px}
+.modal h3{font-family:var(--display);font-size:28px;letter-spacing:.03em}
+.modal p{margin:6px 0 12px;color:var(--ink-2);font-size:14px}
+.modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
+.modal input[type=password]{width:100%;padding:10px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper)}
+.modal textarea{width:100%;height:200px;padding:10px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre;resize:vertical}
+.modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.modal .msg{font-size:14px;font-weight:600;margin-top:10px;min-height:20px}
+.modal .msg.ok{color:var(--ok)}.modal .msg.bad{color:var(--danger)}
+
+/* ---------- toast ---------- */
+.toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:80;background:var(--brand);color:var(--brand-ink);border-radius:999px;padding:10px 18px;font-weight:600;font-size:14px;box-shadow:var(--shadow);display:flex;gap:14px;align-items:center;max-width:calc(100vw - 32px)}
+.toast button{background:none;border:0;color:inherit;font-weight:700;text-decoration:underline;text-underline-offset:3px;padding:0}
+
+@media (max-width:720px){
+  .top{padding:10px 16px;gap:10px}
+  main{padding:16px 16px 32px}
+  .period{font-size:32px}
+  .tools{margin-left:0;width:100%}
+  .tools input[type=search]{flex:1;width:auto}
+  .who{display:none}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .card .v{font-size:28px}
+  .sheet .c-date{position:static}
+  .sheet tr.mes td .ms,.sheet tfoot td .fb{position:static}
+}
+</style>
+</head>
+<body>
+
+<!-- ================= LOGIN ================= -->
+<div class="login" id="login" hidden>
+  <form class="login-card" id="loginForm" autocomplete="on">
+    <span class="wordmark">TERRY'S <small>Administración</small></span>
+    <label for="lgEmail">Email</label>
+    <input id="lgEmail" type="email" name="email" autocomplete="username" required>
+    <label for="lgPass">Contraseña</label>
+    <input id="lgPass" type="password" name="password" autocomplete="current-password" required>
+    <button class="btn primary" id="lgBtn" type="submit">Entrar</button>
+    <div class="login-err" id="lgErr" role="alert"></div>
+    <div class="login-demo" id="lgDemo" hidden>Modo demo: todavía no hay base de datos conectada. Entrá con cualquier email y la contraseña 1234. Los datos quedan solo en este navegador.</div>
+  </form>
+
+  <form class="login-card" id="mfaForm" autocomplete="off" hidden>
+    <span class="wordmark">TERRY'S <small>Verificación en dos pasos</small></span>
+    <div id="mfaEnroll" hidden>
+      <p class="mfa-p">Es la primera vez que entrás: hay que vincular tu celular (una sola vez). Abrí Google Authenticator, Microsoft Authenticator, 1Password o la app Contraseñas del iPhone y escaneá este código.</p>
+      <div class="qr"><img id="mfaQr" alt="Código QR para la app de autenticación"></div>
+      <p class="mfa-p small">Si no podés escanearlo, cargá esta clave a mano en la app:<code id="mfaSecret"></code></p>
+    </div>
+    <p class="mfa-p" id="mfaAsk"></p>
+    <label for="mfaCode">Código de 6 dígitos</label>
+    <input class="code" id="mfaCode" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+    <button class="btn primary" id="mfaBtn" type="submit">Verificar</button>
+    <div class="login-err" id="mfaErr" role="alert"></div>
+    <div class="lock-links"><button type="button" id="mfaSalir">Salir</button></div>
+  </form>
+</div>
+
+<!-- ================= APP ================= -->
+<div id="app" hidden>
+  <header class="top">
+    <div class="wordmark">TERRY'S <small>Administración</small></div>
+    <nav class="tabs" id="tabs"></nav>
+    <div class="top-right">
+      <span class="sync" id="sync"></span>
+      <span class="who" id="who"></span>
+      <button class="btn-top" id="btnPass">Contraseña</button>
+      <button class="btn-top" id="btnSalir">Salir</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="demo-bar" id="demoBar" hidden>Modo demo: los datos se guardan solo en este navegador. Conectá Supabase (ver README) para guardarlos en la base de datos.</div>
+
+    <div class="toolbar">
+      <h1 class="period" id="period"></h1>
+      <div class="nav">
+        <button id="prev" aria-label="Mes anterior">‹</button>
+        <button id="hoy">Hoy</button>
+        <button id="next" aria-label="Mes siguiente">›</button>
+      </div>
+      <div class="tools">
+        <input type="search" id="q" placeholder="Buscar…" aria-label="Buscar">
+        <select id="filtro" aria-label="Filtrar">
+          <option value="todos">Todos</option>
+          <option value="porpagar">Por pagar</option>
+          <option value="sinfactura">Sin factura</option>
+          <option value="sinclara">Sin Clara</option>
+        </select>
+        <button class="btn" id="btnPegar">Pegar desde Sheet</button>
+        <button class="btn" id="btnCsv">Exportar CSV</button>
+        <button class="btn" id="btnCopia" title="Baja un archivo con todos los movimientos de todos los años">Copia completa</button>
+      </div>
+    </div>
+
+    <div class="months" id="months"></div>
+    <div class="cards" id="cards"></div>
+
+    <div class="sheetwrap" id="sheetwrap">
+      <table class="sheet" id="sheet">
+        <colgroup id="cols"></colgroup>
+        <thead><tr id="headrow"></tr></thead>
+        <tbody id="tbody"></tbody>
+        <tfoot><tr id="footrow"></tr></tfoot>
+      </table>
+    </div>
+    <p class="hint">Los cambios se guardan solos al salir de cada celda. Enter baja a la fila de abajo. La última fila en blanco es para cargar un movimiento nuevo. <span id="copiaInfo"></span> <span id="ver"></span></p>
+  </main>
+</div>
+
+<datalist id="dl-tipo"></datalist>
+<datalist id="dl-desde"></datalist>
+<datalist id="dl-hacia"></datalist>
+<datalist id="dl-estado"></datalist>
+<div id="modalHost"></div>
+<div id="toastHost"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ============================================================
+   CONEXIÓN — pegá acá los datos de tu proyecto de Supabase
+   (Project Settings → API). La clave es la "anon / public".
+   NUNCA pegues la "service_role".
+   ============================================================ */
+const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
+const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
+
+const VERSION='1.1';
+
+/* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
+   con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
+const TABS=[
+  {id:'tbsl', titulo:'Terrys Burgers S.L.', empresa:'terrys-burgers-sl'},
+];
+
+const COLS=[
+  {k:'fecha',      t:'Fecha',             w:140, type:'date'},
+  {k:'ingreso',    t:'Ingresos',          w:118, type:'money'},
+  {k:'egreso',     t:'Egresos',           w:118, type:'money'},
+  {k:'detalle',    t:'Detalle operación', w:270, type:'text'},
+  {k:'tipo',       t:'Tipo de operación', w:165, type:'list'},
+  {k:'desde',      t:'Desde dónde',       w:155, type:'list'},
+  {k:'hacia',      t:'Hacia dónde',       w:155, type:'list'},
+  {k:'estado',     t:'Estado',            w:130, type:'list'},
+  {k:'informacion',t:'Información',       w:220, type:'text'},
+  {k:'factura',    t:'Facturas',          w:160, type:'text'},
+  {k:'pagado',     t:'Pagado',            w:78,  type:'check'},
+  {k:'clara',      t:'Clara',             w:70,  type:'check'},
+  {k:'comentarios',t:'Comentarios',       w:250, type:'text'},
+];
+const COLBY=Object.fromEntries(COLS.map(c=>[c.k,c]));
+const FIELDS=COLS.map(c=>c.k);
+const SUGERIDOS={
+  tipo:['Transferencia','Tarjeta','Efectivo','Domiciliación','Bizum'],
+  estado:['Pendiente','Pagado'],
+  desde:[], hacia:[],
+};
+const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MES3=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
+
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const pad=n=>String(n).padStart(2,'0');
+const SB=!!(SUPABASE_URL&&SUPABASE_KEY);
+
+/* ---------- estado ---------- */
+let sbc=null, user=null, tab=TABS[0];
+const hoyD=new Date();
+let year=hoyD.getFullYear(), month=hoyD.getMonth();   // month = -1 → año completo
+let rows=[], loadedKey='', q='', filtro='todos';
+const trRow=new WeakMap();
+
+/* ---------- formato ---------- */
+const nf=new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2,useGrouping:'always'});
+const nf0=new Intl.NumberFormat('es-ES',{maximumFractionDigits:0,useGrouping:'always'});
+const fmt=n=>n==null?'':nf.format(n);
+const eur=n=>nf.format(n||0)+' €';
+const pl=(n,uno,varios)=>`${n} ${n===1?uno:varios}`;
+const hoyISO=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`};
+
+function parseMoney(s){
+  s=String(s??'').replace(/[€\s]/g,'').replace(/^\+/,'');
+  if(!s||s==='-') return null;
+  let neg=false;
+  if(/^\(.*\)$/.test(s)){neg=true;s=s.slice(1,-1);}
+  if(s[0]==='-'){neg=true;s=s.slice(1);}
+  if(s.includes(',')) s=s.replace(/\./g,'').replace(',','.');
+  else if(/^\d{1,3}(\.\d{3})+$/.test(s)) s=s.replace(/\./g,'');
+  if(!/^\d*\.?\d+$/.test(s)&&!/^\d+\.$/.test(s)) return NaN;
+  const n=Number(s); if(!isFinite(n)) return NaN;
+  return Math.round((neg?-n:n)*100)/100;
+}
+function isoDate(y,m,d){
+  const dt=new Date(Date.UTC(y,m-1,d));
+  if(dt.getUTCFullYear()!==y||dt.getUTCMonth()!==m-1||dt.getUTCDate()!==d) return null;
+  return `${y}-${pad(m)}-${pad(d)}`;
+}
+function parseDate(s,defYear){
+  s=String(s||'').trim(); let m;
+  if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return isoDate(+m[1],+m[2],+m[3]);
+  if((m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?$/))){
+    let y=m[3]?+m[3]:defYear; if(y<100) y+=2000;
+    return isoDate(y,+m[2],+m[1]);
+  }
+  return null;
+}
+const parseBool=s=>/^(true|verdadero|si|sí|s|x|✓|✔|1|ok|pagado)$/i.test(String(s||'').trim());
+const esUrl=s=>/^https?:\/\/\S+$/i.test(String(s||'').trim());
+
+/* ---------- base de datos ---------- */
+const limpio=r=>{const o={empresa:tab.empresa}; for(const k of FIELDS) o[k]=r[k]; return o;};
+const db=SB?{
+  async list(empresa,y){
+    const out=[]; const paso=1000;
+    for(let desde=0;;desde+=paso){
+      const {data,error}=await sbc.from('movimientos').select('id,'+FIELDS.join(','))
+        .eq('empresa',empresa).gte('fecha',`${y}-01-01`).lte('fecha',`${y}-12-31`)
+        .order('fecha').order('id').range(desde,desde+paso-1);
+      if(error) throw error;
+      out.push(...data);
+      if(data.length<paso) break;
+    }
+    return out;
+  },
+  async listAll(){
+    const out=[]; const paso=1000;
+    for(let desde=0;;desde+=paso){
+      const {data,error}=await sbc.from('movimientos').select('*').order('empresa').order('fecha').order('id').range(desde,desde+paso-1);
+      if(error) throw error;
+      out.push(...data);
+      if(data.length<paso) break;
+    }
+    return out;
+  },
+  async insert(r){ const {data,error}=await sbc.from('movimientos').insert(limpio(r)).select('id').single(); if(error) throw error; return data; },
+  async insertMany(list){
+    for(let i=0;i<list.length;i+=500){ const {error}=await sbc.from('movimientos').insert(list.slice(i,i+500).map(limpio)); if(error) throw error; }
+  },
+  async update(id,patch){ const {error}=await sbc.from('movimientos').update(patch).eq('id',id); if(error) throw error; },
+  async remove(id){ const {error}=await sbc.from('movimientos').delete().eq('id',id); if(error) throw error; },
+}:(()=>{
+  const key=e=>'terrys_admin_demo_'+e;
+  const leer=e=>{ try{ return JSON.parse(localStorage.getItem(key(e))||'[]'); }catch(_){ return []; } };
+  const grabar=(e,l)=>{ try{ localStorage.setItem(key(e),JSON.stringify(l)); }catch(_){ throw new Error('Este navegador no deja guardar datos locales'); } };
+  let sec=0; const nuevoId=()=>Date.now()*100+(sec++%100);
+  return {
+    async list(e,y){ return leer(e).filter(r=>r.fecha.startsWith(y+'-')).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id-b.id); },
+    async listAll(){ return TABS.flatMap(t=>leer(t.empresa).map(r=>({...r,empresa:t.empresa}))).sort((a,b)=>a.empresa.localeCompare(b.empresa)||a.fecha.localeCompare(b.fecha)||a.id-b.id); },
+    async insert(r){ const l=leer(tab.empresa); const o={id:nuevoId(),...limpio(r)}; l.push(o); grabar(tab.empresa,l); return {id:o.id}; },
+    async insertMany(list){ const l=leer(tab.empresa); for(const r of list) l.push({id:nuevoId(),...limpio(r)}); grabar(tab.empresa,l); },
+    async update(id,patch){ const l=leer(tab.empresa); const o=l.find(x=>x.id===id); if(o) Object.assign(o,patch); grabar(tab.empresa,l); },
+    async remove(id){ grabar(tab.empresa,leer(tab.empresa).filter(x=>x.id!==id)); },
+  };
+})();
+const errMsg=e=>(e&&(e.message||e.error_description))||String(e);
+
+/* ---------- avisos ---------- */
+let toastT=null;
+function toast(msg,accion,fn,ms){
+  clearTimeout(toastT);
+  const h=$('toastHost'); h.innerHTML='';
+  const d=document.createElement('div'); d.className='toast'; d.setAttribute('role','status');
+  const s=document.createElement('span'); s.textContent=msg; d.appendChild(s);
+  if(accion){ const b=document.createElement('button'); b.textContent=accion; b.onclick=()=>{ h.innerHTML=''; fn(); }; d.appendChild(b); }
+  h.appendChild(d);
+  toastT=setTimeout(()=>{ h.innerHTML=''; },ms||(accion?7000:3200));
+}
+let pendientes=0;
+function setSync(estado){
+  const el=$('sync');
+  if(estado==='guardando'){ pendientes++; el.className='sync'; el.textContent='guardando…'; }
+  else if(estado==='ok'){ pendientes=Math.max(0,pendientes-1); if(!pendientes){ el.className='sync'; el.textContent='guardado ✓'; } }
+  else if(estado==='error'){ pendientes=Math.max(0,pendientes-1); el.className='sync err'; el.textContent='error al guardar'; }
+  else { el.className='sync'; el.textContent=estado; }
+}
+window.addEventListener('beforeunload',e=>{ if(pendientes>0){ e.preventDefault(); e.returnValue=''; } });
+
+/* ---------- login ---------- */
+function showLogin(msg){
+  user=null; rows=[]; loadedKey=''; mfaUser=null; mfaFactor=null;
+  $('app').hidden=true; $('login').hidden=false; $('loginForm').hidden=false; $('mfaForm').hidden=true;
+  $('mfaQr').removeAttribute('src'); $('mfaSecret').textContent='';
+  $('lgDemo').hidden=SB; $('lgErr').textContent=msg||''; $('lgPass').value='';
+  $('tbody').innerHTML='';
+  setTimeout(()=>($('lgEmail').value?$('lgPass'):$('lgEmail')).focus(),50);
+}
+async function entrar(u){
+  if(SB){
+    const {data,error}=await sbc.rpc('en_lista');
+    if(error||data!==true){
+      await sbc.auth.signOut();
+      showLogin(error?'No se pudo verificar el acceso: '+errMsg(error)+(/en_lista/.test(errMsg(error))?' (falta correr el schema.sql nuevo en Supabase)':''):'Tu usuario no tiene acceso a la administración.');
+      return;
+    }
+    try{ if(!(await pasoMfa(u))) return; }
+    catch(e){ await sbc.auth.signOut(); showLogin('No se pudo iniciar la verificación en dos pasos: '+errMsg(e)); return; }
+  }
+  await abrirApp(u);
+}
+async function abrirApp(u){
+  user=u; mfaUser=null;
+  $('login').hidden=true; $('app').hidden=false;
+  $('who').textContent=u.email; $('demoBar').hidden=SB; $('ver').textContent='v'+VERSION;
+  renderTabs(); pintarCopia(); await cargar();
+}
+
+/* ---------- verificación en dos pasos (TOTP) ----------
+   La base también lo exige: es_admin() pide sesión de nivel aal2,
+   así que con la contraseña sola no se lee ni se escribe nada. */
+let mfaUser=null, mfaFactor=null;
+async function pasoMfa(u){
+  const aal=await sbc.auth.mfa.getAuthenticatorAssuranceLevel(); if(aal.error) throw aal.error;
+  if(aal.data.currentLevel==='aal2') return true;
+  const f=await sbc.auth.mfa.listFactors(); if(f.error) throw f.error;
+  const listo=(f.data.totp||[]).find(x=>x.status==='verified');
+  let alta=null;
+  if(listo) mfaFactor=listo.id;
+  else{
+    for(const x of (f.data.all||[])) if(x.status!=='verified') await sbc.auth.mfa.unenroll({factorId:x.id});
+    const en=await sbc.auth.mfa.enroll({factorType:'totp',friendlyName:'Celular '+new Date().toISOString().slice(0,16)}); if(en.error) throw en.error;
+    mfaFactor=en.data.id; alta=en.data.totp;
+  }
+  mfaUser=u;
+  $('app').hidden=true; $('login').hidden=false; $('loginForm').hidden=true; $('mfaForm').hidden=false;
+  $('mfaEnroll').hidden=!alta; $('mfaErr').textContent=''; $('mfaCode').value='';
+  if(alta){ $('mfaQr').src=alta.qr_code; $('mfaSecret').textContent=alta.secret; }
+  $('mfaAsk').textContent=alta?'Después poné acá el código de 6 dígitos que te muestra la app.':'Poné el código de 6 dígitos que muestra tu app de autenticación para '+u.email+'.';
+  setTimeout(()=>$('mfaCode').focus(),50);
+  return false;
+}
+$('mfaCode').addEventListener('input',e=>{ e.target.value=e.target.value.replace(/\D/g,'').slice(0,6); });
+$('mfaForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const code=$('mfaCode').value.trim(); if(code.length!==6||!mfaFactor||!mfaUser) return;
+  $('mfaErr').textContent=''; $('mfaBtn').disabled=true; $('mfaBtn').textContent='Verificando…';
+  try{
+    const {error}=await sbc.auth.mfa.challengeAndVerify({factorId:mfaFactor,code});
+    if(error) throw error;
+    await abrirApp(mfaUser);
+  }catch(err){
+    $('mfaErr').textContent=/invalid|expired|code/i.test(errMsg(err))?'Código incorrecto o vencido. Probá con el que muestra la app ahora.':'No se pudo verificar: '+errMsg(err);
+    $('mfaCode').value=''; $('mfaCode').focus();
+  }finally{ $('mfaBtn').disabled=false; $('mfaBtn').textContent='Verificar'; }
+});
+$('mfaSalir').onclick=async()=>{ await sbc.auth.signOut(); showLogin(); };
+$('loginForm').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const email=$('lgEmail').value.trim(), pass=$('lgPass').value;
+  $('lgErr').textContent=''; $('lgBtn').disabled=true; $('lgBtn').textContent='Entrando…';
+  try{
+    if(SB){
+      const {data,error}=await sbc.auth.signInWithPassword({email,password:pass});
+      if(error) throw error;
+      await entrar(data.user);
+    }else{
+      if(pass!=='1234') throw new Error('Invalid login credentials');
+      try{ sessionStorage.setItem('terrys_admin_demo_user',email); }catch(_){}
+      await entrar({email});
+    }
+  }catch(err){
+    const m=errMsg(err);
+    $('lgErr').textContent=/invalid login/i.test(m)?'Email o contraseña incorrectos.':/not confirmed/i.test(m)?'El email todavía no está confirmado en Supabase.':'No se pudo entrar: '+m;
+  }finally{ $('lgBtn').disabled=false; $('lgBtn').textContent='Entrar'; }
+});
+$('btnSalir').onclick=async()=>{
+  if(SB) await sbc.auth.signOut(); else { try{ sessionStorage.removeItem('terrys_admin_demo_user'); }catch(_){} }
+  showLogin();
+};
+
+/* ---------- solapas ---------- */
+function renderTabs(){
+  $('tabs').innerHTML=TABS.map(t=>`<button class="tab ${t.id===tab.id?'on':''}" data-tab="${esc(t.id)}">${esc(t.titulo)}</button>`).join('');
+}
+$('tabs').addEventListener('click',async e=>{
+  const b=e.target.closest('[data-tab]'); if(!b) return;
+  const t=TABS.find(x=>x.id===b.dataset.tab); if(!t||t.id===tab.id) return;
+  tab=t; renderTabs(); await cargar();
+});
+
+/* ---------- carga ---------- */
+async function cargar(force){
+  const key=tab.empresa+'|'+year;
+  if(force||key!==loadedKey){
+    setSync('cargando…');
+    try{ rows=await db.list(tab.empresa,year); loadedKey=key; setSync(SB?'supabase':'demo local'); }
+    catch(e){ rows=[]; loadedKey=''; setSync('error'); $('sync').classList.add('err'); toast('No se pudieron cargar los datos: '+errMsg(e)); }
+  }
+  renderTodo();
+}
+function renderTodo(){ renderPeriodo(); renderTabla(); recalc(); }
+
+/* ---------- período ---------- */
+function renderPeriodo(){
+  $('period').innerHTML=month<0?`Año ${year}<small>${esc(tab.titulo)}</small>`:`${esc(MESES[month])} ${year}<small>${esc(tab.titulo)}</small>`;
+}
+function renderMeses(){
+  const tot=Array.from({length:12},()=>({n:0,out:0,inn:0}));
+  for(const r of rows){ const m=+r.fecha.slice(5,7)-1; tot[m].n++; tot[m].out+=r.egreso||0; tot[m].inn+=r.ingreso||0; }
+  const esHoy=m=>year===hoyD.getFullYear()&&m===hoyD.getMonth();
+  let h=`<button class="mchip ${month<0?'on':''}" data-m="-1"><b>${year}</b><small>año completo</small></button>`;
+  h+=tot.map((t,m)=>`<button class="mchip ${m===month?'on':''} ${t.n?'':'vacio'} ${esHoy(m)?'hoy':''}" data-m="${m}" aria-label="${MESES[m]} ${year}"><b>${MES3[m]}</b><small>${t.n?'−'+nf0.format(t.out)+' €':'sin datos'}</small></button>`).join('');
+  $('months').innerHTML=h;
+  const on=$('months').querySelector('.on'); if(on) $('months').scrollLeft=Math.max(0,on.offsetLeft-$('months').offsetLeft-90);
+}
+$('months').addEventListener('click',e=>{ const b=e.target.closest('[data-m]'); if(!b) return; month=+b.dataset.m; renderTodo(); });
+async function mover(d){
+  if(month<0){ year+=d; }
+  else{ month+=d; if(month<0){month=11;year--;} if(month>11){month=0;year++;} }
+  await cargar();
+}
+$('prev').onclick=()=>mover(-1);
+$('next').onclick=()=>mover(1);
+$('hoy').onclick=async()=>{ const d=new Date(); year=d.getFullYear(); month=d.getMonth(); await cargar(); };
+
+/* ---------- filas a la vista ---------- */
+const enPeriodo=r=>r.fecha.startsWith(month<0?year+'-':`${year}-${pad(month+1)}-`);
+function pasaFiltro(r){
+  if(filtro==='porpagar'&&!((r.egreso||0)>0&&!r.pagado)) return false;
+  if(filtro==='sinfactura'&&(r.factura||'').trim()) return false;
+  if(filtro==='sinclara'&&r.clara) return false;
+  if(q){
+    const txt=[r.fecha,r.fecha.split('-').reverse().join('/'),fmt(r.ingreso),fmt(r.egreso),r.detalle,r.tipo,r.desde,r.hacia,r.estado,r.informacion,r.factura,r.comentarios].join(' ').toLowerCase();
+    if(!q.toLowerCase().split(/\s+/).every(p=>txt.includes(p))) return false;
+  }
+  return true;
+}
+const ordenar=l=>l.sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id-b.id);
+const visibles=()=>ordenar(rows.filter(r=>enPeriodo(r)&&pasaFiltro(r)));
+
+/* ---------- tabla ---------- */
+function renderCabecera(){
+  $('cols').innerHTML=COLS.map(c=>`<col style="width:${c.w}px">`).join('')+'<col style="width:78px">';
+  $('headrow').innerHTML=COLS.map(c=>`<th scope="col" class="${c.type==='date'?'c-date':''} ${c.type==='money'?'r':''} ${c.type==='check'?'c':''}">${esc(c.t)}</th>`).join('')+'<th scope="col"></th>';
+  $('sheet').style.width=(COLS.reduce((s,c)=>s+c.w,0)+78)+'px';
+}
+function claseEstado(v){ v=(v||'').toLowerCase(); return /pend|falta|espera|impag/.test(v)?'est-pend':/pag|complet|ok|hecho|concil|cobr/.test(v)?'est-ok':''; }
+function celda(c,r){
+  const v=r[c.k];
+  if(c.type==='check') return `<td class="c-check"><input type="checkbox" data-k="${c.k}" ${v?'checked':''} aria-label="${esc(c.t)}"></td>`;
+  if(c.type==='date')  return `<td class="c-date"><input type="date" data-k="fecha" value="${esc(v||'')}" aria-label="Fecha"></td>`;
+  if(c.type==='money') return `<td class="c-money ${c.k}"><input type="text" inputmode="decimal" autocomplete="off" data-k="${c.k}" value="${esc(fmt(v))}" aria-label="${esc(c.t)}"></td>`;
+  if(c.k==='factura')  return `<td class="c-fact ${esUrl(v)?'link':''}"><input type="text" autocomplete="off" data-k="factura" value="${esc(v)}" title="${esc(v)}" aria-label="Facturas">${esUrl(v)?`<a href="${esc(v.trim())}" target="_blank" rel="noopener noreferrer" title="Abrir factura">↗</a>`:''}</td>`;
+  const lista=c.type==='list'?` list="dl-${c.k}"`:'';
+  const cls=c.k==='estado'?claseEstado(v):'';
+  const ph=(!r.id&&c.k==='detalle')?' placeholder="Nuevo movimiento…"':'';
+  return `<td><input type="text" autocomplete="off" data-k="${c.k}"${lista} class="${cls}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(c.t)}"${ph}></td>`;
+}
+const acciones=()=>`<button data-act="dup" title="Duplicar fila" aria-label="Duplicar fila">⧉</button><button class="del" data-act="del" title="Borrar fila" aria-label="Borrar fila">✕</button>`;
+function crearTr(r){
+  const tr=document.createElement('tr');
+  if(r.id) tr.dataset.id=r.id; else tr.className='nuevo';
+  tr.innerHTML=COLS.map(c=>celda(c,r)).join('')+`<td class="c-act">${r.id?acciones():''}</td>`;
+  trRow.set(tr,r);
+  return tr;
+}
+function borrador(){
+  const vis=visibles();
+  let fecha;
+  const hoy=hoyISO();
+  if(month<0) fecha=hoy.startsWith(year+'-')?hoy:(vis.length?vis[vis.length-1].fecha:`${year}-01-01`);
+  else if(hoy.startsWith(`${year}-${pad(month+1)}-`)) fecha=hoy;
+  else fecha=vis.length?vis[vis.length-1].fecha:`${year}-${pad(month+1)}-01`;
+  return {fecha,ingreso:null,egreso:null,detalle:'',tipo:'',desde:'',hacia:'',estado:'',informacion:'',factura:'',pagado:false,clara:false,comentarios:''};
+}
+function renderTabla(){
+  const tb=$('tbody'); tb.innerHTML='';
+  const vis=visibles(); const frag=document.createDocumentFragment();
+  let mesAct=-1;
+  for(const r of vis){
+    if(month<0){
+      const m=+r.fecha.slice(5,7)-1;
+      if(m!==mesAct){ mesAct=m; const s=document.createElement('tr'); s.className='mes'; s.innerHTML=`<td colspan="${COLS.length+1}"><span class="mn">${MESES[m]}</span><span class="ms" id="sub-${m}"></span></td>`; frag.appendChild(s); }
+    }
+    frag.appendChild(crearTr(r));
+  }
+  if(!vis.length&&(q||filtro!=='todos')){
+    const s=document.createElement('tr'); s.innerHTML=`<td colspan="${COLS.length+1}" class="empty">Nada coincide con la búsqueda o el filtro en este período.</td>`; frag.appendChild(s);
+  }
+  frag.appendChild(crearTr(borrador()));
+  tb.appendChild(frag);
+}
+
+/* ---------- totales ---------- */
+function recalc(){
+  renderMeses();
+  const per=rows.filter(enPeriodo);
+  const sum=(l,k)=>l.reduce((s,r)=>s+(r[k]||0),0);
+  const inn=sum(per,'ingreso'), out=sum(per,'egreso'), bal=inn-out;
+  const porPagar=per.filter(r=>(r.egreso||0)>0&&!r.pagado);
+  const sinFac=per.filter(r=>(r.egreso||0)>0&&!(r.factura||'').trim());
+  $('cards').innerHTML=`
+    <div class="card in"><div class="k">Ingresos</div><div class="v num">${eur(inn)}</div><div class="s">${pl(per.filter(r=>r.ingreso).length,'movimiento','movimientos')}</div></div>
+    <div class="card out"><div class="k">Egresos</div><div class="v num">${eur(out)}</div><div class="s">${pl(per.filter(r=>r.egreso).length,'movimiento','movimientos')}</div></div>
+    <div class="card ${bal<0?'neg':''}"><div class="k">Balance</div><div class="v num">${bal<0?'−':''}${eur(Math.abs(bal))}</div><div class="s">ingresos menos egresos</div></div>
+    <div class="card ${porPagar.length?'alert':''}"><div class="k">Por pagar</div><div class="v num">${eur(sum(porPagar,'egreso'))}</div><div class="s">${pl(porPagar.length,'egreso','egresos')} sin marcar pagado</div></div>
+    <div class="card"><div class="k">Sin factura</div><div class="v num">${sinFac.length}</div><div class="s">egresos sin dato en Facturas</div></div>`;
+
+  const vis=rows.filter(r=>enPeriodo(r)&&pasaFiltro(r));
+  const vi=sum(vis,'ingreso'), vo=sum(vis,'egreso'), vb=vi-vo;
+  $('footrow').innerHTML=`<td class="c-date">Totales</td><td class="r in">${fmt(vi)}</td><td class="r out">${fmt(vo)}</td><td colspan="${COLS.length-2}"><span class="fb">Balance ${vb<0?'−':''}${eur(Math.abs(vb))} · ${vis.length} ${vis.length===1?'fila':'filas'}${(q||filtro!=='todos')?' (filtradas)':''}</span></td>`;
+
+  if(month<0) for(let m=0;m<12;m++){
+    const el=$('sub-'+m); if(!el) continue;
+    const l=vis.filter(r=>+r.fecha.slice(5,7)-1===m);
+    el.innerHTML=`<i class="in">+${fmt(sum(l,'ingreso'))||'0,00'}</i><i class="out">−${fmt(sum(l,'egreso'))||'0,00'}</i><i>${l.length} ${l.length===1?'fila':'filas'}</i>`;
+  }
+
+  for(const k of ['tipo','desde','hacia','estado']){
+    const set=new Map();
+    for(const v of SUGERIDOS[k]) set.set(v.toLowerCase(),v);
+    for(const r of rows){ const v=(r[k]||'').trim(); if(v&&!set.has(v.toLowerCase())) set.set(v.toLowerCase(),v); }
+    if(k==='desde'||k==='hacia') for(const r of rows) for(const kk of ['desde','hacia']){ const v=(r[kk]||'').trim(); if(v&&!set.has(v.toLowerCase())) set.set(v.toLowerCase(),v); }
+    $('dl-'+k).innerHTML=[...set.values()].sort((a,b)=>a.localeCompare(b,'es')).map(v=>`<option value="${esc(v)}">`).join('');
+  }
+}
+
+/* ---------- edición ---------- */
+const enBlanco=r=>!r.ingreso&&!r.egreso&&!r.pagado&&!r.clara&&['detalle','tipo','desde','hacia','estado','informacion','factura','comentarios'].every(k=>!(r[k]||'').trim());
+
+function guardar(tr,patch,redibujar){
+  const r=trRow.get(tr);
+  if(r.id) r._pend={...(r._pend||{}),...patch};
+  else if(enBlanco(r)) return;
+  setSync('guardando');
+  tr._q=(tr._q||Promise.resolve()).then(async()=>{
+    let alta=false;
+    if(!r.id){
+      const saved=await db.insert(r);
+      r.id=saved.id; rows.push(r); alta=true;
+      tr.dataset.id=r.id; tr.classList.remove('nuevo');
+      tr.querySelector('.c-act').innerHTML=acciones();
+      const det=tr.querySelector('[data-k=detalle]'); if(det) det.removeAttribute('placeholder');
+    }else if(r._pend){
+      const p=r._pend; r._pend=null;
+      try{ await db.update(r.id,p); }catch(e){ r._pend={...p,...(r._pend||{})}; throw e; }
+    }
+    tr.classList.remove('err'); setSync('ok'); recalc();
+    if(redibujar||(alta&&!enPeriodo(r))){
+      if(!enPeriodo(r)) toast(`Guardado en ${MESES[+r.fecha.slice(5,7)-1].toLowerCase()} de ${r.fecha.slice(0,4)}`);
+      if(!r.fecha.startsWith(year+'-')) rows=rows.filter(x=>x!==r);
+      renderTabla(); recalc();
+    }else if(alta){
+      const nt=crearTr(borrador()); $('tbody').appendChild(nt);
+      if(tr._enterK){ const i=nt.querySelector(`[data-k="${tr._enterK}"]`); tr._enterK=null; if(i) i.focus(); }
+    }
+  }).catch(e=>{ tr.classList.add('err'); setSync('error'); toast('No se pudo guardar: '+errMsg(e)); });
+}
+
+$('tbody').addEventListener('change',e=>{
+  const inp=e.target.closest('input[data-k]'); if(!inp) return;
+  const tr=inp.closest('tr'), r=trRow.get(tr); if(!r) return;
+  const k=inp.dataset.k, c=COLBY[k]; let v;
+  if(c.type==='check') v=inp.checked;
+  else if(c.type==='money'){
+    v=parseMoney(inp.value);
+    if(Number.isNaN(v)){ inp.classList.add('bad'); toast('Importe no válido: usá números, por ejemplo 1.234,56'); return; }
+    inp.classList.remove('bad');
+    if(k==='egreso'&&v!=null) v=Math.abs(v);
+    if(v===0) v=null;
+  }
+  else if(c.type==='date'){ v=inp.value; if(!v){ inp.value=r.fecha; return; } }
+  else v=inp.value.trim();
+  if(r[k]===v) return;
+  r[k]=v;
+  if(c.type==='text'||c.type==='list') inp.title=v;
+  if(k==='estado') inp.className=claseEstado(v);
+  if(k==='factura'){ const td=inp.parentElement; td.outerHTML=celda(c,r); }
+  guardar(tr,{[k]:v},k==='fecha'&&!!r.id);
+});
+$('tbody').addEventListener('focusin',e=>{
+  const inp=e.target; if(!inp.matches||!inp.matches('.c-money input')) return;
+  const r=trRow.get(inp.closest('tr')); if(!r||inp.classList.contains('bad')) return;
+  const v=r[inp.dataset.k]; inp.value=v==null?'':String(v).replace('.',','); inp.select();
+});
+$('tbody').addEventListener('focusout',e=>{
+  const inp=e.target; if(!inp.matches||!inp.matches('.c-money input')) return;
+  const r=trRow.get(inp.closest('tr')); if(!r||inp.classList.contains('bad')) return;
+  inp.value=fmt(r[inp.dataset.k]);
+});
+$('tbody').addEventListener('keydown',e=>{
+  if(e.key!=='Enter') return;
+  const inp=e.target.closest('input[data-k]'); if(!inp||inp.type==='checkbox') return;
+  e.preventDefault();
+  const tr=inp.closest('tr'), k=inp.dataset.k;
+  let sig=tr.nextElementSibling; while(sig&&!sig.querySelector('[data-k]')) sig=sig.nextElementSibling;
+  if(sig){ sig.querySelector(`[data-k="${k}"]`).focus(); }
+  else { tr._enterK=k; inp.blur(); }
+});
+$('tbody').addEventListener('click',async e=>{
+  const b=e.target.closest('button[data-act]'); if(!b) return;
+  const tr=b.closest('tr'), r=trRow.get(tr); if(!r||!r.id) return;
+  if(b.dataset.act==='del'){
+    setSync('guardando');
+    try{
+      await (tr._q||Promise.resolve()); await db.remove(r.id);
+      rows=rows.filter(x=>x!==r); tr.remove(); setSync('ok'); recalc();
+      toast('Fila borrada','Deshacer',async()=>{
+        try{ const copia={...r}; delete copia.id; delete copia._pend; const s=await db.insert(copia); copia.id=s.id; rows.push(copia); renderTabla(); recalc(); }
+        catch(err){ toast('No se pudo deshacer: '+errMsg(err)); }
+      });
+    }catch(err){ setSync('error'); toast('No se pudo borrar: '+errMsg(err)); }
+  }
+  if(b.dataset.act==='dup'){
+    setSync('guardando');
+    try{
+      const copia={...r,pagado:false,clara:false,factura:''}; delete copia.id; delete copia._pend;
+      const s=await db.insert(copia); copia.id=s.id; rows.push(copia); setSync('ok');
+      renderTabla(); recalc(); toast('Fila duplicada (sin factura ni pagado)');
+    }catch(err){ setSync('error'); toast('No se pudo duplicar: '+errMsg(err)); }
+  }
+});
+
+let qT=null;
+$('q').addEventListener('input',e=>{ clearTimeout(qT); qT=setTimeout(()=>{ q=e.target.value.trim(); renderTabla(); recalc(); },180); });
+$('filtro').addEventListener('change',e=>{ filtro=e.target.value; renderTabla(); recalc(); });
+
+/* ---------- modales ---------- */
+function abrirModal(html,chico){
+  const h=$('modalHost');
+  h.innerHTML=`<div class="overlay"><div class="modal ${chico?'sm':''}" role="dialog" aria-modal="true">${html}</div></div>`;
+  const ov=h.firstElementChild;
+  ov.addEventListener('mousedown',e=>{ if(e.target===ov) cerrarModal(); });
+  ov.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarModal(); });
+  const f=ov.querySelector('input,textarea'); if(f) f.focus();
+  return ov;
+}
+function cerrarModal(){ $('modalHost').innerHTML=''; }
+
+$('btnPass').onclick=()=>{
+  if(!SB){ toast('En modo demo la contraseña es fija (1234). Se cambia cuando conectes Supabase.'); return; }
+  const ov=abrirModal(`<h3>Cambiar contraseña</h3>
+    <p>Mínimo 8 caracteres. Vale para ${esc(user.email)}.</p>
+    <label for="np1">Contraseña nueva</label><input type="password" id="np1" autocomplete="new-password">
+    <label for="np2">Repetila</label><input type="password" id="np2" autocomplete="new-password">
+    <div class="msg" id="npMsg"></div>
+    <div class="row"><button class="btn" id="npCancel">Cancelar</button><button class="btn primary" id="npOk">Guardar</button></div>`,true);
+  ov.querySelector('#npCancel').onclick=cerrarModal;
+  ov.querySelector('#npOk').onclick=async()=>{
+    const a=ov.querySelector('#np1').value, b=ov.querySelector('#np2').value, m=ov.querySelector('#npMsg');
+    m.className='msg bad';
+    if(a.length<8){ m.textContent='Tiene que tener al menos 8 caracteres.'; return; }
+    if(a!==b){ m.textContent='Las dos contraseñas no coinciden.'; return; }
+    const {error}=await sbc.auth.updateUser({password:a});
+    if(error){ m.textContent='No se pudo cambiar: '+errMsg(error); return; }
+    cerrarModal(); toast('Contraseña cambiada');
+  };
+};
+
+/* ---------- pegar desde Sheet ---------- */
+function parseTSV(text){
+  const out=[]; let row=[],cell='',enq=false;
+  for(let i=0;i<text.length;i++){
+    const ch=text[i];
+    if(enq){ if(ch==='"'){ if(text[i+1]==='"'){cell+='"';i++;} else enq=false; } else cell+=ch; }
+    else if(ch==='"'&&cell==='') enq=true;
+    else if(ch==='\t'){ row.push(cell); cell=''; }
+    else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n') i++; row.push(cell); cell=''; out.push(row); row=[]; }
+    else cell+=ch;
+  }
+  if(cell!==''||row.length){ row.push(cell); out.push(row); }
+  return out.filter(r=>r.some(c=>c.trim()!==''));
+}
+function filasDesdeTexto(text){
+  const ok=[], mal=[];
+  for(const c of parseTSV(text)){
+    if(/^fecha$/i.test((c[0]||'').trim())) continue;
+    const fecha=parseDate(c[0],year);
+    const ing=parseMoney(c[1]), egr=parseMoney(c[2]);
+    if(!fecha||Number.isNaN(ing)||Number.isNaN(egr)){ mal.push(c); continue; }
+    const t=i=>(c[i]||'').replace(/\s*\n\s*/g,' ').trim();
+    const fac=t(9);
+    const r={fecha,ingreso:ing||null,egreso:egr==null?null:(Math.abs(egr)||null),detalle:t(3),tipo:t(4),desde:t(5),hacia:t(6),estado:t(7),informacion:t(8),
+      factura:/^(true|verdadero)$/i.test(fac)?'Sí':/^(false|falso)$/i.test(fac)?'':fac,pagado:parseBool(c[10]),clara:parseBool(c[11]),comentarios:t(12)};
+    if(enBlanco(r)){ mal.push(c); continue; }
+    ok.push(r);
+  }
+  return {ok,mal};
+}
+$('btnPegar').onclick=()=>{
+  const ov=abrirModal(`<h3>Pegar desde el Sheet</h3>
+    <p>En tu Google Sheet seleccioná las filas (las 13 columnas, de <b>Fecha</b> a <b>Comentarios</b>, en ese orden), copiá y pegá acá abajo. Las filas sin fecha válida (títulos de mes, subtotales) se saltean solas.</p>
+    <textarea id="pgTxt" placeholder="Pegá acá las filas copiadas…" aria-label="Filas copiadas del Sheet"></textarea>
+    <div class="msg" id="pgMsg"></div>
+    <div class="row"><button class="btn" id="pgCancel">Cancelar</button><button class="btn primary" id="pgOk" disabled>Importar</button></div>`);
+  const txt=ov.querySelector('#pgTxt'), msg=ov.querySelector('#pgMsg'), okB=ov.querySelector('#pgOk');
+  let listo=[];
+  txt.addEventListener('input',()=>{
+    const {ok,mal}=filasDesdeTexto(txt.value); listo=ok;
+    okB.disabled=!ok.length; okB.textContent=ok.length?`Importar ${ok.length} ${ok.length===1?'fila':'filas'}`:'Importar';
+    msg.className='msg '+(ok.length?'ok':'bad');
+    if(!txt.value.trim()){ msg.textContent=''; return; }
+    const meses=[...new Set(ok.map(r=>r.fecha.slice(0,7)))].sort();
+    msg.textContent=ok.length?`${ok.length} ${ok.length===1?'fila lista':'filas listas'} (${meses[0]} a ${meses[meses.length-1]})${mal.length?` · ${mal.length} salteadas por no tener fecha o importe válido`:''}`:'No encontré filas con una fecha válida en la primera columna.';
+  });
+  ov.querySelector('#pgCancel').onclick=cerrarModal;
+  okB.onclick=async()=>{
+    okB.disabled=true; okB.textContent='Importando…';
+    try{
+      await db.insertMany(listo);
+      const n=listo.length, ult=listo[listo.length-1].fecha;
+      cerrarModal(); year=+ult.slice(0,4); month=+ult.slice(5,7)-1;
+      await cargar(true); toast(`${n} ${n===1?'fila importada':'filas importadas'}`);
+    }catch(e){ msg.className='msg bad'; msg.textContent='No se pudo importar: '+errMsg(e); okB.disabled=false; okB.textContent='Reintentar'; }
+  };
+};
+
+/* ---------- exportar ---------- */
+const celCsv=v=>{ v=v==null?'':String(v); return /[";\n\r]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; };
+function bajarCsv(nombre,filas,antes,despues){
+  antes=antes||[]; despues=despues||[];
+  const lin=[[...antes.map(x=>x.t),...COLS.map(c=>c.t),...despues.map(x=>x.t)].map(celCsv).join(';')];
+  for(const r of filas) lin.push([
+    ...antes.map(x=>celCsv(r[x.k])),
+    ...COLS.map(c=>{
+      const v=r[c.k];
+      if(c.type==='money') return v==null?'':String(v).replace('.',',');
+      if(c.type==='check') return v?'Sí':'No';
+      if(c.type==='date') return String(v||'').split('-').reverse().join('/');
+      return celCsv(v);
+    }),
+    ...despues.map(x=>celCsv(r[x.k])),
+  ].join(';'));
+  const blob=new Blob(['\ufeff'+lin.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=nombre;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+$('btnCsv').onclick=()=>{
+  const vis=visibles(); if(!vis.length){ toast('No hay filas para exportar en este período'); return; }
+  bajarCsv(`${tab.empresa}-${year}${month<0?'':'-'+pad(month+1)}.csv`,vis);
+};
+
+/* ---------- copia completa ---------- */
+function pintarCopia(){
+  let f=null; try{ f=localStorage.getItem('terrys_admin_ultima_copia'); }catch(_){}
+  const el=$('copiaInfo');
+  if(!f){ el.textContent='Todavía no bajaste una copia completa en este navegador.'; return; }
+  const dias=Math.floor((Date.now()-new Date(f).getTime())/86400000);
+  el.textContent=`Última copia completa: ${f.slice(0,10).split('-').reverse().join('/')}${dias>=30?' (hace '+dias+' días: conviene bajar otra)':''}.`;
+}
+$('btnCopia').onclick=async()=>{
+  const b=$('btnCopia'); b.disabled=true; b.textContent='Preparando…';
+  try{
+    if(pendientes>0) await new Promise(r=>setTimeout(r,800));
+    const todo=await db.listAll();
+    if(!todo.length){ toast('Todavía no hay movimientos para copiar'); return; }
+    const nombres=Object.fromEntries(TABS.map(t=>[t.empresa,t.titulo]));
+    for(const r of todo) r._sociedad=nombres[r.empresa]||r.empresa;
+    bajarCsv(`terrys-admin-copia-completa-${hoyISO()}.csv`,todo,
+      [{k:'_sociedad',t:'Sociedad'}],
+      [{k:'id',t:'ID'},{k:'creado',t:'Creado'},{k:'creado_por',t:'Creado por'},{k:'actualizado',t:'Actualizado'},{k:'actualizado_por',t:'Actualizado por'}]);
+    try{ localStorage.setItem('terrys_admin_ultima_copia',new Date().toISOString()); }catch(_){}
+    pintarCopia(); toast(`Copia completa bajada: ${todo.length} ${todo.length===1?'movimiento':'movimientos'}`);
+  }catch(e){ toast('No se pudo armar la copia: '+errMsg(e)); }
+  finally{ b.disabled=false; b.textContent='Copia completa'; }
+};
+
+/* ---------- arranque ---------- */
+(async function init(){
+  renderCabecera();
+  if(SB){
+    if(!window.supabase){ showLogin('No se pudo cargar la librería de Supabase. Revisá la conexión y recargá.'); return; }
+    sbc=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+    sbc.auth.onAuthStateChange(ev=>{ if(ev==='SIGNED_OUT'&&user) showLogin('La sesión se cerró. Volvé a entrar.'); });
+    const {data:{session}}=await sbc.auth.getSession();
+    if(session) await entrar(session.user); else showLogin();
+  }else{
+    let email=null; try{ email=sessionStorage.getItem('terrys_admin_demo_user'); }catch(_){}
+    if(email) await entrar({email}); else showLogin();
+  }
+})();
+</script>
+</body>
+</html>
