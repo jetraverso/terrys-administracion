@@ -1,10 +1,12 @@
 <!doctype html>
-<html lang="es">
+<html lang="es" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <title>Terry's Administración</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#141311">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap">
 <style>
@@ -33,6 +35,7 @@
   --ok:#5cb47f; --ok-soft:#1c3326; --warn:#e29a4a; --warn-soft:#3a3010; --danger:#e5665e;
   --row-hover:#22201c; --shadow:0 12px 30px rgba(0,0,0,.5);
 }
+:root{color-scheme:dark}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased}
@@ -155,16 +158,16 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 @media (prefers-reduced-motion:no-preference){ .sheet tr.movida td{animation:movida 1.4s ease-out} }
 .sheet td input.est-pend{color:var(--warn);font-weight:700}
 .sheet td input.est-ok{color:var(--ok);font-weight:700}
-.sheet td.c-fact{position:relative}
-.sheet td.c-fact input{padding-right:24px}
-.sheet td.c-fact.link input{padding-right:46px;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
-.sheet td.c-fact a,.sheet td.c-fact .lk{position:absolute;top:8px;height:18px;min-width:20px;display:flex;align-items:center;justify-content:center;border-radius:5px;padding:0 4px;font-size:11px;font-weight:700;text-decoration:none;line-height:1}
-.sheet td.c-fact a{right:24px;background:var(--accent-soft);color:var(--accent-ink)}
-.sheet td.c-fact .lk{right:2px;background:none;border:0;color:var(--muted);opacity:0}
-.sheet td.c-fact .lk svg{width:13px;height:13px;display:block}
-.sheet tr:hover td.c-fact .lk,.sheet td.c-fact:focus-within .lk,.sheet td.c-fact .lk:focus-visible{opacity:1}
-.sheet td.c-fact .lk:hover{background:var(--surface-2);color:var(--ink)}
-@media (hover:none){ .sheet td.c-fact .lk{opacity:1} }
+.sheet td.c-link{position:relative}
+.sheet td.c-link textarea{padding-right:24px}
+.sheet td.c-link.link textarea{padding-right:46px;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.sheet td.c-link a,.sheet td.c-link .lk{position:absolute;top:8px;height:18px;min-width:20px;display:flex;align-items:center;justify-content:center;border-radius:5px;padding:0 4px;font-size:11px;font-weight:700;text-decoration:none;line-height:1}
+.sheet td.c-link a{right:24px;background:var(--accent-soft);color:var(--accent-ink)}
+.sheet td.c-link .lk{right:2px;background:none;border:0;color:var(--muted);opacity:0}
+.sheet td.c-link .lk svg{width:13px;height:13px;display:block}
+.sheet tr:hover td.c-link .lk,.sheet td.c-link:focus-within .lk,.sheet td.c-link .lk:focus-visible{opacity:1}
+.sheet td.c-link .lk:hover{background:var(--surface-2);color:var(--ink)}
+@media (hover:none){ .sheet td.c-link .lk{opacity:1} }
 .sheet td.c-act{white-space:nowrap;text-align:center;padding-top:8px}
 .sheet td.c-act button{background:none;border:0;color:var(--muted);padding:3px 4px;border-radius:5px;font-size:13px;line-height:1}
 .sheet td.c-act button:hover{background:var(--surface-2);color:var(--ink)}
@@ -310,7 +313,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <li>Los cambios se guardan solos al salir de cada celda, y la fila se acomoda sola por fecha. La última fila en blanco es para cargar un movimiento nuevo.</li>
         <li>Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda). Enter baja a la fila de abajo.</li>
         <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
-        <li>Facturas: escribí el nombre y ponele el link con el botón de la cadenita (o pegá el link directo y queda como FACTURA).</li>
+        <li>Información: escribí el texto y ponele el link de la factura con el botón de la cadenita o Ctrl/Cmd + K (o pegá el link directo y queda como FACTURA). Al tener link, Facturas se tilda sola.</li>
         <li>Ancho de columnas: arrastrá el borde derecho del título. Queda guardado en este navegador. Doble clic en ese borde la vuelve a automática.</li>
       </ul>
     </details>
@@ -332,7 +335,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.5';
+const VERSION='1.6';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -350,7 +353,7 @@ const COLS=[
   {k:'hacia',      t:'Hacia dónde', type:'list'},
   {k:'estado',     t:'Estado', type:'list'},
   {k:'informacion',t:'Información', type:'text'},
-  {k:'factura',    t:'Facturas', type:'text'},
+  {k:'factura',    t:'Facturas', type:'check'},
   {k:'pagado',     t:'Pagado', type:'check'},
   {k:'clara',      t:'Clara', type:'check'},
   {k:'comentarios',t:'Comentarios', type:'text'},
@@ -408,23 +411,39 @@ function parseDate(s,defYear){
 }
 const parseBool=s=>/^(true|verdadero|si|sí|s|x|✓|✔|1|ok|pagado)$/i.test(String(s||'').trim());
 const esUrl=s=>/^https?:\/\/\S+$/i.test(String(s||'').trim());
-/* Facturas: se guarda "[NOMBRE](https://link)" en el mismo campo; en la planilla se ve solo el nombre. */
-function facPartes(v){
+/* Información: se guarda "[TEXTO](https://link)" en el mismo campo; en la planilla se ve solo el texto.
+   Facturas es una casilla (en la base: 'Sí' o vacío) que se tilda sola cuando Información tiene link. */
+function linkPartes(v){
   v=String(v||'').trim();
   const m=v.match(/^\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/i);
   if(m) return {txt:m[1]||'FACTURA',url:m[2]};
   if(esUrl(v)) return {txt:'FACTURA',url:v};
   return {txt:v,url:''};
 }
-function facUnir(txt,url){
+function linkUnir(txt,url){
   txt=String(txt||'').replace(/[\[\]]/g,'').trim(); url=String(url||'').trim();
   if(!url) return txt;
   return `[${txt||'FACTURA'}](${url.replace(/\(/g,'%28').replace(/\)/g,'%29')})`;
 }
+const esSi=v=>v===true||/^s[ií]$/i.test(String(v==null?'':v).trim());
+/* Filas de antes (cuando el nombre + link se cargaba en Facturas): pasa ese dato a Información y deja Facturas tildada. */
+function fusionarInfo(info,fac){
+  info=String(info||'').trim(); const F=linkPartes(fac), I=linkPartes(info);
+  if(F.url) return I.url?info:linkUnir(info||F.txt,F.url);
+  if(!F.txt) return info;
+  return I.url?linkUnir(I.txt+' · '+F.txt,I.url):(info?info+' · '+F.txt:F.txt);
+}
+function deDb(r){
+  const f=String(r.factura==null?'':r.factura).trim();
+  if(r.factura===true||r.factura===false) return false;
+  if(f===''||esSi(f)){ r.factura=f!==''; return false; }
+  r.informacion=fusionarInfo(r.informacion,f); r.factura=true; return true;
+}
+const aDb=o=>('factura' in o)?{...o,factura:o.factura?'Sí':''}:o;
 const ICONO_LINK='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.7 9.3a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/><path d="M9.3 6.7a2.6 2.6 0 0 0-3.7 0L3.4 8.9a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/></svg>';
 
 /* ---------- base de datos ---------- */
-const limpio=r=>{const o={empresa:tab.empresa}; for(const k of FIELDS) o[k]=r[k]; return o;};
+const limpio=r=>{const o={empresa:tab.empresa}; for(const k of FIELDS) o[k]=r[k]; return aDb(o);};
 const db=SB?{
   async list(empresa,y){
     const out=[]; const paso=1000;
@@ -462,7 +481,7 @@ const db=SB?{
   async insertMany(list){
     for(let i=0;i<list.length;i+=500){ const {error}=await sbc.from('movimientos').insert(list.slice(i,i+500).map(limpio)); if(error) throw error; }
   },
-  async update(id,patch){ const {error}=await sbc.from('movimientos').update(patch).eq('id',id); if(error) throw error; },
+  async update(id,patch){ const {error}=await sbc.from('movimientos').update(aDb(patch)).eq('id',id); if(error) throw error; },
   async remove(id){ const {error}=await sbc.from('movimientos').delete().eq('id',id); if(error) throw error; },
 }:(()=>{
   const key=e=>'terrys_admin_demo_'+e;
@@ -475,7 +494,7 @@ const db=SB?{
     async listSug(e){ return leer(e); },
     async insert(r){ const l=leer(tab.empresa); const o={id:nuevoId(),...limpio(r)}; l.push(o); grabar(tab.empresa,l); return {id:o.id}; },
     async insertMany(list){ const l=leer(tab.empresa); for(const r of list) l.push({id:nuevoId(),...limpio(r)}); grabar(tab.empresa,l); },
-    async update(id,patch){ const l=leer(tab.empresa); const o=l.find(x=>x.id===id); if(o) Object.assign(o,patch); grabar(tab.empresa,l); },
+    async update(id,patch){ const l=leer(tab.empresa); const o=l.find(x=>x.id===id); if(o) Object.assign(o,aDb(patch)); grabar(tab.empresa,l); },
     async remove(id){ grabar(tab.empresa,leer(tab.empresa).filter(x=>x.id!==id)); },
   };
 })();
@@ -609,7 +628,11 @@ async function cargar(force){
   const key=tab.empresa+'|'+year;
   if(force||key!==loadedKey){
     setSync('cargando…');
-    try{ rows=await db.list(tab.empresa,year); loadedKey=key; setSync(SB?'supabase':'demo local'); }
+    try{
+      rows=await db.list(tab.empresa,year); loadedKey=key; setSync(SB?'supabase':'demo local');
+      const viejas=rows.filter(deDb);
+      if(viejas.length) (async()=>{ for(const r of viejas){ try{ await db.update(r.id,{informacion:r.informacion,factura:true}); }catch(_){ break; } } })();
+    }
     catch(e){ rows=[]; loadedKey=''; setSync('error'); $('sync').classList.add('err'); toast('No se pudieron cargar los datos: '+errMsg(e)); }
   }
   renderTodo();
@@ -655,10 +678,10 @@ $('hoy').onclick=async()=>{ const d=new Date(); year=d.getFullYear(); month=d.ge
 const enPeriodo=r=>r.fecha.startsWith(month<0?year+'-':`${year}-${pad(month+1)}-`);
 function pasaFiltro(r){
   if(filtro==='porpagar'&&!((r.egreso||0)>0&&!r.pagado)) return false;
-  if(filtro==='sinfactura'&&(r.factura||'').trim()) return false;
+  if(filtro==='sinfactura'&&r.factura) return false;
   if(filtro==='sinclara'&&r.clara) return false;
   if(q){
-    const txt=[r.fecha,r.fecha.split('-').reverse().join('/'),fmt(r.ingreso),fmt(r.egreso),r.detalle,r.tipo,r.desde,r.hacia,r.estado,r.informacion,r.factura,r.comentarios].join(' ').toLowerCase();
+    const txt=[r.fecha,r.fecha.split('-').reverse().join('/'),fmt(r.ingreso),fmt(r.egreso),r.detalle,r.tipo,r.desde,r.hacia,r.estado,r.informacion,r.comentarios].join(' ').toLowerCase();
     if(!q.toLowerCase().split(/\s+/).every(p=>txt.includes(p))) return false;
   }
   return true;
@@ -679,7 +702,7 @@ function renderCabecera(){
    barra para moverse a los costados salvo en pantallas chicas. */
 const LARGAS=['detalle','informacion','comentarios'];
 const PISO={detalle:150,informacion:110,comentarios:120};
-const FIJAS={fecha:104,pagado:58,clara:50}, ANCHO_ACC=50;
+const ANCHO_ACC=50, esFija=c=>c.type==='date'||c.type==='check';
 let anchoPedido={};
 const medirCtx=document.createElement('canvas').getContext('2d'), medirCache=new Map();
 function medir(txt,fuente){
@@ -691,7 +714,7 @@ const F13='13px Barlow,"Helvetica Neue",Arial,sans-serif', F13B='700 13px Barlow
 function anchoTexto(c,r){
   const v=r[c.k];
   if(c.type==='money') return v==null?0:medir(fmt(v),F13B)+16;
-  if(c.k==='factura'){ const f=facPartes(v); return f.txt?medir(f.txt,F13B)+(f.url?52:30):0; }
+  if(c.k==='informacion'){ const f=linkPartes(v); return f.txt?medir(f.txt,f.url?F13B:F13)+(f.url?54:32):0; }
   const t=String(v||'')||((!r.id&&c.k==='detalle')?'Nuevo movimiento…':'');
   return t?medir(t,c.k==='estado'?F13B:F13)+16:0;
 }
@@ -709,7 +732,7 @@ function ajustarAnchos(soloCrecer){
   const pide={};
   for(const c of COLS){
     if(man[c.k]){ pide[c.k]=man[c.k]; continue; }
-    if(FIJAS[c.k]){ pide[c.k]=FIJAS[c.k]; continue; }
+    if(esFija(c)){ pide[c.k]=c.type==='date'?104:Math.max(48,Math.ceil(anchoTitulo(c.t))); continue; }
     let w=Math.max(anchoTitulo(c.t),c.type==='money'?72:64);
     for(const r of filas){ const a=anchoTexto(c,r); if(a>w) w=a; }
     w=Math.ceil(Math.min(w,LARGAS.includes(c.k)?460:280));
@@ -729,7 +752,7 @@ function ajustarAnchos(soloCrecer){
     }
   }else{
     // sobra: se reparte entre las columnas automáticas que no son de ancho fijo
-    const flex=COLS.filter(c=>!FIJAS[c.k]&&!man[c.k]), base=flex.reduce((t,c)=>t+w[c.k],0), extra=disp-total;
+    const flex=COLS.filter(c=>!esFija(c)&&!man[c.k]), base=flex.reduce((t,c)=>t+w[c.k],0), extra=disp-total;
     if(base) for(const c of flex) w[c.k]=Math.floor(w[c.k]+extra*w[c.k]/base);
   }
   anchoActual=w;
@@ -791,11 +814,11 @@ function celda(c,r){
   if(c.type==='check') return `<td class="c-check"><input type="checkbox" data-k="${c.k}" ${v?'checked':''} aria-label="${esc(c.t)}"></td>`;
   if(c.type==='date')  return `<td class="c-date"><input type="date" data-k="fecha" value="${esc(v||'')}" aria-label="Fecha"></td>`;
   if(c.type==='money') return `<td class="c-money ${c.k}"><input type="text" inputmode="decimal" autocomplete="off" data-k="${c.k}" value="${esc(fmt(v))}" aria-label="${esc(c.t)}"></td>`;
-  if(c.k==='factura'){
-    const f=facPartes(v);
-    return `<td class="c-fact ${f.url?'link':''}"><input type="text" autocomplete="off" data-k="factura" value="${esc(f.txt)}" title="${esc(f.url||f.txt)}" aria-label="Facturas">`
-      +(f.url?`<a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" tabindex="-1" title="Abrir ${esc(f.url)}" aria-label="Abrir la factura">↗</a>`:'')
-      +`<button type="button" class="lk" data-act="link" tabindex="-1" title="${f.url?'Cambiar el link':'Ponerle un link'} (Ctrl o Cmd + K)" aria-label="${f.url?'Cambiar el link de la factura':'Ponerle un link a la factura'}">${ICONO_LINK}</button></td>`;
+  if(c.k==='informacion'){
+    const f=linkPartes(v);
+    return `<td class="c-link ${f.url?'link':''}"><textarea rows="1" autocomplete="off" data-k="informacion" title="${esc(f.url)}" aria-label="Información">${esc(f.txt)}</textarea>`
+      +(f.url?`<a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" tabindex="-1" title="Abrir ${esc(f.url)}" aria-label="Abrir el link">↗</a>`:'')
+      +`<button type="button" class="lk" data-act="link" tabindex="-1" title="${f.url?'Cambiar el link':'Ponerle un link'} (Ctrl o Cmd + K)" aria-label="${f.url?'Cambiar el link':'Ponerle un link'}">${ICONO_LINK}</button></td>`;
   }
   if(LARGAS.includes(c.k)){
     const ph=(!r.id&&c.k==='detalle')?' placeholder="Nuevo movimiento…"':'';
@@ -820,7 +843,7 @@ function borrador(){
   if(month<0) fecha=hoy.startsWith(year+'-')?hoy:(vis.length?vis[vis.length-1].fecha:`${year}-01-01`);
   else if(hoy.startsWith(`${year}-${pad(month+1)}-`)) fecha=hoy;
   else fecha=vis.length?vis[vis.length-1].fecha:`${year}-${pad(month+1)}-01`;
-  return {fecha,ingreso:null,egreso:null,detalle:'',tipo:'',desde:'',hacia:'',estado:'',informacion:'',factura:'',pagado:false,clara:false,comentarios:''};
+  return {fecha,ingreso:null,egreso:null,detalle:'',tipo:'',desde:'',hacia:'',estado:'',informacion:'',factura:false,pagado:false,clara:false,comentarios:''};
 }
 function renderTabla(){
   const tb=$('tbody'); tb.innerHTML='';
@@ -848,13 +871,13 @@ function recalc(){
   const sum=(l,k)=>l.reduce((s,r)=>s+(r[k]||0),0);
   const inn=sum(per,'ingreso'), out=sum(per,'egreso'), bal=inn-out;
   const porPagar=per.filter(r=>(r.egreso||0)>0&&!r.pagado);
-  const sinFac=per.filter(r=>(r.egreso||0)>0&&!(r.factura||'').trim());
+  const sinFac=per.filter(r=>(r.egreso||0)>0&&!r.factura);
   $('cards').innerHTML=`
     <div class="card in"><div class="k">Ingresos</div><div class="v num">${eur(inn)}</div><div class="s">${pl(per.filter(r=>r.ingreso).length,'movimiento','movimientos')}</div></div>
     <div class="card out"><div class="k">Egresos</div><div class="v num">${eur(out)}</div><div class="s">${pl(per.filter(r=>r.egreso).length,'movimiento','movimientos')}</div></div>
     <div class="card ${bal<0?'neg':''}"><div class="k">Balance</div><div class="v num">${bal<0?'−':''}${eur(Math.abs(bal))}</div><div class="s">ingresos menos egresos</div></div>
     <div class="card ${porPagar.length?'alert':''}"><div class="k">Por pagar</div><div class="v num">${eur(sum(porPagar,'egreso'))}</div><div class="s">${pl(porPagar.length,'egreso','egresos')} sin marcar pagado</div></div>
-    <div class="card"><div class="k">Sin factura</div><div class="v num">${sinFac.length}</div><div class="s">egresos sin dato en Facturas</div></div>`;
+    <div class="card"><div class="k">Sin factura</div><div class="v num">${sinFac.length}</div><div class="s">egresos sin tildar Facturas</div></div>`;
 
   const vis=rows.filter(r=>enPeriodo(r)&&pasaFiltro(r));
   const vi=sum(vis,'ingreso'), vo=sum(vis,'egreso'), vb=vi-vo;
@@ -876,7 +899,7 @@ function recalc(){
 }
 
 /* ---------- edición ---------- */
-const enBlanco=r=>!r.ingreso&&!r.egreso&&!r.pagado&&!r.clara&&['detalle','tipo','desde','hacia','estado','informacion','factura','comentarios'].every(k=>!(r[k]||'').trim());
+const enBlanco=r=>!r.ingreso&&!r.egreso&&!r.pagado&&!r.clara&&!r.factura&&['detalle','tipo','desde','hacia','estado','informacion','comentarios'].every(k=>!(r[k]||'').trim());
 
 function guardar(tr,patch,redibujar){
   const r=trRow.get(tr);
@@ -993,6 +1016,12 @@ $('tbody').addEventListener('focusout',e=>{
   colocar(tr,e.relatedTarget);
 });
 
+/* Si Información pasa a tener link (o cambia de link), Facturas se tilda sola. */
+function tildarFactura(tr,r,urlAntes,urlAhora,patch){
+  if(!urlAhora||urlAhora===urlAntes||r.factura) return;
+  r.factura=true; patch.factura=true;
+  const cb=tr.querySelector('[data-k=factura]'); if(cb) cb.checked=true;
+}
 $('tbody').addEventListener('change',e=>{
   const inp=e.target.closest('[data-k]'); if(!inp) return;
   const tr=inp.closest('tr'), r=trRow.get(tr); if(!r) return;
@@ -1007,21 +1036,25 @@ $('tbody').addEventListener('change',e=>{
   }
   else if(c.type==='date'){ v=inp.value; if(!v){ inp.value=r.fecha; return; } }
   else v=inp.value.replace(/\s*[\r\n]+\s*/g,' ').trim();
-  if(k==='factura'){
-    // se escribe el nombre; si se pega un link pelado queda como "FACTURA" con ese link
-    const antes=facPartes(r.factura);
-    v=esUrl(v)?facUnir(antes.url?antes.txt:'FACTURA',v):(v?facUnir(v,antes.url):'');
-    if(r[k]===v){ inp.value=facPartes(v).txt; return; }
+  const patch={};
+  if(k==='informacion'){
+    // se escribe el texto; si se pega un link queda guardado atrás: solo → "FACTURA", con texto al lado → ese texto
+    const antes=linkPartes(r.informacion);
+    const um=v.match(/https?:\/\/\S+/i);
+    if(um){ const resto=(v.slice(0,um.index)+' '+v.slice(um.index+um[0].length)).replace(/\s+/g,' ').trim(); v=linkUnir(resto||(antes.url?antes.txt:'')||'FACTURA',um[0]); }   // link pegado solo o junto al texto
+    else v=v?linkUnir(v,antes.url):'';
+    if(r[k]===v){ inp.value=linkPartes(v).txt; return; }
+    tildarFactura(tr,r,antes.url,linkPartes(v).url,patch);
   }
   if(r[k]===v) return;
-  r[k]=v;
+  r[k]=v; patch[k]=v;
   if(c.type==='list') inp.title=v;
   if(inp.tagName==='TEXTAREA') inp.value=v;
   if(k==='estado') inp.className=claseEstado(v);
-  if(k==='factura'){ const td=inp.parentElement; td.outerHTML=celda(c,r); }
+  if(k==='informacion'){ const td=inp.parentElement; td.outerHTML=celda(c,r); }
   if(anchoTexto(c,r)>(anchoPedido[k]||0)) ajustarAnchos(true); else ajustarAltos(tr);
   if(k==='fecha'||!r.id) tr._reordenar=true;
-  guardar(tr,{[k]:v},k==='fecha'&&!!r.id&&!(enPeriodo(r)&&pasaFiltro(r)));
+  guardar(tr,patch,k==='fecha'&&!!r.id&&!(enPeriodo(r)&&pasaFiltro(r)));
 });
 $('tbody').addEventListener('focusin',e=>{
   const inp=e.target; if(!inp.matches||!inp.matches('.c-money input')) return;
@@ -1035,7 +1068,7 @@ $('tbody').addEventListener('focusout',e=>{
 });
 $('tbody').addEventListener('keydown',e=>{
   const inp=e.target.closest('[data-k]'); if(!inp) return;
-  if(inp.dataset.k==='factura'&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); editarLink(inp.closest('tr')); return; }
+  if(inp.dataset.k==='informacion'&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); editarLink(inp.closest('tr')); return; }
   // Celdas con sugerencias: flechas para recorrer la lista, Enter o Tab para aceptar.
   if(SUG[inp.dataset.k]){
     const abierta=ac.inp===inp;
@@ -1085,9 +1118,10 @@ $('tbody').addEventListener('click',async e=>{
   if(b.dataset.act==='dup'){
     setSync('guardando');
     try{
-      const copia={...r,pagado:false,clara:false,factura:''}; delete copia.id; delete copia._pend;
+      const li=linkPartes(r.informacion);
+      const copia={...r,pagado:false,clara:false,factura:false,informacion:li.url?(li.txt==='FACTURA'?'':li.txt):r.informacion}; delete copia.id; delete copia._pend;
       const s=await db.insert(copia); copia.id=s.id; rows.push(copia); setSync('ok');
-      renderTabla(); recalc(); toast('Fila duplicada (sin factura ni pagado)');
+      renderTabla(); recalc(); toast('Fila duplicada (sin link, factura ni pagado)');
     }catch(err){ setSync('error'); toast('No se pudo duplicar: '+errMsg(err)); }
   }
 });
@@ -1110,34 +1144,36 @@ function cerrarModal(){ $('modalHost').innerHTML=''; }
 
 function editarLink(tr){
   const r=trRow.get(tr); if(!r) return;
-  const f=facPartes(r.factura);
+  const f=linkPartes(r.informacion);
   const ov=abrirModal(`<h3>Link de la factura</h3>
-    <p>En la planilla se ve solo el nombre; el link queda guardado atrás y se abre con el botón ↗.</p>
-    <label for="fkTxt">Nombre que se ve</label><input type="text" id="fkTxt" autocomplete="off" placeholder="FACTURA">
+    <p>En Información se ve solo el texto; el link queda guardado atrás y se abre con el botón ↗. Al ponerle link, Facturas se tilda sola.</p>
+    <label for="fkTxt">Texto que se ve</label><input type="text" id="fkTxt" autocomplete="off" placeholder="FACTURA">
     <label for="fkUrl">Link (Drive, Dropbox, mail…)</label><input type="url" id="fkUrl" autocomplete="off" placeholder="https://…">
     <div class="msg bad" id="fkMsg"></div>
     <div class="row">${f.url?'<button class="btn izq" id="fkQuitar">Quitar link</button>':''}<button class="btn" id="fkCancel">Cancelar</button><button class="btn primary" id="fkOk">Guardar</button></div>`,true);
   const iT=ov.querySelector('#fkTxt'), iU=ov.querySelector('#fkUrl');
   iT.value=f.txt; iU.value=f.url; (f.txt&&!f.url?iU:iT).focus();
-  const cerrar=()=>{ cerrarModal(); const i=tr.isConnected&&tr.querySelector('[data-k=factura]'); if(i) i.focus(); };
+  const cerrar=()=>{ cerrarModal(); const i=tr.isConnected&&tr.querySelector('[data-k=informacion]'); if(i) i.focus(); };
   const aplicar=valor=>{
-    if(r.factura!==valor){
-      r.factura=valor;
-      const td=tr.querySelector('td.c-fact'); if(td) td.outerHTML=celda(COLBY.factura,r);
+    if(r.informacion!==valor){
+      const patch={informacion:valor};
+      tildarFactura(tr,r,linkPartes(r.informacion).url,linkPartes(valor).url,patch);
+      r.informacion=valor;
+      const td=tr.querySelector('td.c-link'); if(td) td.outerHTML=celda(COLBY.informacion,r);
       if(!r.id) tr._reordenar=true;
-      if(anchoTexto(COLBY.factura,r)>(anchoPedido.factura||0)) ajustarAnchos(true);
-      guardar(tr,{factura:valor},false);
+      if(anchoTexto(COLBY.informacion,r)>(anchoPedido.informacion||0)) ajustarAnchos(true); else ajustarAltos(tr);
+      guardar(tr,patch,false);
     }
     cerrar();
   };
   const ok=()=>{
     const url=iU.value.trim();
     if(url&&!esUrl(url)){ ov.querySelector('#fkMsg').textContent='El link tiene que empezar con https:// (o http://) y no tener espacios.'; iU.focus(); return; }
-    aplicar(facUnir(iT.value,url));
+    aplicar(linkUnir(iT.value,url));
   };
   ov.querySelector('#fkOk').onclick=ok;
   ov.querySelector('#fkCancel').onclick=cerrar;
-  const q=ov.querySelector('#fkQuitar'); if(q) q.onclick=()=>aplicar(facUnir(iT.value,''));
+  const q=ov.querySelector('#fkQuitar'); if(q) q.onclick=()=>aplicar(linkUnir(iT.value,''));
   ov.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.tagName==='INPUT'){ e.preventDefault(); ok(); } });
 }
 
@@ -1183,9 +1219,13 @@ function filasDesdeTexto(text){
     const ing=parseMoney(c[1]), egr=parseMoney(c[2]);
     if(!fecha||Number.isNaN(ing)||Number.isNaN(egr)){ mal.push(c); continue; }
     const t=i=>(c[i]||'').replace(/\s*\n\s*/g,' ').trim();
-    const fac=t(9);
-    const r={fecha,ingreso:ing||null,egreso:egr==null?null:(Math.abs(egr)||null),detalle:t(3),tipo:t(4),desde:t(5),hacia:t(6),estado:t(7),informacion:t(8),
-      factura:/^(true|verdadero)$/i.test(fac)?'Sí':/^(false|falso)$/i.test(fac)?'':(esUrl(fac)?facUnir('FACTURA',fac):fac),pagado:parseBool(c[10]),clara:parseBool(c[11]),comentarios:t(12)};
+    // Facturas en el Sheet puede ser casilla (TRUE/FALSE) o, como antes, un texto o link: eso va a Información
+    const fac=t(9), facEsCasilla=/^(true|false|verdadero|falso|s[ií]|no|x|✓|✔|1|0|)$/i.test(fac);
+    let info=t(8); if(esUrl(info)) info=linkUnir('FACTURA',info);
+    if(!facEsCasilla) info=fusionarInfo(info,fac);
+    const r={fecha,ingreso:ing||null,egreso:egr==null?null:(Math.abs(egr)||null),detalle:t(3),tipo:t(4),desde:t(5),hacia:t(6),estado:t(7),informacion:info,
+      factura:facEsCasilla?parseBool(fac):true,pagado:parseBool(c[10]),clara:parseBool(c[11]),comentarios:t(12)};
+    if(!r.factura&&linkPartes(info).url) r.factura=true;
     if(enBlanco(r)){ mal.push(c); continue; }
     ok.push(r);
   }
@@ -1256,7 +1296,7 @@ $('btnCopia').onclick=async()=>{
   const b=$('btnCopia'); b.disabled=true; b.textContent='Preparando…';
   try{
     if(pendientes>0) await new Promise(r=>setTimeout(r,800));
-    const todo=await db.listAll();
+    const todo=await db.listAll(); todo.forEach(deDb);
     if(!todo.length){ toast('Todavía no hay movimientos para copiar'); return; }
     const nombres=Object.fromEntries(TABS.map(t=>[t.empresa,t.titulo]));
     for(const r of todo) r._sociedad=nombres[r.empresa]||r.empresa;

@@ -2,7 +2,7 @@
 
 Página de administración general de Terry's Burgers. Hoy tiene una solapa, **Terrys Burgers S.L.**, con el control de ingresos, egresos y facturas a proveedores mes a mes (reemplaza al Google Sheet). Es una sola página (`index.html`) que guarda todo en Supabase y pide email y contraseña para entrar.
 
-Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horarios).
+Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horarios), siempre en modo noche.
 
 ## Qué hace
 
@@ -15,7 +15,8 @@ Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horari
 - **Tipo, Desde, Hacia y Estado** sugieren lo que ya cargaste antes **en esa misma columna** (de cualquier año), así quedan siempre escritos igual: al escribir aparece la lista, se elige con las flechas y se acepta con Enter (se queda en la celda) o con Tab (pasa a la siguiente).
 - **Columnas que se adaptan:** cada columna toma el ancho de su texto más largo. Si no entra todo en la pantalla, Detalle, Información y Comentarios siguen en el renglón de abajo (la fila crece en alto) en vez de cortarse.
 - **Ancho a mano:** arrastrando el borde derecho del título de una columna se le pone el ancho que quieras; queda guardado en ese navegador (cada persona y cada computadora tiene los suyos) y la columna queda marcada con una rayita azul. Doble clic en el borde la vuelve a automática, y abajo de la planilla hay un link para volver todas.
-- **Facturas con link:** en la celda se ve solo un nombre (por ejemplo `FACTURA` o `FACTURA 0912`) y el link queda guardado atrás: el botón ↗ lo abre. Si pegás un link pelado queda como `FACTURA` con ese link; para ponerle o cambiarle el link a un nombre, el botón de la cadenita de la celda (o Ctrl/Cmd + K). En la base se guarda como `[NOMBRE](https://link)` en el mismo campo. **Pagado** y **Clara** son casillas.
+- **Información con link de la factura:** en Información se ve solo un texto (por ejemplo `FACTURA` o `Factura luz`) y el link queda guardado atrás: el botón ↗ lo abre. Si pegás un link pelado queda como `FACTURA` con ese link; si pegás texto + link, el texto queda como nombre. Para ponerle o cambiarle el link a un texto ya escrito: el botón de la cadenita de la celda (o Ctrl/Cmd + K). En la base se guarda como `[TEXTO](https://link)` en el campo `informacion`.
+- **Facturas, Pagado y Clara son casillas.** Facturas se tilda sola cuando Información pasa a tener link (se puede tildar o destildar a mano igual). En la base `factura` guarda `Sí` o vacío. Las filas cargadas con la versión anterior (nombre + link en Facturas) se pasan solas a Información la primera vez que se abre su año.
 - **Buscar y filtrar** (por pagar, sin factura, sin Clara), **duplicar** una fila (para gastos que se repiten), **borrar** con "Deshacer".
 - **Pegar desde Sheet:** copiás las filas del Google Sheet (las 13 columnas en ese orden) y las importa de una. Saltea solos los títulos de mes y los subtotales.
 - **Exportar CSV** del mes o del año que estés viendo (abre bien en Excel y Sheets).
