@@ -64,7 +64,7 @@ h1,h2,h3{margin:0;font-weight:400;text-wrap:balance}
 .login-demo{margin-top:6px;background:var(--warn-soft);color:var(--warn);border-radius:9px;padding:9px 11px;font-size:13px;font-weight:600}
 
 /* ---------- top bar ---------- */
-.top{position:sticky;top:0;z-index:30;background:var(--brand);color:var(--brand-ink);display:flex;align-items:center;gap:18px;padding:10px 20px;flex-wrap:wrap}
+.top{position:sticky;top:0;z-index:30;background:var(--brand);color:var(--brand-ink);display:flex;align-items:center;gap:18px;padding:10px clamp(20px,4.5vw,84px);flex-wrap:wrap}
 .wordmark{font-family:var(--display);font-size:30px;letter-spacing:.04em;line-height:1;display:flex;align-items:baseline;gap:10px}
 .wordmark small{font-family:var(--body);font-size:12px;letter-spacing:.18em;text-transform:uppercase;opacity:.7}
 .tabs{display:flex;gap:4px;flex-wrap:wrap}
@@ -81,7 +81,7 @@ h1,h2,h3{margin:0;font-weight:400;text-wrap:balance}
 :root[data-theme="dark"] .btn-top{border-color:rgba(0,0,0,.35)}
 
 /* ---------- layout ---------- */
-main{max-width:1680px;margin:0 auto;padding:22px 20px 40px}
+main{max-width:1800px;margin:0 auto;padding:22px clamp(20px,4.5vw,84px) 40px}
 .demo-bar{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:9px 14px;font-size:14px;font-weight:600;margin-bottom:16px}
 .toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 .period{font-family:var(--display);font-size:38px;letter-spacing:.03em;line-height:1}
@@ -122,46 +122,48 @@ main{max-width:1680px;margin:0 auto;padding:22px 20px 40px}
 
 /* ---------- planilla ---------- */
 .sheetwrap{overflow:auto;max-height:calc(100vh - 78px);min-height:260px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
-table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed}
+table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:100%;min-width:1100px;font-size:13px}
 .sheet th,.sheet td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;background:var(--surface)}
 .sheet th:last-child,.sheet td:last-child{border-right:0}
-.sheet thead th{position:sticky;top:0;z-index:4;background:var(--surface-2);text-align:left;padding:10px 10px 9px;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-2);font-weight:700;white-space:nowrap;border-bottom:1px solid var(--line-2)}
+.sheet thead th{position:sticky;top:0;z-index:4;background:var(--surface-2);text-align:left;vertical-align:bottom;padding:8px 6px 7px;font-size:10.5px;line-height:1.2;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);font-weight:700;border-bottom:1px solid var(--line-2)}
 .sheet thead th.r{text-align:right}
 .sheet thead th.c{text-align:center}
 .sheet .c-date{position:sticky;left:0;z-index:2;border-right:1px solid var(--line-2)}
 .sheet thead th.c-date{z-index:6}
 .sheet tbody tr:hover td{background:var(--row-hover)}
-.sheet td input[type=text],.sheet td input[type=date]{display:block;width:100%;border:0;background:transparent;padding:9px 10px;border-radius:0;min-height:38px;text-overflow:ellipsis}
-.sheet td input[type=date]{font-variant-numeric:tabular-nums;padding-right:4px}
+.sheet td input[type=text],.sheet td input[type=date]{display:block;width:100%;border:0;background:transparent;padding:7px 6px;border-radius:0;min-height:34px;text-overflow:ellipsis}
+.sheet td input[type=date]{font-variant-numeric:tabular-nums;padding-right:1px}
+.sheet td input[list]::-webkit-calendar-picker-indicator{display:none!important}
+.sheet td input[type=date]::-webkit-calendar-picker-indicator{margin:0;padding:0 1px;opacity:.55;cursor:pointer}
 .sheet td input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface)}
 .sheet td input.bad{outline:2px solid var(--danger);outline-offset:-2px}
 .sheet td.c-money input{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .sheet td.ingreso input{color:var(--ok)}
 .sheet td.egreso input{color:var(--out)}
 .sheet td.c-check{text-align:center;vertical-align:middle}
-.sheet td.c-check input{width:19px;height:19px;accent-color:var(--ok);cursor:pointer;vertical-align:middle}
+.sheet td.c-check input{width:17px;height:17px;accent-color:var(--ok);cursor:pointer;vertical-align:middle}
 .sheet td.c-check input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 .sheet td input.est-pend{color:var(--warn);font-weight:700}
 .sheet td input.est-ok{color:var(--ok);font-weight:700}
 .sheet td.c-fact{position:relative}
-.sheet td.c-fact a{position:absolute;right:4px;top:50%;transform:translateY(-50%);background:var(--accent-soft);color:var(--accent-ink);border-radius:6px;padding:2px 7px;font-size:12px;font-weight:700;text-decoration:none}
-.sheet td.c-fact.link input{padding-right:40px}
+.sheet td.c-fact a{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:var(--accent-soft);color:var(--accent-ink);border-radius:5px;padding:1px 5px;font-size:11px;font-weight:700;text-decoration:none}
+.sheet td.c-fact.link input{padding-right:26px}
 .sheet td.c-act{white-space:nowrap;text-align:center;vertical-align:middle}
-.sheet td.c-act button{background:none;border:0;color:var(--muted);padding:4px 7px;border-radius:6px;font-size:15px;line-height:1}
+.sheet td.c-act button{background:none;border:0;color:var(--muted);padding:3px 4px;border-radius:5px;font-size:13px;line-height:1}
 .sheet td.c-act button:hover{background:var(--surface-2);color:var(--ink)}
 .sheet td.c-act button.del:hover{color:var(--danger)}
 .sheet tr.nuevo td{background:var(--paper)}
 .sheet tr.nuevo input::placeholder{color:var(--muted);font-style:italic}
 .sheet tr.err td{box-shadow:inset 0 -2px 0 var(--danger)}
-.sheet tr.mes td{background:var(--surface-2);padding:8px 12px;font-weight:700;font-size:13px;letter-spacing:.04em;border-right:0}
-.sheet tr.mes td .mn{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.05em;margin-right:14px;position:sticky;left:12px}
-.sheet tr.mes td .ms{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums;position:sticky;left:140px}
+.sheet tr.mes td{background:var(--surface-2);padding:7px 8px;font-weight:700;font-size:13px;letter-spacing:.04em;border-right:0}
+.sheet tr.mes td .mn{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.05em;margin-right:14px;position:sticky;left:8px}
+.sheet tr.mes td .ms{color:var(--ink-2);font-weight:600;font-variant-numeric:tabular-nums;position:sticky;left:120px}
 .sheet tr.mes td .ms i{font-style:normal;margin-right:14px}
 .sheet tr.mes td .ms i.in{color:var(--ok)}.sheet tr.mes td .ms i.out{color:var(--out)}
-.sheet tfoot td{position:sticky;bottom:0;z-index:3;background:var(--surface-2);border-top:1px solid var(--line-2);border-bottom:0;padding:9px 10px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
+.sheet tfoot td{position:sticky;bottom:0;z-index:3;background:var(--surface-2);border-top:1px solid var(--line-2);border-bottom:0;padding:8px 6px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
 .sheet tfoot td.c-date{z-index:5;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 .sheet tfoot td.r{text-align:right}
-.sheet tfoot td .fb{position:sticky;left:152px}
+.sheet tfoot td .fb{position:sticky;left:120px}
 .sheet tfoot td.in{color:var(--ok)}.sheet tfoot td.out{color:var(--out)}
 .empty{padding:36px 16px;text-align:center;color:var(--muted)}
 .hint{color:var(--muted);font-size:13px;margin-top:10px}
@@ -297,7 +299,7 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.1';
+const VERSION='1.2';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -306,19 +308,19 @@ const TABS=[
 ];
 
 const COLS=[
-  {k:'fecha',      t:'Fecha',             w:140, type:'date'},
-  {k:'ingreso',    t:'Ingresos',          w:118, type:'money'},
-  {k:'egreso',     t:'Egresos',           w:118, type:'money'},
-  {k:'detalle',    t:'Detalle operación', w:270, type:'text'},
-  {k:'tipo',       t:'Tipo de operación', w:165, type:'list'},
-  {k:'desde',      t:'Desde dónde',       w:155, type:'list'},
-  {k:'hacia',      t:'Hacia dónde',       w:155, type:'list'},
-  {k:'estado',     t:'Estado',            w:130, type:'list'},
-  {k:'informacion',t:'Información',       w:220, type:'text'},
-  {k:'factura',    t:'Facturas',          w:160, type:'text'},
-  {k:'pagado',     t:'Pagado',            w:78,  type:'check'},
-  {k:'clara',      t:'Clara',             w:70,  type:'check'},
-  {k:'comentarios',t:'Comentarios',       w:250, type:'text'},
+  {k:'fecha',      t:'Fecha',             w:104, type:'date'},
+  {k:'ingreso',    t:'Ingresos',          w:84, type:'money'},
+  {k:'egreso',     t:'Egresos',           w:84, type:'money'},
+  {k:'detalle',    t:'Detalle operación', w:190, type:'text'},
+  {k:'tipo',       t:'Tipo de operación', w:110, type:'list'},
+  {k:'desde',      t:'Desde dónde',       w:92, type:'list'},
+  {k:'hacia',      t:'Hacia dónde',       w:98, type:'list'},
+  {k:'estado',     t:'Estado',            w:90, type:'list'},
+  {k:'informacion',t:'Información',       w:124, type:'text'},
+  {k:'factura',    t:'Facturas',          w:98, type:'text'},
+  {k:'pagado',     t:'Pagado',            w:56,  type:'check'},
+  {k:'clara',      t:'Clara',             w:48,  type:'check'},
+  {k:'comentarios',t:'Comentarios',       w:136, type:'text'},
 ];
 const COLBY=Object.fromEntries(COLS.map(c=>[c.k,c]));
 const FIELDS=COLS.map(c=>c.k);
@@ -601,9 +603,9 @@ const visibles=()=>ordenar(rows.filter(r=>enPeriodo(r)&&pasaFiltro(r)));
 
 /* ---------- tabla ---------- */
 function renderCabecera(){
-  $('cols').innerHTML=COLS.map(c=>`<col style="width:${c.w}px">`).join('')+'<col style="width:78px">';
+  const ACC=50, tot=COLS.reduce((t,c)=>t+c.w,0)+ACC, pc=w=>(w/tot*100).toFixed(3)+'%';
+  $('cols').innerHTML=COLS.map(c=>`<col style="width:${pc(c.w)}">`).join('')+`<col style="width:${pc(ACC)}">`;
   $('headrow').innerHTML=COLS.map(c=>`<th scope="col" class="${c.type==='date'?'c-date':''} ${c.type==='money'?'r':''} ${c.type==='check'?'c':''}">${esc(c.t)}</th>`).join('')+'<th scope="col"></th>';
-  $('sheet').style.width=(COLS.reduce((s,c)=>s+c.w,0)+78)+'px';
 }
 function claseEstado(v){ v=(v||'').toLowerCase(); return /pend|falta|espera|impag/.test(v)?'est-pend':/pag|complet|ok|hecho|concil|cobr/.test(v)?'est-ok':''; }
 function celda(c,r){
