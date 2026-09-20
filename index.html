@@ -133,7 +133,6 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet tbody tr:hover td{background:var(--row-hover)}
 .sheet td input[type=text],.sheet td input[type=date]{display:block;width:100%;border:0;background:transparent;padding:7px 6px;border-radius:0;min-height:34px;text-overflow:ellipsis}
 .sheet td input[type=date]{font-variant-numeric:tabular-nums;padding-right:1px}
-.sheet td input[list]::-webkit-calendar-picker-indicator{display:none!important}
 .sheet td input[type=date]::-webkit-calendar-picker-indicator{margin:0;padding:0 1px;opacity:.55;cursor:pointer}
 .sheet td input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface)}
 .sheet td input.bad{outline:2px solid var(--danger);outline-offset:-2px}
@@ -142,7 +141,10 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet td.egreso input{color:var(--out)}
 .sheet td.c-check{text-align:center;vertical-align:middle}
 .sheet td.c-check input{width:17px;height:17px;accent-color:var(--ok);cursor:pointer;vertical-align:middle}
-.sheet td.c-check input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sheet td.c-check input:focus,.sheet td.c-check input:focus-visible{outline:none}
+.sheet td.c-check:focus-within{box-shadow:inset 0 0 0 2px var(--accent)}
+@keyframes movida{from{background:var(--accent-soft)}}
+@media (prefers-reduced-motion:no-preference){ .sheet tr.movida td{animation:movida 1.4s ease-out} }
 .sheet td input.est-pend{color:var(--warn);font-weight:700}
 .sheet td input.est-ok{color:var(--ok);font-weight:700}
 .sheet td.c-fact{position:relative}
@@ -167,6 +169,12 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet tfoot td.in{color:var(--ok)}.sheet tfoot td.out{color:var(--out)}
 .empty{padding:36px 16px;text-align:center;color:var(--muted)}
 .hint{color:var(--muted);font-size:13px;margin-top:10px}
+
+/* ---------- sugerencias ---------- */
+.ac{position:fixed;z-index:70;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;box-shadow:var(--shadow);padding:4px;max-height:236px;overflow:auto;font-size:13px;min-width:150px}
+.ac div{padding:6px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.ac div:hover{background:var(--surface-2)}
+.ac div.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
 
 /* ---------- modal ---------- */
 .overlay{position:fixed;inset:0;z-index:60;background:rgba(21,19,15,.5);display:flex;align-items:center;justify-content:center;padding:16px}
@@ -278,14 +286,11 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
         <tfoot><tr id="footrow"></tr></tfoot>
       </table>
     </div>
-    <p class="hint">Los cambios se guardan solos al salir de cada celda. Enter baja a la fila de abajo. La última fila en blanco es para cargar un movimiento nuevo. <span id="copiaInfo"></span> <span id="ver"></span></p>
+    <p class="hint">Los cambios se guardan solos al salir de cada celda y la fila se acomoda sola por fecha. Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda), Enter baja a la fila de abajo. En las sugerencias: flechas para elegir, Enter o Tab para aceptar. La última fila en blanco es para cargar un movimiento nuevo. <span id="copiaInfo"></span> <span id="ver"></span></p>
   </main>
 </div>
 
-<datalist id="dl-tipo"></datalist>
-<datalist id="dl-desde"></datalist>
-<datalist id="dl-hacia"></datalist>
-<datalist id="dl-estado"></datalist>
+<div class="ac" id="ac" role="listbox" hidden></div>
 <div id="modalHost"></div>
 <div id="toastHost"></div>
 
@@ -299,7 +304,7 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.2';
+const VERSION='1.3';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -614,7 +619,7 @@ function celda(c,r){
   if(c.type==='date')  return `<td class="c-date"><input type="date" data-k="fecha" value="${esc(v||'')}" aria-label="Fecha"></td>`;
   if(c.type==='money') return `<td class="c-money ${c.k}"><input type="text" inputmode="decimal" autocomplete="off" data-k="${c.k}" value="${esc(fmt(v))}" aria-label="${esc(c.t)}"></td>`;
   if(c.k==='factura')  return `<td class="c-fact ${esUrl(v)?'link':''}"><input type="text" autocomplete="off" data-k="factura" value="${esc(v)}" title="${esc(v)}" aria-label="Facturas">${esUrl(v)?`<a href="${esc(v.trim())}" target="_blank" rel="noopener noreferrer" title="Abrir factura">↗</a>`:''}</td>`;
-  const lista=c.type==='list'?` list="dl-${c.k}"`:'';
+  const lista=c.type==='list'?' aria-autocomplete="list" aria-controls="ac"':'';
   const cls=c.k==='estado'?claseEstado(v):'';
   const ph=(!r.id&&c.k==='detalle')?' placeholder="Nuevo movimiento…"':'';
   return `<td><input type="text" autocomplete="off" data-k="${c.k}"${lista} class="${cls}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(c.t)}"${ph}></td>`;
@@ -684,7 +689,7 @@ function recalc(){
     for(const v of SUGERIDOS[k]) set.set(v.toLowerCase(),v);
     for(const r of rows){ const v=(r[k]||'').trim(); if(v&&!set.has(v.toLowerCase())) set.set(v.toLowerCase(),v); }
     if(k==='desde'||k==='hacia') for(const r of rows) for(const kk of ['desde','hacia']){ const v=(r[kk]||'').trim(); if(v&&!set.has(v.toLowerCase())) set.set(v.toLowerCase(),v); }
-    $('dl-'+k).innerHTML=[...set.values()].sort((a,b)=>a.localeCompare(b,'es')).map(v=>`<option value="${esc(v)}">`).join('');
+    SUG[k]=[...set.values()].sort((a,b)=>a.localeCompare(b,'es'));
   }
 }
 
@@ -714,11 +719,93 @@ function guardar(tr,patch,redibujar){
       if(!r.fecha.startsWith(year+'-')) rows=rows.filter(x=>x!==r);
       renderTabla(); recalc();
     }else if(alta){
+      if(!tr.isConnected){ renderTabla(); recalc(); return; }
       const nt=crearTr(borrador()); $('tbody').appendChild(nt);
       if(tr._enterK){ const i=nt.querySelector(`[data-k="${tr._enterK}"]`); tr._enterK=null; if(i) i.focus(); }
+      if(tr._reordenar&&!tr.contains(document.activeElement)) colocar(tr,document.activeElement);
     }
   }).catch(e=>{ tr.classList.add('err'); setSync('error'); toast('No se pudo guardar: '+errMsg(e)); });
 }
+
+/* ---------- sugerencias (Tipo, Desde, Hacia, Estado) ----------
+   Lista propia en vez del <datalist> del navegador, para que flechas + Enter
+   funcionen igual en Chrome, Safari y Firefox. */
+const SUG={tipo:[],desde:[],hacia:[],estado:[]};
+const ac={inp:null,i:-1};
+const norm=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+function acAbrir(inp,todo){
+  const t=norm(inp.value.trim());
+  let ops=(SUG[inp.dataset.k]||[]).filter(o=>norm(o)!==t);
+  if(t&&!todo) ops=ops.filter(o=>norm(o).includes(t));
+  else if(t){ const f=ops.filter(o=>norm(o).includes(t)); if(f.length) ops=f; }
+  ops.sort((a,b)=>(norm(b).startsWith(t)-norm(a).startsWith(t)));
+  if(!ops.length){ acCerrar(); return; }
+  const el=$('ac'); el.innerHTML='';
+  ops.forEach((o,i)=>{ const d=document.createElement('div'); d.textContent=o; d.setAttribute('role','option'); d.id='ac-'+i; el.appendChild(d); });
+  el.hidden=false; ac.inp=inp; ac.i=-1;
+  const r=inp.getBoundingClientRect(), alto=Math.min(236,ops.length*30+10);
+  el.style.left=Math.max(8,Math.min(r.left,innerWidth-el.offsetWidth-8))+'px';
+  el.style.minWidth=r.width+'px';
+  el.style.top=(r.bottom+alto>innerHeight-8&&r.top-alto>8?r.top-alto-2:r.bottom+2)+'px';
+}
+function acCerrar(){ if(!ac.inp) return; ac.inp.removeAttribute('aria-activedescendant'); ac.inp=null; ac.i=-1; $('ac').hidden=true; }
+function acMover(d){
+  const ops=$('ac').children; if(!ops.length) return;
+  if(ac.i>=0) ops[ac.i].classList.remove('on');
+  ac.i=ac.i<0?(d>0?0:ops.length-1):(ac.i+d+ops.length)%ops.length;
+  ops[ac.i].classList.add('on'); ops[ac.i].scrollIntoView({block:'nearest'});
+  ac.inp.setAttribute('aria-activedescendant',ops[ac.i].id);
+}
+function acElegir(i){
+  const inp=ac.inp, op=$('ac').children[i]; if(!inp||!op) return;
+  inp.value=op.textContent; acCerrar();
+  inp.dispatchEvent(new Event('change',{bubbles:true}));
+}
+$('ac').addEventListener('mousedown',e=>{ e.preventDefault(); const d=e.target.closest('[role=option]'); if(d) acElegir([...$('ac').children].indexOf(d)); });
+$('tbody').addEventListener('input',e=>{ const inp=e.target; if(inp.dataset&&SUG[inp.dataset.k]) acAbrir(inp,false); });
+$('tbody').addEventListener('focusout',acCerrar);
+$('sheetwrap').addEventListener('scroll',acCerrar,{passive:true});
+window.addEventListener('scroll',acCerrar,{passive:true});
+window.addEventListener('resize',acCerrar);
+
+/* Orden por fecha: cuando se sale de una fila nueva o con la fecha cambiada,
+   la fila se va a su lugar. Se hace al salir (no mientras se escribe) para no
+   mover la fila debajo de las manos. */
+const cmpFila=(a,b)=>a.fecha.localeCompare(b.fecha)||((a.id||Infinity)-(b.id||Infinity));
+const trDato=(tr,dir)=>{ let x=tr[dir]; while(x&&!x.dataset.id) x=x[dir]; return x; };
+function destello(tr){ tr.classList.add('movida'); setTimeout(()=>tr.classList.remove('movida'),1500); }
+function colocar(tr,foco){
+  const r=trRow.get(tr); if(!r||!r.id||!tr.isConnected) return;   // si el alta sigue en curso, lo hace guardar() al terminar
+  tr._reordenar=false;
+  const p=trDato(tr,'previousElementSibling'), n=trDato(tr,'nextElementSibling');
+  const enOrden=(!p||cmpFila(trRow.get(p),r)<=0)&&(!n||cmpFila(r,trRow.get(n))<=0);
+  if(enOrden&&(month>=0||enSuMes(tr,r))) return;
+  const tb=$('tbody');
+  if(month<0){
+    // vista de año: hay títulos de mes en el medio, se redibuja y se devuelve el foco
+    const ftr=foco&&foco.closest?foco.closest('#tbody tr'):null, fr=ftr?trRow.get(ftr):null, fk=foco&&foco.dataset?foco.dataset.k:null;
+    renderTabla(); recalc();
+    for(const x of tb.children){
+      const xr=trRow.get(x); if(!xr) continue;
+      if(xr===r) destello(x);
+      if(fr&&fk&&(xr===fr||(!fr.id&&!xr.id))){ const i=x.querySelector(`[data-k="${fk}"]`); if(i) i.focus(); }
+    }
+    return;
+  }
+  const sig=[...tb.children].find(x=>x!==tr&&x.dataset.id&&cmpFila(trRow.get(x),r)>0)||[...tb.querySelectorAll('tr.nuevo')].pop()||null;
+  // se arma la fila de nuevo desde los datos (mover la misma fila deja celdas sin repintar en Chrome)
+  const nueva=crearTr(r); nueva._q=tr._q; tr.remove(); tb.insertBefore(nueva,sig); destello(nueva);
+}
+function enSuMes(tr,r){
+  // vista de año: el título de mes más cercano hacia arriba tiene que ser el del mes de la fila
+  let x=tr.previousElementSibling; while(x&&!x.classList.contains('mes')) x=x.previousElementSibling;
+  return !!x&&!!x.querySelector('#sub-'+(+r.fecha.slice(5,7)-1));
+}
+$('tbody').addEventListener('focusout',e=>{
+  const tr=e.target.closest&&e.target.closest('tr'); if(!tr||!tr._reordenar) return;
+  if(e.relatedTarget&&tr.contains(e.relatedTarget)) return;
+  colocar(tr,e.relatedTarget);
+});
 
 $('tbody').addEventListener('change',e=>{
   const inp=e.target.closest('input[data-k]'); if(!inp) return;
@@ -739,7 +826,8 @@ $('tbody').addEventListener('change',e=>{
   if(c.type==='text'||c.type==='list') inp.title=v;
   if(k==='estado') inp.className=claseEstado(v);
   if(k==='factura'){ const td=inp.parentElement; td.outerHTML=celda(c,r); }
-  guardar(tr,{[k]:v},k==='fecha'&&!!r.id);
+  if(k==='fecha'||!r.id) tr._reordenar=true;
+  guardar(tr,{[k]:v},k==='fecha'&&!!r.id&&!(enPeriodo(r)&&pasaFiltro(r)));
 });
 $('tbody').addEventListener('focusin',e=>{
   const inp=e.target; if(!inp.matches||!inp.matches('.c-money input')) return;
@@ -752,8 +840,31 @@ $('tbody').addEventListener('focusout',e=>{
   inp.value=fmt(r[inp.dataset.k]);
 });
 $('tbody').addEventListener('keydown',e=>{
+  const inp=e.target.closest('input[data-k]'); if(!inp) return;
+  // Celdas con sugerencias: flechas para recorrer la lista, Enter o Tab para aceptar.
+  if(SUG[inp.dataset.k]){
+    const abierta=ac.inp===inp;
+    if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+      e.preventDefault();
+      if(!abierta) acAbrir(inp,true);
+      if(ac.inp===inp) acMover(e.key==='ArrowDown'?1:-1);
+      return;
+    }
+    if(e.key==='Escape'&&abierta){ e.preventDefault(); acCerrar(); return; }
+    if(e.key==='Enter'&&abierta&&ac.i>=0){ e.preventDefault(); acElegir(ac.i); return; }   // Enter acepta la sugerencia marcada y se queda en la celda
+    if(e.key==='Tab'&&abierta&&ac.i>=0) acElegir(ac.i);                                  // Tab la acepta y sigue a la celda de al lado
+    else if(e.key==='Enter'||e.key==='Tab') acCerrar();
+  }
+  // Tab recorre todas las celdas, incluidas las casillas Pagado y Clara (la barra
+  // espaciadora las tilda). En la fecha se deja el Tab del navegador, que va por día/mes/año.
+  if(e.key==='Tab'&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
+    if(inp.type==='date') return;
+    const todas=[...$('tbody').querySelectorAll('input[data-k]')], dest=todas[todas.indexOf(inp)+(e.shiftKey?-1:1)];
+    if(!dest) return;
+    e.preventDefault(); dest.focus();
+    return;
+  }
   if(e.key!=='Enter') return;
-  const inp=e.target.closest('input[data-k]'); if(!inp||inp.type==='checkbox') return;
   e.preventDefault();
   const tr=inp.closest('tr'), k=inp.dataset.k;
   let sig=tr.nextElementSibling; while(sig&&!sig.querySelector('[data-k]')) sig=sig.nextElementSibling;
