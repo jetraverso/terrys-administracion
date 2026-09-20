@@ -128,6 +128,12 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet th:last-child,.sheet td:last-child{border-right:0}
 .sheet thead th{position:sticky;top:0;z-index:4;background:var(--surface-2);text-align:left;vertical-align:bottom;padding:8px 6px 7px;font-size:10.5px;line-height:1.2;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);font-weight:700;border-bottom:1px solid var(--line-2)}
 .sheet thead th.r{text-align:right}
+.sheet thead th .rz{position:absolute;top:0;right:0;bottom:0;width:9px;cursor:col-resize;touch-action:none;z-index:1}
+.sheet thead th .rz::after{content:"";position:absolute;top:22%;bottom:22%;right:0;width:3px;border-radius:2px;background:transparent}
+.sheet thead th .rz:hover::after,.sheet thead th .rz.on::after{background:var(--accent)}
+.sheet thead th.manual{box-shadow:inset 0 -2px 0 var(--accent)}
+body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-select:none!important;-webkit-user-select:none!important}
+.linkbtn{background:none;border:0;padding:0;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px;font-size:inherit}
 .sheet thead th.c{text-align:center}
 .sheet .c-date{position:sticky;left:0;z-index:2;border-right:1px solid var(--line-2)}
 .sheet thead th.c-date{z-index:6}
@@ -178,6 +184,8 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet tfoot td.in{color:var(--ok)}.sheet tfoot td.out{color:var(--out)}
 .empty{padding:36px 16px;text-align:center;color:var(--muted)}
 .hint{color:var(--muted);font-size:13px;margin-top:10px}
+.ayuda summary{cursor:pointer;font-weight:600;width:fit-content}
+.ayuda ul{margin:8px 0 0;padding-left:18px;display:grid;gap:4px;max-width:900px}
 
 /* ---------- sugerencias ---------- */
 .ac{position:fixed;z-index:70;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;box-shadow:var(--shadow);padding:4px;max-height:236px;overflow:auto;font-size:13px;min-width:150px}
@@ -296,7 +304,17 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
         <tfoot><tr id="footrow"></tr></tfoot>
       </table>
     </div>
-    <p class="hint">Los cambios se guardan solos al salir de cada celda y la fila se acomoda sola por fecha. Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda), Enter baja a la fila de abajo. En las sugerencias: flechas para elegir, Enter o Tab para aceptar. En Facturas: escribí el nombre y ponele el link con el botón de la cadenita (o pegá el link directo y queda como FACTURA). La última fila en blanco es para cargar un movimiento nuevo. <span id="copiaInfo"></span> <span id="ver"></span></p>
+    <details class="hint ayuda">
+      <summary>Cómo se usa la planilla</summary>
+      <ul>
+        <li>Los cambios se guardan solos al salir de cada celda, y la fila se acomoda sola por fecha. La última fila en blanco es para cargar un movimiento nuevo.</li>
+        <li>Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda). Enter baja a la fila de abajo.</li>
+        <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
+        <li>Facturas: escribí el nombre y ponele el link con el botón de la cadenita (o pegá el link directo y queda como FACTURA).</li>
+        <li>Ancho de columnas: arrastrá el borde derecho del título. Queda guardado en este navegador. Doble clic en ese borde la vuelve a automática.</li>
+      </ul>
+    </details>
+    <p class="hint"><button type="button" class="linkbtn" id="btnAnchos" hidden>Volver todas las columnas al ancho automático</button> <span id="copiaInfo"></span> <span id="ver"></span></p>
   </main>
 </div>
 
@@ -314,7 +332,7 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.4';
+const VERSION='1.5';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -339,11 +357,6 @@ const COLS=[
 ];
 const COLBY=Object.fromEntries(COLS.map(c=>[c.k,c]));
 const FIELDS=COLS.map(c=>c.k);
-const SUGERIDOS={
-  tipo:['Transferencia','Tarjeta','Efectivo','Domiciliación','Bizum'],
-  estado:['Pendiente','Pagado'],
-  desde:[], hacia:[],
-};
 const MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MES3=['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 
@@ -435,6 +448,16 @@ const db=SB?{
     }
     return out;
   },
+  async listSug(empresa){
+    const out=[]; const paso=1000;
+    for(let desde=0;;desde+=paso){
+      const {data,error}=await sbc.from('movimientos').select('tipo,desde,hacia,estado').eq('empresa',empresa).order('id').range(desde,desde+paso-1);
+      if(error) throw error;
+      out.push(...data);
+      if(data.length<paso) break;
+    }
+    return out;
+  },
   async insert(r){ const {data,error}=await sbc.from('movimientos').insert(limpio(r)).select('id').single(); if(error) throw error; return data; },
   async insertMany(list){
     for(let i=0;i<list.length;i+=500){ const {error}=await sbc.from('movimientos').insert(list.slice(i,i+500).map(limpio)); if(error) throw error; }
@@ -449,6 +472,7 @@ const db=SB?{
   return {
     async list(e,y){ return leer(e).filter(r=>r.fecha.startsWith(y+'-')).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id-b.id); },
     async listAll(){ return TABS.flatMap(t=>leer(t.empresa).map(r=>({...r,empresa:t.empresa}))).sort((a,b)=>a.empresa.localeCompare(b.empresa)||a.fecha.localeCompare(b.fecha)||a.id-b.id); },
+    async listSug(e){ return leer(e); },
     async insert(r){ const l=leer(tab.empresa); const o={id:nuevoId(),...limpio(r)}; l.push(o); grabar(tab.empresa,l); return {id:o.id}; },
     async insertMany(list){ const l=leer(tab.empresa); for(const r of list) l.push({id:nuevoId(),...limpio(r)}); grabar(tab.empresa,l); },
     async update(id,patch){ const l=leer(tab.empresa); const o=l.find(x=>x.id===id); if(o) Object.assign(o,patch); grabar(tab.empresa,l); },
@@ -480,7 +504,7 @@ window.addEventListener('beforeunload',e=>{ if(pendientes>0){ e.preventDefault()
 
 /* ---------- login ---------- */
 function showLogin(msg){
-  user=null; rows=[]; loadedKey=''; mfaUser=null; mfaFactor=null;
+  user=null; rows=[]; loadedKey=''; mfaUser=null; mfaFactor=null; for(const k in memoria) delete memoria[k];
   $('app').hidden=true; $('login').hidden=false; $('loginForm').hidden=false; $('mfaForm').hidden=true;
   $('mfaQr').removeAttribute('src'); $('mfaSecret').textContent='';
   $('lgDemo').hidden=SB; $('lgErr').textContent=msg||''; $('lgPass').value='';
@@ -589,6 +613,18 @@ async function cargar(force){
     catch(e){ rows=[]; loadedKey=''; setSync('error'); $('sync').classList.add('err'); toast('No se pudieron cargar los datos: '+errMsg(e)); }
   }
   renderTodo();
+  cargarMemoria();
+}
+const memoria={};
+async function cargarMemoria(){
+  const e=tab.empresa; if(memoria[e]) return;
+  memoria[e]={tipo:[],desde:[],hacia:[],estado:[]};
+  try{
+    const l=await db.listSug(e), m={tipo:new Map(),desde:new Map(),hacia:new Map(),estado:new Map()};
+    for(const r of l) for(const k in m){ const v=(r[k]||'').trim(); if(v&&!m[k].has(v.toLowerCase())) m[k].set(v.toLowerCase(),v); }
+    for(const k in m) memoria[e][k]=[...m[k].values()];
+    if(tab.empresa===e&&user) recalc();
+  }catch(_){ delete memoria[e]; }
 }
 function renderTodo(){ renderPeriodo(); renderTabla(); recalc(); }
 
@@ -633,7 +669,7 @@ const visibles=()=>ordenar(rows.filter(r=>enPeriodo(r)&&pasaFiltro(r)));
 /* ---------- tabla ---------- */
 function renderCabecera(){
   $('cols').innerHTML=COLS.map(c=>`<col id="col-${c.k}">`).join('')+'<col id="col-acc">';
-  $('headrow').innerHTML=COLS.map(c=>`<th scope="col" class="${c.type==='date'?'c-date':''} ${c.type==='money'?'r':''} ${c.type==='check'?'c':''}">${esc(c.t)}</th>`).join('')+'<th scope="col"></th>';
+  $('headrow').innerHTML=COLS.map(c=>`<th scope="col" id="th-${c.k}" class="${c.type==='date'?'c-date':''} ${c.type==='money'?'r':''} ${c.type==='check'?'c':''}">${esc(c.t)}<span class="rz" data-rz="${c.k}" title="Arrastrá para cambiar el ancho. Doble clic: ancho automático."></span></th>`).join('')+'<th scope="col"></th>';
 }
 
 /* ---------- anchos de columna según el contenido ----------
@@ -660,11 +696,19 @@ function anchoTexto(c,r){
   return t?medir(t,c.k==='estado'?F13B:F13)+16:0;
 }
 function anchoTitulo(t){ return Math.max(...t.toUpperCase().split(' ').map(p=>medir(p,FTH)+p.length*0.75))+15; }
+/* Anchos puestos a mano (arrastrando el borde del título): mandan sobre el automático
+   y se recuerdan en este navegador, por solapa. */
+const claveAnchos=()=>'terrys_admin_anchos_'+tab.id;
+function anchosManuales(){ try{ const o=JSON.parse(localStorage.getItem(claveAnchos())||'{}'); return o&&typeof o==='object'?o:{}; }catch(_){ return {}; } }
+function guardarAnchosManuales(o){ try{ if(Object.keys(o).length) localStorage.setItem(claveAnchos(),JSON.stringify(o)); else localStorage.removeItem(claveAnchos()); }catch(_){} }
+let anchoActual={};
 function ajustarAnchos(soloCrecer){
   const disp=$('sheetwrap').clientWidth; if(!disp) return;
+  const man=anchosManuales();
   const filas=[...$('tbody').children].map(tr=>trRow.get(tr)).filter(Boolean);
   const pide={};
   for(const c of COLS){
+    if(man[c.k]){ pide[c.k]=man[c.k]; continue; }
     if(FIJAS[c.k]){ pide[c.k]=FIJAS[c.k]; continue; }
     let w=Math.max(anchoTitulo(c.t),c.type==='money'?72:64);
     for(const r of filas){ const a=anchoTexto(c,r); if(a>w) w=a; }
@@ -676,23 +720,61 @@ function ajustarAnchos(soloCrecer){
   let total=suma();
   if(total>disp){
     // no entra: se angostan las de texto largo (hasta su piso) y su texto pasa a varios renglones
-    const otras=total-LARGAS.reduce((t,k)=>t+w[k],0), lugar=disp-otras, pisos=LARGAS.reduce((t,k)=>t+Math.min(PISO[k],pide[k]),0);
-    if(lugar<=pisos) for(const k of LARGAS) w[k]=Math.min(PISO[k],pide[k]);
+    const largas=LARGAS.filter(k=>!man[k]);
+    const otras=total-largas.reduce((t,k)=>t+w[k],0), lugar=disp-otras, pisos=largas.reduce((t,k)=>t+Math.min(PISO[k],pide[k]),0);
+    if(lugar<=pisos) for(const k of largas) w[k]=Math.min(PISO[k],pide[k]);
     else{
-      const sobre=lugar-pisos, extraPedido=LARGAS.reduce((t,k)=>t+Math.max(0,pide[k]-PISO[k]),0)||1;
-      for(const k of LARGAS) w[k]=Math.floor(Math.min(PISO[k],pide[k])+sobre*Math.max(0,pide[k]-PISO[k])/extraPedido);
+      const sobre=lugar-pisos, extraPedido=largas.reduce((t,k)=>t+Math.max(0,pide[k]-PISO[k]),0)||1;
+      for(const k of largas) w[k]=Math.floor(Math.min(PISO[k],pide[k])+sobre*Math.max(0,pide[k]-PISO[k])/extraPedido);
     }
   }else{
-    // sobra: se reparte entre las columnas que no son de ancho fijo
-    const flex=COLS.filter(c=>!FIJAS[c.k]), base=flex.reduce((t,c)=>t+w[c.k],0), extra=disp-total;
-    for(const c of flex) w[c.k]=Math.floor(w[c.k]+extra*w[c.k]/base);
+    // sobra: se reparte entre las columnas automáticas que no son de ancho fijo
+    const flex=COLS.filter(c=>!FIJAS[c.k]&&!man[c.k]), base=flex.reduce((t,c)=>t+w[c.k],0), extra=disp-total;
+    if(base) for(const c of flex) w[c.k]=Math.floor(w[c.k]+extra*w[c.k]/base);
   }
-  total=suma();
-  for(const c of COLS) $('col-'+c.k).style.width=w[c.k]+'px';
-  $('col-acc').style.width=(ANCHO_ACC+Math.max(0,disp-total))+'px';
-  $('sheet').style.width=Math.max(total,disp)+'px';
+  anchoActual=w;
+  aplicarAnchos();
+  for(const c of COLS) $('th-'+c.k).classList.toggle('manual',!!man[c.k]);
+  $('btnAnchos').hidden=!Object.keys(man).length;
   ajustarAltos();
 }
+function aplicarAnchos(){
+  const disp=$('sheetwrap').clientWidth, total=COLS.reduce((t,c)=>t+anchoActual[c.k],0)+ANCHO_ACC;
+  for(const c of COLS) $('col-'+c.k).style.width=anchoActual[c.k]+'px';
+  $('col-acc').style.width=(ANCHO_ACC+Math.max(0,disp-total))+'px';
+  $('sheet').style.width=Math.max(total,disp)+'px';
+}
+/* arrastrar el borde del título */
+(function(){
+  let k=null, x0=0, w0=0, asa=null, raf=0, xUlt=0;
+  const MIN=44;
+  $('headrow').addEventListener('pointerdown',e=>{
+    const h=e.target.closest('.rz'); if(!h||e.button>0) return;
+    e.preventDefault(); acCerrar();
+    k=h.dataset.rz; asa=h; x0=xUlt=e.clientX; w0=anchoActual[k]||$('th-'+k).offsetWidth;
+    h.classList.add('on'); h.setPointerCapture(e.pointerId); document.body.classList.add('redimensionando');
+  });
+  $('headrow').addEventListener('pointermove',e=>{
+    if(!k) return; xUlt=e.clientX;
+    if(raf) return;
+    raf=requestAnimationFrame(()=>{ raf=0; if(!k) return; anchoActual[k]=Math.max(MIN,Math.round(w0+xUlt-x0)); aplicarAnchos(); });
+  });
+  const soltar=e=>{
+    if(!k) return;
+    const w=Math.max(MIN,Math.round(w0+e.clientX-x0)), movio=Math.abs(e.clientX-x0)>2;
+    asa.classList.remove('on'); document.body.classList.remove('redimensionando');
+    if(movio){ const man=anchosManuales(); man[k]=w; guardarAnchosManuales(man); }
+    k=null; asa=null;
+    ajustarAnchos(false);
+  };
+  $('headrow').addEventListener('pointerup',soltar);
+  $('headrow').addEventListener('pointercancel',soltar);
+  $('headrow').addEventListener('dblclick',e=>{
+    const h=e.target.closest('.rz'); if(!h) return;
+    const man=anchosManuales(); delete man[h.dataset.rz]; guardarAnchosManuales(man); ajustarAnchos(false);
+  });
+  $('btnAnchos').onclick=()=>{ guardarAnchosManuales({}); ajustarAnchos(false); toast('Columnas en ancho automático'); };
+})();
 function ajustarAltos(dentro){
   const tas=[...(dentro||$('tbody')).querySelectorAll('textarea')];
   for(const t of tas) t.style.height='auto';
@@ -785,10 +867,10 @@ function recalc(){
   }
 
   for(const k of ['tipo','desde','hacia','estado']){
+    // cada columna recuerda solo lo que se cargó en ESA columna (en cualquier año de esta solapa)
     const set=new Map();
-    for(const v of SUGERIDOS[k]) set.set(v.toLowerCase(),v);
+    for(const v of ((memoria[tab.empresa]||{})[k]||[])) set.set(v.toLowerCase(),v);
     for(const r of rows){ const v=(r[k]||'').trim(); if(v&&!set.has(v.toLowerCase())) set.set(v.toLowerCase(),v); }
-    if(k==='desde'||k==='hacia') for(const r of rows) for(const kk of ['desde','hacia']){ const v=(r[kk]||'').trim(); if(v&&!set.has(v.toLowerCase())) set.set(v.toLowerCase(),v); }
     SUG[k]=[...set.values()].sort((a,b)=>a.localeCompare(b,'es'));
   }
 }
