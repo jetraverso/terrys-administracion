@@ -122,7 +122,8 @@ main{max-width:1800px;margin:0 auto;padding:22px clamp(20px,4.5vw,84px) 40px}
 
 /* ---------- planilla ---------- */
 .sheetwrap{overflow:auto;max-height:calc(100vh - 78px);min-height:260px;background:var(--surface);border:1px solid var(--line);border-radius:12px}
-table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:100%;min-width:1100px;font-size:13px}
+table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:100%;font-size:13px}
+.sheet td{vertical-align:top}
 .sheet th,.sheet td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;background:var(--surface)}
 .sheet th:last-child,.sheet td:last-child{border-right:0}
 .sheet thead th{position:sticky;top:0;z-index:4;background:var(--surface-2);text-align:left;vertical-align:bottom;padding:8px 6px 7px;font-size:10.5px;line-height:1.2;letter-spacing:.07em;text-transform:uppercase;color:var(--ink-2);font-weight:700;border-bottom:1px solid var(--line-2)}
@@ -131,15 +132,16 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet .c-date{position:sticky;left:0;z-index:2;border-right:1px solid var(--line-2)}
 .sheet thead th.c-date{z-index:6}
 .sheet tbody tr:hover td{background:var(--row-hover)}
-.sheet td input[type=text],.sheet td input[type=date]{display:block;width:100%;border:0;background:transparent;padding:7px 6px;border-radius:0;min-height:34px;text-overflow:ellipsis}
+.sheet td input[type=text],.sheet td input[type=date],.sheet td textarea{display:block;width:100%;border:0;background:transparent;padding:7px 6px;border-radius:0;min-height:34px;text-overflow:ellipsis}
+.sheet td textarea{resize:none;overflow:hidden;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
 .sheet td input[type=date]{font-variant-numeric:tabular-nums;padding-right:1px}
 .sheet td input[type=date]::-webkit-calendar-picker-indicator{margin:0;padding:0 1px;opacity:.55;cursor:pointer}
-.sheet td input:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface)}
+.sheet td input:focus,.sheet td textarea:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface)}
 .sheet td input.bad{outline:2px solid var(--danger);outline-offset:-2px}
 .sheet td.c-money input{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
 .sheet td.ingreso input{color:var(--ok)}
 .sheet td.egreso input{color:var(--out)}
-.sheet td.c-check{text-align:center;vertical-align:middle}
+.sheet td.c-check{text-align:center;padding-top:8px}
 .sheet td.c-check input{width:17px;height:17px;accent-color:var(--ok);cursor:pointer;vertical-align:middle}
 .sheet td.c-check input:focus,.sheet td.c-check input:focus-visible{outline:none}
 .sheet td.c-check:focus-within{box-shadow:inset 0 0 0 2px var(--accent)}
@@ -148,14 +150,21 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .sheet td input.est-pend{color:var(--warn);font-weight:700}
 .sheet td input.est-ok{color:var(--ok);font-weight:700}
 .sheet td.c-fact{position:relative}
-.sheet td.c-fact a{position:absolute;right:2px;top:50%;transform:translateY(-50%);background:var(--accent-soft);color:var(--accent-ink);border-radius:5px;padding:1px 5px;font-size:11px;font-weight:700;text-decoration:none}
-.sheet td.c-fact.link input{padding-right:26px}
-.sheet td.c-act{white-space:nowrap;text-align:center;vertical-align:middle}
+.sheet td.c-fact input{padding-right:24px}
+.sheet td.c-fact.link input{padding-right:46px;color:var(--accent);font-weight:600;text-decoration:underline;text-underline-offset:3px}
+.sheet td.c-fact a,.sheet td.c-fact .lk{position:absolute;top:8px;height:18px;min-width:20px;display:flex;align-items:center;justify-content:center;border-radius:5px;padding:0 4px;font-size:11px;font-weight:700;text-decoration:none;line-height:1}
+.sheet td.c-fact a{right:24px;background:var(--accent-soft);color:var(--accent-ink)}
+.sheet td.c-fact .lk{right:2px;background:none;border:0;color:var(--muted);opacity:0}
+.sheet td.c-fact .lk svg{width:13px;height:13px;display:block}
+.sheet tr:hover td.c-fact .lk,.sheet td.c-fact:focus-within .lk,.sheet td.c-fact .lk:focus-visible{opacity:1}
+.sheet td.c-fact .lk:hover{background:var(--surface-2);color:var(--ink)}
+@media (hover:none){ .sheet td.c-fact .lk{opacity:1} }
+.sheet td.c-act{white-space:nowrap;text-align:center;padding-top:8px}
 .sheet td.c-act button{background:none;border:0;color:var(--muted);padding:3px 4px;border-radius:5px;font-size:13px;line-height:1}
 .sheet td.c-act button:hover{background:var(--surface-2);color:var(--ink)}
 .sheet td.c-act button.del:hover{color:var(--danger)}
 .sheet tr.nuevo td{background:var(--paper)}
-.sheet tr.nuevo input::placeholder{color:var(--muted);font-style:italic}
+.sheet tr.nuevo input::placeholder,.sheet tr.nuevo textarea::placeholder{color:var(--muted);font-style:italic}
 .sheet tr.err td{box-shadow:inset 0 -2px 0 var(--danger)}
 .sheet tr.mes td{background:var(--surface-2);padding:7px 8px;font-weight:700;font-size:13px;letter-spacing:.04em;border-right:0}
 .sheet tr.mes td .mn{font-family:var(--display);font-weight:400;font-size:20px;letter-spacing:.05em;margin-right:14px;position:sticky;left:8px}
@@ -183,8 +192,9 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 .modal h3{font-family:var(--display);font-size:28px;letter-spacing:.03em}
 .modal p{margin:6px 0 12px;color:var(--ink-2);font-size:14px}
 .modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
-.modal input[type=password]{width:100%;padding:10px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper)}
+.modal input[type=password],.modal input[type=text],.modal input[type=url]{width:100%;padding:10px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper)}
 .modal textarea{width:100%;height:200px;padding:10px 12px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);font-family:ui-monospace,Menlo,monospace;font-size:12px;white-space:pre;resize:vertical}
+.modal .row .izq{margin-right:auto}
 .modal .row{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
 .modal .msg{font-size:14px;font-weight:600;margin-top:10px;min-height:20px}
 .modal .msg.ok{color:var(--ok)}.modal .msg.bad{color:var(--danger)}
@@ -286,7 +296,7 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
         <tfoot><tr id="footrow"></tr></tfoot>
       </table>
     </div>
-    <p class="hint">Los cambios se guardan solos al salir de cada celda y la fila se acomoda sola por fecha. Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda), Enter baja a la fila de abajo. En las sugerencias: flechas para elegir, Enter o Tab para aceptar. La última fila en blanco es para cargar un movimiento nuevo. <span id="copiaInfo"></span> <span id="ver"></span></p>
+    <p class="hint">Los cambios se guardan solos al salir de cada celda y la fila se acomoda sola por fecha. Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda), Enter baja a la fila de abajo. En las sugerencias: flechas para elegir, Enter o Tab para aceptar. En Facturas: escribí el nombre y ponele el link con el botón de la cadenita (o pegá el link directo y queda como FACTURA). La última fila en blanco es para cargar un movimiento nuevo. <span id="copiaInfo"></span> <span id="ver"></span></p>
   </main>
 </div>
 
@@ -304,7 +314,7 @@ table.sheet{border-collapse:separate;border-spacing:0;table-layout:fixed;width:1
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.3';
+const VERSION='1.4';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -313,19 +323,19 @@ const TABS=[
 ];
 
 const COLS=[
-  {k:'fecha',      t:'Fecha',             w:104, type:'date'},
-  {k:'ingreso',    t:'Ingresos',          w:84, type:'money'},
-  {k:'egreso',     t:'Egresos',           w:84, type:'money'},
-  {k:'detalle',    t:'Detalle operación', w:190, type:'text'},
-  {k:'tipo',       t:'Tipo de operación', w:110, type:'list'},
-  {k:'desde',      t:'Desde dónde',       w:92, type:'list'},
-  {k:'hacia',      t:'Hacia dónde',       w:98, type:'list'},
-  {k:'estado',     t:'Estado',            w:90, type:'list'},
-  {k:'informacion',t:'Información',       w:124, type:'text'},
-  {k:'factura',    t:'Facturas',          w:98, type:'text'},
-  {k:'pagado',     t:'Pagado',            w:56,  type:'check'},
-  {k:'clara',      t:'Clara',             w:48,  type:'check'},
-  {k:'comentarios',t:'Comentarios',       w:136, type:'text'},
+  {k:'fecha',      t:'Fecha', type:'date'},
+  {k:'ingreso',    t:'Ingresos', type:'money'},
+  {k:'egreso',     t:'Egresos', type:'money'},
+  {k:'detalle',    t:'Detalle operación', type:'text'},
+  {k:'tipo',       t:'Tipo de operación', type:'list'},
+  {k:'desde',      t:'Desde dónde', type:'list'},
+  {k:'hacia',      t:'Hacia dónde', type:'list'},
+  {k:'estado',     t:'Estado', type:'list'},
+  {k:'informacion',t:'Información', type:'text'},
+  {k:'factura',    t:'Facturas', type:'text'},
+  {k:'pagado',     t:'Pagado', type:'check'},
+  {k:'clara',      t:'Clara', type:'check'},
+  {k:'comentarios',t:'Comentarios', type:'text'},
 ];
 const COLBY=Object.fromEntries(COLS.map(c=>[c.k,c]));
 const FIELDS=COLS.map(c=>c.k);
@@ -385,6 +395,20 @@ function parseDate(s,defYear){
 }
 const parseBool=s=>/^(true|verdadero|si|sí|s|x|✓|✔|1|ok|pagado)$/i.test(String(s||'').trim());
 const esUrl=s=>/^https?:\/\/\S+$/i.test(String(s||'').trim());
+/* Facturas: se guarda "[NOMBRE](https://link)" en el mismo campo; en la planilla se ve solo el nombre. */
+function facPartes(v){
+  v=String(v||'').trim();
+  const m=v.match(/^\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)$/i);
+  if(m) return {txt:m[1]||'FACTURA',url:m[2]};
+  if(esUrl(v)) return {txt:'FACTURA',url:v};
+  return {txt:v,url:''};
+}
+function facUnir(txt,url){
+  txt=String(txt||'').replace(/[\[\]]/g,'').trim(); url=String(url||'').trim();
+  if(!url) return txt;
+  return `[${txt||'FACTURA'}](${url.replace(/\(/g,'%28').replace(/\)/g,'%29')})`;
+}
+const ICONO_LINK='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M6.7 9.3a2.6 2.6 0 0 0 3.7 0l2.2-2.2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/><path d="M9.3 6.7a2.6 2.6 0 0 0-3.7 0L3.4 8.9a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/></svg>';
 
 /* ---------- base de datos ---------- */
 const limpio=r=>{const o={empresa:tab.empresa}; for(const k of FIELDS) o[k]=r[k]; return o;};
@@ -608,21 +632,96 @@ const visibles=()=>ordenar(rows.filter(r=>enPeriodo(r)&&pasaFiltro(r)));
 
 /* ---------- tabla ---------- */
 function renderCabecera(){
-  const ACC=50, tot=COLS.reduce((t,c)=>t+c.w,0)+ACC, pc=w=>(w/tot*100).toFixed(3)+'%';
-  $('cols').innerHTML=COLS.map(c=>`<col style="width:${pc(c.w)}">`).join('')+`<col style="width:${pc(ACC)}">`;
+  $('cols').innerHTML=COLS.map(c=>`<col id="col-${c.k}">`).join('')+'<col id="col-acc">';
   $('headrow').innerHTML=COLS.map(c=>`<th scope="col" class="${c.type==='date'?'c-date':''} ${c.type==='money'?'r':''} ${c.type==='check'?'c':''}">${esc(c.t)}</th>`).join('')+'<th scope="col"></th>';
 }
+
+/* ---------- anchos de columna según el contenido ----------
+   Cada columna toma el ancho de su texto más largo. Si sobra lugar se reparte;
+   si no alcanza, Detalle, Información y Comentarios se angostan y su texto
+   sigue en el renglón de abajo (la fila crece en alto), así no aparece la
+   barra para moverse a los costados salvo en pantallas chicas. */
+const LARGAS=['detalle','informacion','comentarios'];
+const PISO={detalle:150,informacion:110,comentarios:120};
+const FIJAS={fecha:104,pagado:58,clara:50}, ANCHO_ACC=50;
+let anchoPedido={};
+const medirCtx=document.createElement('canvas').getContext('2d'), medirCache=new Map();
+function medir(txt,fuente){
+  const key=fuente+'|'+txt; let w=medirCache.get(key);
+  if(w==null){ medirCtx.font=fuente; w=medirCtx.measureText(txt).width; if(medirCache.size>20000) medirCache.clear(); medirCache.set(key,w); }
+  return w;
+}
+const F13='13px Barlow,"Helvetica Neue",Arial,sans-serif', F13B='700 13px Barlow,"Helvetica Neue",Arial,sans-serif', FTH='700 10.5px Barlow,"Helvetica Neue",Arial,sans-serif';
+function anchoTexto(c,r){
+  const v=r[c.k];
+  if(c.type==='money') return v==null?0:medir(fmt(v),F13B)+16;
+  if(c.k==='factura'){ const f=facPartes(v); return f.txt?medir(f.txt,F13B)+(f.url?52:30):0; }
+  const t=String(v||'')||((!r.id&&c.k==='detalle')?'Nuevo movimiento…':'');
+  return t?medir(t,c.k==='estado'?F13B:F13)+16:0;
+}
+function anchoTitulo(t){ return Math.max(...t.toUpperCase().split(' ').map(p=>medir(p,FTH)+p.length*0.75))+15; }
+function ajustarAnchos(soloCrecer){
+  const disp=$('sheetwrap').clientWidth; if(!disp) return;
+  const filas=[...$('tbody').children].map(tr=>trRow.get(tr)).filter(Boolean);
+  const pide={};
+  for(const c of COLS){
+    if(FIJAS[c.k]){ pide[c.k]=FIJAS[c.k]; continue; }
+    let w=Math.max(anchoTitulo(c.t),c.type==='money'?72:64);
+    for(const r of filas){ const a=anchoTexto(c,r); if(a>w) w=a; }
+    w=Math.ceil(Math.min(w,LARGAS.includes(c.k)?460:280));
+    pide[c.k]=soloCrecer&&anchoPedido[c.k]?Math.max(w,anchoPedido[c.k]):w;
+  }
+  anchoPedido=pide;
+  const w={...pide}; const suma=()=>COLS.reduce((t,c)=>t+w[c.k],0)+ANCHO_ACC;
+  let total=suma();
+  if(total>disp){
+    // no entra: se angostan las de texto largo (hasta su piso) y su texto pasa a varios renglones
+    const otras=total-LARGAS.reduce((t,k)=>t+w[k],0), lugar=disp-otras, pisos=LARGAS.reduce((t,k)=>t+Math.min(PISO[k],pide[k]),0);
+    if(lugar<=pisos) for(const k of LARGAS) w[k]=Math.min(PISO[k],pide[k]);
+    else{
+      const sobre=lugar-pisos, extraPedido=LARGAS.reduce((t,k)=>t+Math.max(0,pide[k]-PISO[k]),0)||1;
+      for(const k of LARGAS) w[k]=Math.floor(Math.min(PISO[k],pide[k])+sobre*Math.max(0,pide[k]-PISO[k])/extraPedido);
+    }
+  }else{
+    // sobra: se reparte entre las columnas que no son de ancho fijo
+    const flex=COLS.filter(c=>!FIJAS[c.k]), base=flex.reduce((t,c)=>t+w[c.k],0), extra=disp-total;
+    for(const c of flex) w[c.k]=Math.floor(w[c.k]+extra*w[c.k]/base);
+  }
+  total=suma();
+  for(const c of COLS) $('col-'+c.k).style.width=w[c.k]+'px';
+  $('col-acc').style.width=(ANCHO_ACC+Math.max(0,disp-total))+'px';
+  $('sheet').style.width=Math.max(total,disp)+'px';
+  ajustarAltos();
+}
+function ajustarAltos(dentro){
+  const tas=[...(dentro||$('tbody')).querySelectorAll('textarea')];
+  for(const t of tas) t.style.height='auto';
+  const hs=tas.map(t=>t.scrollHeight);
+  tas.forEach((t,n)=>{ t.style.height=Math.max(34,hs[n])+'px'; });
+}
+let anchoT=null;
+window.addEventListener('resize',()=>{ clearTimeout(anchoT); anchoT=setTimeout(()=>ajustarAnchos(false),150); });
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ medirCache.clear(); ajustarAnchos(false); });
+
 function claseEstado(v){ v=(v||'').toLowerCase(); return /pend|falta|espera|impag/.test(v)?'est-pend':/pag|complet|ok|hecho|concil|cobr/.test(v)?'est-ok':''; }
 function celda(c,r){
   const v=r[c.k];
   if(c.type==='check') return `<td class="c-check"><input type="checkbox" data-k="${c.k}" ${v?'checked':''} aria-label="${esc(c.t)}"></td>`;
   if(c.type==='date')  return `<td class="c-date"><input type="date" data-k="fecha" value="${esc(v||'')}" aria-label="Fecha"></td>`;
   if(c.type==='money') return `<td class="c-money ${c.k}"><input type="text" inputmode="decimal" autocomplete="off" data-k="${c.k}" value="${esc(fmt(v))}" aria-label="${esc(c.t)}"></td>`;
-  if(c.k==='factura')  return `<td class="c-fact ${esUrl(v)?'link':''}"><input type="text" autocomplete="off" data-k="factura" value="${esc(v)}" title="${esc(v)}" aria-label="Facturas">${esUrl(v)?`<a href="${esc(v.trim())}" target="_blank" rel="noopener noreferrer" title="Abrir factura">↗</a>`:''}</td>`;
+  if(c.k==='factura'){
+    const f=facPartes(v);
+    return `<td class="c-fact ${f.url?'link':''}"><input type="text" autocomplete="off" data-k="factura" value="${esc(f.txt)}" title="${esc(f.url||f.txt)}" aria-label="Facturas">`
+      +(f.url?`<a href="${esc(f.url)}" target="_blank" rel="noopener noreferrer" tabindex="-1" title="Abrir ${esc(f.url)}" aria-label="Abrir la factura">↗</a>`:'')
+      +`<button type="button" class="lk" data-act="link" tabindex="-1" title="${f.url?'Cambiar el link':'Ponerle un link'} (Ctrl o Cmd + K)" aria-label="${f.url?'Cambiar el link de la factura':'Ponerle un link a la factura'}">${ICONO_LINK}</button></td>`;
+  }
+  if(LARGAS.includes(c.k)){
+    const ph=(!r.id&&c.k==='detalle')?' placeholder="Nuevo movimiento…"':'';
+    return `<td><textarea rows="1" autocomplete="off" data-k="${c.k}" aria-label="${esc(c.t)}"${ph}>${esc(v)}</textarea></td>`;
+  }
   const lista=c.type==='list'?' aria-autocomplete="list" aria-controls="ac"':'';
   const cls=c.k==='estado'?claseEstado(v):'';
-  const ph=(!r.id&&c.k==='detalle')?' placeholder="Nuevo movimiento…"':'';
-  return `<td><input type="text" autocomplete="off" data-k="${c.k}"${lista} class="${cls}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(c.t)}"${ph}></td>`;
+  return `<td><input type="text" autocomplete="off" data-k="${c.k}"${lista} class="${cls}" value="${esc(v)}" title="${esc(v)}" aria-label="${esc(c.t)}"></td>`;
 }
 const acciones=()=>`<button data-act="dup" title="Duplicar fila" aria-label="Duplicar fila">⧉</button><button class="del" data-act="del" title="Borrar fila" aria-label="Borrar fila">✕</button>`;
 function crearTr(r){
@@ -657,6 +756,7 @@ function renderTabla(){
   }
   frag.appendChild(crearTr(borrador()));
   tb.appendChild(frag);
+  ajustarAnchos(false);
 }
 
 /* ---------- totales ---------- */
@@ -762,7 +862,11 @@ function acElegir(i){
   inp.dispatchEvent(new Event('change',{bubbles:true}));
 }
 $('ac').addEventListener('mousedown',e=>{ e.preventDefault(); const d=e.target.closest('[role=option]'); if(d) acElegir([...$('ac').children].indexOf(d)); });
-$('tbody').addEventListener('input',e=>{ const inp=e.target; if(inp.dataset&&SUG[inp.dataset.k]) acAbrir(inp,false); });
+$('tbody').addEventListener('input',e=>{
+  const inp=e.target;
+  if(inp.dataset&&SUG[inp.dataset.k]) acAbrir(inp,false);
+  if(inp.tagName==='TEXTAREA'){ inp.style.height='auto'; inp.style.height=Math.max(34,inp.scrollHeight)+'px'; }
+});
 $('tbody').addEventListener('focusout',acCerrar);
 $('sheetwrap').addEventListener('scroll',acCerrar,{passive:true});
 window.addEventListener('scroll',acCerrar,{passive:true});
@@ -794,7 +898,7 @@ function colocar(tr,foco){
   }
   const sig=[...tb.children].find(x=>x!==tr&&x.dataset.id&&cmpFila(trRow.get(x),r)>0)||[...tb.querySelectorAll('tr.nuevo')].pop()||null;
   // se arma la fila de nuevo desde los datos (mover la misma fila deja celdas sin repintar en Chrome)
-  const nueva=crearTr(r); nueva._q=tr._q; tr.remove(); tb.insertBefore(nueva,sig); destello(nueva);
+  const nueva=crearTr(r); nueva._q=tr._q; tr.remove(); tb.insertBefore(nueva,sig); ajustarAltos(nueva); destello(nueva);
 }
 function enSuMes(tr,r){
   // vista de año: el título de mes más cercano hacia arriba tiene que ser el del mes de la fila
@@ -808,7 +912,7 @@ $('tbody').addEventListener('focusout',e=>{
 });
 
 $('tbody').addEventListener('change',e=>{
-  const inp=e.target.closest('input[data-k]'); if(!inp) return;
+  const inp=e.target.closest('[data-k]'); if(!inp) return;
   const tr=inp.closest('tr'), r=trRow.get(tr); if(!r) return;
   const k=inp.dataset.k, c=COLBY[k]; let v;
   if(c.type==='check') v=inp.checked;
@@ -820,12 +924,20 @@ $('tbody').addEventListener('change',e=>{
     if(v===0) v=null;
   }
   else if(c.type==='date'){ v=inp.value; if(!v){ inp.value=r.fecha; return; } }
-  else v=inp.value.trim();
+  else v=inp.value.replace(/\s*[\r\n]+\s*/g,' ').trim();
+  if(k==='factura'){
+    // se escribe el nombre; si se pega un link pelado queda como "FACTURA" con ese link
+    const antes=facPartes(r.factura);
+    v=esUrl(v)?facUnir(antes.url?antes.txt:'FACTURA',v):(v?facUnir(v,antes.url):'');
+    if(r[k]===v){ inp.value=facPartes(v).txt; return; }
+  }
   if(r[k]===v) return;
   r[k]=v;
-  if(c.type==='text'||c.type==='list') inp.title=v;
+  if(c.type==='list') inp.title=v;
+  if(inp.tagName==='TEXTAREA') inp.value=v;
   if(k==='estado') inp.className=claseEstado(v);
   if(k==='factura'){ const td=inp.parentElement; td.outerHTML=celda(c,r); }
+  if(anchoTexto(c,r)>(anchoPedido[k]||0)) ajustarAnchos(true); else ajustarAltos(tr);
   if(k==='fecha'||!r.id) tr._reordenar=true;
   guardar(tr,{[k]:v},k==='fecha'&&!!r.id&&!(enPeriodo(r)&&pasaFiltro(r)));
 });
@@ -840,7 +952,8 @@ $('tbody').addEventListener('focusout',e=>{
   inp.value=fmt(r[inp.dataset.k]);
 });
 $('tbody').addEventListener('keydown',e=>{
-  const inp=e.target.closest('input[data-k]'); if(!inp) return;
+  const inp=e.target.closest('[data-k]'); if(!inp) return;
+  if(inp.dataset.k==='factura'&&(e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); editarLink(inp.closest('tr')); return; }
   // Celdas con sugerencias: flechas para recorrer la lista, Enter o Tab para aceptar.
   if(SUG[inp.dataset.k]){
     const abierta=ac.inp===inp;
@@ -859,7 +972,7 @@ $('tbody').addEventListener('keydown',e=>{
   // espaciadora las tilda). En la fecha se deja el Tab del navegador, que va por día/mes/año.
   if(e.key==='Tab'&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
     if(inp.type==='date') return;
-    const todas=[...$('tbody').querySelectorAll('input[data-k]')], dest=todas[todas.indexOf(inp)+(e.shiftKey?-1:1)];
+    const todas=[...$('tbody').querySelectorAll('[data-k]')], dest=todas[todas.indexOf(inp)+(e.shiftKey?-1:1)];
     if(!dest) return;
     e.preventDefault(); dest.focus();
     return;
@@ -873,7 +986,9 @@ $('tbody').addEventListener('keydown',e=>{
 });
 $('tbody').addEventListener('click',async e=>{
   const b=e.target.closest('button[data-act]'); if(!b) return;
-  const tr=b.closest('tr'), r=trRow.get(tr); if(!r||!r.id) return;
+  const tr=b.closest('tr'), r=trRow.get(tr); if(!r) return;
+  if(b.dataset.act==='link'){ editarLink(tr); return; }
+  if(!r.id) return;
   if(b.dataset.act==='del'){
     setSync('guardando');
     try{
@@ -910,6 +1025,39 @@ function abrirModal(html,chico){
   return ov;
 }
 function cerrarModal(){ $('modalHost').innerHTML=''; }
+
+function editarLink(tr){
+  const r=trRow.get(tr); if(!r) return;
+  const f=facPartes(r.factura);
+  const ov=abrirModal(`<h3>Link de la factura</h3>
+    <p>En la planilla se ve solo el nombre; el link queda guardado atrás y se abre con el botón ↗.</p>
+    <label for="fkTxt">Nombre que se ve</label><input type="text" id="fkTxt" autocomplete="off" placeholder="FACTURA">
+    <label for="fkUrl">Link (Drive, Dropbox, mail…)</label><input type="url" id="fkUrl" autocomplete="off" placeholder="https://…">
+    <div class="msg bad" id="fkMsg"></div>
+    <div class="row">${f.url?'<button class="btn izq" id="fkQuitar">Quitar link</button>':''}<button class="btn" id="fkCancel">Cancelar</button><button class="btn primary" id="fkOk">Guardar</button></div>`,true);
+  const iT=ov.querySelector('#fkTxt'), iU=ov.querySelector('#fkUrl');
+  iT.value=f.txt; iU.value=f.url; (f.txt&&!f.url?iU:iT).focus();
+  const cerrar=()=>{ cerrarModal(); const i=tr.isConnected&&tr.querySelector('[data-k=factura]'); if(i) i.focus(); };
+  const aplicar=valor=>{
+    if(r.factura!==valor){
+      r.factura=valor;
+      const td=tr.querySelector('td.c-fact'); if(td) td.outerHTML=celda(COLBY.factura,r);
+      if(!r.id) tr._reordenar=true;
+      if(anchoTexto(COLBY.factura,r)>(anchoPedido.factura||0)) ajustarAnchos(true);
+      guardar(tr,{factura:valor},false);
+    }
+    cerrar();
+  };
+  const ok=()=>{
+    const url=iU.value.trim();
+    if(url&&!esUrl(url)){ ov.querySelector('#fkMsg').textContent='El link tiene que empezar con https:// (o http://) y no tener espacios.'; iU.focus(); return; }
+    aplicar(facUnir(iT.value,url));
+  };
+  ov.querySelector('#fkOk').onclick=ok;
+  ov.querySelector('#fkCancel').onclick=cerrar;
+  const q=ov.querySelector('#fkQuitar'); if(q) q.onclick=()=>aplicar(facUnir(iT.value,''));
+  ov.addEventListener('keydown',e=>{ if(e.key==='Enter'&&e.target.tagName==='INPUT'){ e.preventDefault(); ok(); } });
+}
 
 $('btnPass').onclick=()=>{
   if(!SB){ toast('En modo demo la contraseña es fija (1234). Se cambia cuando conectes Supabase.'); return; }
@@ -955,7 +1103,7 @@ function filasDesdeTexto(text){
     const t=i=>(c[i]||'').replace(/\s*\n\s*/g,' ').trim();
     const fac=t(9);
     const r={fecha,ingreso:ing||null,egreso:egr==null?null:(Math.abs(egr)||null),detalle:t(3),tipo:t(4),desde:t(5),hacia:t(6),estado:t(7),informacion:t(8),
-      factura:/^(true|verdadero)$/i.test(fac)?'Sí':/^(false|falso)$/i.test(fac)?'':fac,pagado:parseBool(c[10]),clara:parseBool(c[11]),comentarios:t(12)};
+      factura:/^(true|verdadero)$/i.test(fac)?'Sí':/^(false|falso)$/i.test(fac)?'':(esUrl(fac)?facUnir('FACTURA',fac):fac),pagado:parseBool(c[10]),clara:parseBool(c[11]),comentarios:t(12)};
     if(enBlanco(r)){ mal.push(c); continue; }
     ok.push(r);
   }
