@@ -141,10 +141,16 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .sheet .c-date{position:sticky;left:0;z-index:2;border-right:1px solid var(--line-2)}
 .sheet thead th.c-date{z-index:6}
 .sheet tbody tr:hover td{background:var(--row-hover)}
-.sheet td input[type=text],.sheet td input[type=date],.sheet td textarea{display:block;width:100%;border:0;background:transparent;padding:7px 6px;border-radius:0;min-height:34px;text-overflow:ellipsis}
+.sheet td input[type=text],.sheet td textarea{display:block;width:100%;border:0;background:transparent;padding:7px 6px;border-radius:0;min-height:34px;text-overflow:ellipsis}
 .sheet td textarea{resize:none;overflow:hidden;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere;margin:0}
-.sheet td input[type=date]{font-variant-numeric:tabular-nums;padding-right:1px}
-.sheet td input[type=date]::-webkit-calendar-picker-indicator{margin:0;padding:0 1px;opacity:.55;cursor:pointer}
+.sheet td.c-date input[data-k]{font-variant-numeric:tabular-nums;padding-right:24px}
+.sheet td.c-date .cal{position:absolute;right:3px;top:8px;width:18px;height:18px;border-radius:4px;color:var(--muted);opacity:0;overflow:hidden;cursor:pointer}
+.sheet td.c-date .cal svg{display:block;width:14px;height:14px;margin:2px;pointer-events:none}
+.sheet tr:hover td.c-date .cal,.sheet td.c-date:focus-within .cal{opacity:.85}
+.sheet td.c-date .cal:hover{background:var(--surface-2);color:var(--ink)}
+.sheet td.c-date .cal input{position:absolute;inset:0;width:100%;height:100%;min-height:0;opacity:0;border:0;padding:0;margin:0;cursor:pointer}
+.sheet td.c-date .cal input::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;margin:0;padding:0;opacity:0;cursor:pointer}
+@media (hover:none){ .sheet td.c-date .cal{opacity:.85} }
 .sheet td input:focus,.sheet td textarea:focus{outline:2px solid var(--accent);outline-offset:-2px;background:var(--surface)}
 .sheet td input.bad{outline:2px solid var(--danger);outline-offset:-2px}
 .sheet td.c-money input{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
@@ -235,7 +241,8 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
   .who{display:none}
   .cards{grid-template-columns:repeat(2,minmax(0,1fr))}
   .card .v{font-size:28px}
-  .sheet .c-date{position:static}
+  .sheet tbody td.c-date{position:relative;left:auto}
+  .sheet thead th.c-date,.sheet tfoot td.c-date{left:auto}
   .sheet tr.mes td .ms,.sheet tfoot td .fb{position:static}
 }
 </style>
@@ -323,6 +330,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
       <summary>Cómo se usa la planilla</summary>
       <ul>
         <li>Los cambios se guardan solos al salir de cada celda, y la fila se acomoda sola por fecha. La última fila en blanco es para cargar un movimiento nuevo.</li>
+        <li>Fecha: día/mes/año. Se puede escribir corto (23/7, 2307 o solo 23: el mes y el año que falten se toman de la fila) o elegir con el ícono del calendario.</li>
         <li>Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda). Enter baja a la fila de abajo.</li>
         <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
         <li>Información: escribí el texto y ponele el link de la factura con el botón de la cadenita o Ctrl/Cmd + K (o pegá el link directo y queda como FACTURA). Al tener link, Facturas se tilda sola.</li>
@@ -347,7 +355,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.7';
+const VERSION='1.8';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -421,6 +429,21 @@ function parseDate(s,defYear){
   }
   return null;
 }
+const fmtFecha=iso=>iso?String(iso).slice(0,10).split('-').reverse().join('/'):'';
+/* Lo que se escribe en la columna Fecha: día/mes/año. Acepta 23/7, 23-07-26, 23.7.2026, 2307, 230726
+   o solo el día (23); lo que falte (mes, año) se toma de la fecha que ya tenía la fila. */
+function leerFecha(txt,base){
+  txt=String(txt||'').trim(); if(!txt) return null;
+  const bY=+String(base||'').slice(0,4)||year, bM=+String(base||'').slice(5,7)||(month>=0?month+1:1);
+  let m, d, mo, y;
+  if((m=txt.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))){ y=+m[1]; mo=+m[2]; d=+m[3]; }
+  else if((m=txt.match(/^(\d{1,2})(?:\s*[\/\-. ]\s*(\d{1,2}))?(?:\s*[\/\-. ]\s*(\d{2}|\d{4}))?$/))){ d=+m[1]; mo=m[2]?+m[2]:bM; y=m[3]?+m[3]:bY; }
+  else if((m=txt.match(/^(\d{2})(\d{2})(\d{2}|\d{4})?$/))){ d=+m[1]; mo=+m[2]; y=m[3]?+m[3]:bY; }
+  else return null;
+  if(y<100) y+=2000;
+  return isoDate(y,mo,d);
+}
+const ICONO_CAL='<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><rect x="2.2" y="3.2" width="11.6" height="10.6" rx="2"/><path d="M2.2 6.6h11.6M5.4 1.8v2.6M10.6 1.8v2.6"/></svg>';
 const parseBool=s=>/^(true|verdadero|si|sí|s|x|✓|✔|1|ok|pagado)$/i.test(String(s||'').trim());
 const esUrl=s=>/^https?:\/\/\S+$/i.test(String(s||'').trim());
 /* Información: se guarda "[TEXTO](https://link)" en el mismo campo; en la planilla se ve solo el texto.
@@ -744,7 +767,7 @@ function ajustarAnchos(soloCrecer){
   const pide={};
   for(const c of COLS){
     if(man[c.k]){ pide[c.k]=man[c.k]; continue; }
-    if(esFija(c)){ pide[c.k]=c.type==='date'?104:Math.max(48,Math.ceil(anchoTitulo(c.t))); continue; }
+    if(esFija(c)){ pide[c.k]=c.type==='date'?102:Math.max(48,Math.ceil(anchoTitulo(c.t))); continue; }
     let w=Math.max(anchoTitulo(c.t),c.type==='money'?72:64);
     for(const r of filas){ const a=anchoTexto(c,r); if(a>w) w=a; }
     w=Math.ceil(Math.min(w,LARGAS.includes(c.k)?460:280));
@@ -824,7 +847,7 @@ function claseEstado(v){ v=(v||'').toLowerCase(); return /pend|falta|espera|impa
 function celda(c,r){
   const v=r[c.k];
   if(c.type==='check') return `<td class="c-check"><input type="checkbox" data-k="${c.k}" ${v?'checked':''} aria-label="${esc(c.t)}"></td>`;
-  if(c.type==='date')  return `<td class="c-date"><input type="date" data-k="fecha" value="${esc(v||'')}" aria-label="Fecha"></td>`;
+  if(c.type==='date')  return `<td class="c-date"><input type="text" inputmode="numeric" autocomplete="off" data-k="fecha" value="${esc(fmtFecha(v))}" placeholder="dd/mm/aaaa" aria-label="Fecha (día/mes/año)"><span class="cal" title="Elegir en el calendario">${ICONO_CAL}<input type="date" class="dp" tabindex="-1" value="${esc(v||'')}" aria-label="Elegir la fecha en el calendario"></span></td>`;
   if(c.type==='money') return `<td class="c-money ${c.k}"><input type="text" inputmode="decimal" autocomplete="off" data-k="${c.k}" value="${esc(fmt(v))}" aria-label="${esc(c.t)}"></td>`;
   if(c.k==='informacion'){
     const f=linkPartes(v);
@@ -1035,6 +1058,11 @@ function tildarFactura(tr,r,urlAntes,urlAhora,patch){
   const cb=tr.querySelector('[data-k=factura]'); if(cb) cb.checked=true;
 }
 $('tbody').addEventListener('change',e=>{
+  if(e.target.classList&&e.target.classList.contains('dp')){   // se eligió en el calendario: pasa a la celda y sigue el camino normal
+    const txt=e.target.closest('td').querySelector('[data-k=fecha]');
+    if(e.target.value&&txt){ txt.value=fmtFecha(e.target.value); txt.dispatchEvent(new Event('change',{bubbles:true})); }
+    return;
+  }
   const inp=e.target.closest('[data-k]'); if(!inp) return;
   const tr=inp.closest('tr'), r=trRow.get(tr); if(!r) return;
   const k=inp.dataset.k, c=COLBY[k]; let v;
@@ -1046,7 +1074,13 @@ $('tbody').addEventListener('change',e=>{
     if(k==='egreso'&&v!=null) v=Math.abs(v);
     if(v===0) v=null;
   }
-  else if(c.type==='date'){ v=inp.value; if(!v){ inp.value=r.fecha; return; } }
+  else if(c.type==='date'){
+    if(!inp.value.trim()){ inp.value=fmtFecha(r.fecha); inp.classList.remove('bad'); return; }
+    v=leerFecha(inp.value,r.fecha);
+    if(!v){ inp.classList.add('bad'); toast('Fecha no válida: escribila como día/mes/año, por ejemplo 23/07/2026 (o solo 23/7)'); return; }
+    inp.classList.remove('bad'); inp.value=fmtFecha(v);
+    const dp=inp.parentElement.querySelector('.dp'); if(dp) dp.value=v;
+  }
   else v=inp.value.replace(/\s*[\r\n]+\s*/g,' ').trim();
   const patch={};
   if(k==='informacion'){
@@ -1069,6 +1103,7 @@ $('tbody').addEventListener('change',e=>{
   guardar(tr,patch,k==='fecha'&&!!r.id&&!(enPeriodo(r)&&pasaFiltro(r)));
 });
 $('tbody').addEventListener('focusin',e=>{
+  if(e.target.dataset&&e.target.dataset.k==='fecha'&&!e.target.classList.contains('bad')){ const f=e.target; setTimeout(()=>{ if(document.activeElement===f) f.select(); },0); }
   const inp=e.target; if(!inp.matches||!inp.matches('.c-money input')) return;
   const r=trRow.get(inp.closest('tr')); if(!r||inp.classList.contains('bad')) return;
   const v=r[inp.dataset.k]; inp.value=v==null?'':String(v).replace('.',','); inp.select();
@@ -1095,10 +1130,8 @@ $('tbody').addEventListener('keydown',e=>{
     if(e.key==='Tab'&&abierta&&ac.i>=0) acElegir(ac.i);                                  // Tab la acepta y sigue a la celda de al lado
     else if(e.key==='Enter'||e.key==='Tab') acCerrar();
   }
-  // Tab recorre todas las celdas, incluidas las casillas Pagado y Clara (la barra
-  // espaciadora las tilda). En la fecha se deja el Tab del navegador, que va por día/mes/año.
+  // Tab recorre todas las celdas, incluidas las casillas (la barra espaciadora las tilda).
   if(e.key==='Tab'&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
-    if(inp.type==='date') return;
     const todas=[...$('tbody').querySelectorAll('[data-k]')], dest=todas[todas.indexOf(inp)+(e.shiftKey?-1:1)];
     if(!dest) return;
     e.preventDefault(); dest.focus();
@@ -1110,6 +1143,10 @@ $('tbody').addEventListener('keydown',e=>{
   let sig=tr.nextElementSibling; while(sig&&!sig.querySelector('[data-k]')) sig=sig.nextElementSibling;
   if(sig){ sig.querySelector(`[data-k="${k}"]`).focus(); }
   else { tr._enterK=k; inp.blur(); }
+});
+$('tbody').addEventListener('click',e=>{
+  const cal=e.target.closest('.cal'); if(!cal) return;
+  const dp=cal.querySelector('.dp'); if(dp&&e.target!==dp&&dp.showPicker){ try{ dp.showPicker(); }catch(_){ dp.focus(); } }
 });
 $('tbody').addEventListener('click',async e=>{
   const b=e.target.closest('button[data-act]'); if(!b) return;

@@ -10,6 +10,7 @@ Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horari
 - **Se carga como un Sheet:** se escribe directo en las celdas y se guarda solo al salir de cada una. La última fila en blanco es para un movimiento nuevo. Enter baja a la fila de abajo.
 - **Mes a mes:** flechas ‹ › y una tira con los 12 meses del año (cada uno muestra cuánto se gastó). El primer botón de la tira muestra el **año completo**, con las filas agrupadas por mes y un subtotal por mes.
 - **Tarjetas de resumen** del período: ingresos, egresos, balance, por pagar (egresos sin tildar Pagado) y egresos sin factura.
+- **Fecha en día/mes/año** (no depende del idioma del navegador). Se puede escribir corta: `23/7`, `2307` o solo `23` (el mes y el año que falten se toman de la fecha que ya tenía la fila), o elegirla con el ícono del calendario de la celda.
 - **Orden por fecha:** al salir de una fila nueva, o de una a la que le cambiaste la fecha, la fila se acomoda sola en su lugar (con un destello para ver dónde quedó).
 - **Teclado:** Tab recorre todas las celdas, incluidas Pagado y Clara (la barra espaciadora las tilda o destilda); Enter baja a la fila de abajo.
 - **Tipo, Desde, Hacia y Estado** sugieren lo que ya cargaste antes **en esa misma columna** (de cualquier año), así quedan siempre escritos igual: al escribir aparece la lista, se elige con las flechas y se acepta con Enter (se queda en la celda) o con Tab (pasa a la siguiente).
