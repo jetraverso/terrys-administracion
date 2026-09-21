@@ -23,6 +23,15 @@ Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horari
 - **Exportar CSV** del mes o del año que estés viendo (abre bien en Excel y Sheets).
 - **Copia completa:** baja un solo CSV con todos los movimientos de todos los años y todas las solapas. Es la copia de seguridad: conviene bajarla cada tanto y guardarla (el plan gratis de Supabase no hace backups). Abajo de la planilla dice cuándo fue la última.
 
+## Reportes
+
+Solapa **Reportes** en la barra de arriba. Usa el mismo mes/año que la planilla (la tira de meses; el primer botón es el año completo) y no guarda nada: todo se calcula en el momento con los movimientos cargados.
+
+- **Resumen del período:** egresos e ingresos (con la variación contra el mes anterior, o contra el año anterior en la vista de año), balance, dónde más se gastó, % pagado y % con factura.
+- **Ingresos y egresos por mes** del año. Tocando un mes se pasa a su detalle.
+- **En qué se fue la plata:** ranking de egresos agrupados por *Proveedor (Hacia dónde)*, *Detalle*, *Tipo de operación* o *Desde dónde* (selector "Agrupar por"), con el % del total y la variación contra el período anterior. Junta solo las variantes de escritura (mayúsculas y acentos: "Reposición" y "Reposicion" cuentan como lo mismo). Tocando una fila se ven sus movimientos, con link a la factura y un atajo para verlos en la planilla.
+- **Mes a mes:** tabla del año con los 15 grupos de más gasto y un color más fuerte cuanto más se gastó, para ver qué viene subiendo.
+
 Mientras `SUPABASE_URL` esté vacío la página funciona en **modo demo**: entra con cualquier email y contraseña `1234`, y guarda solo en ese navegador. Sirve para probarla, no para trabajar.
 
 ## Puesta en marcha (una sola vez)
