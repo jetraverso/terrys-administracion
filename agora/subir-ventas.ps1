@@ -79,9 +79,12 @@ foreach ($dia in $lista) {
     $ok++
   } catch {
     $msg = $_.Exception.Message
-    if ($_.Exception.Response) {
-      try { $sr = New-Object IO.StreamReader($_.Exception.Response.GetResponseStream()); $msg += ' · ' + $sr.ReadToEnd() } catch {}
+    $ex = $_.Exception; if ($ex.InnerException) { $ex = $ex.InnerException }
+    if ($ex.Response) {
+      try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $msg += ' · ' + $sr.ReadToEnd() } catch {}
     }
+    if ($msg -match '403') { $msg += ' → el integracionToken de config.json no coincide con el dado de alta en Supabase' }
+    if ($msg -match '401') { $msg += ' → revisá supabaseKey en config.json' }
     Escribir ("ERROR {0}: {1}" -f $iso, $msg)
     $mal++
   }
