@@ -458,7 +458,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.2';
+const VERSION='2.3';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1658,7 +1658,9 @@ async function renderVentas(){
   if(venSel&&porDia.get(venSel)){
     h+=`<div class="panel" id="venDia"><h2>Tickets del ${fmtFecha(venSel)}</h2><div class="sub">Cargando…</div></div>`;
   }
+  const scrollAntes=cont.scrollTop;
   cont.innerHTML=h;
+  cont.scrollTop=scrollAntes;   // elegir un día no mueve la página: se sigue leyendo desde donde se estaba
   if(venSel&&porDia.get(venSel)){
     try{
       const b=await brutoDeDia(venSel); if(tk!==repTk||vista!=='ventas') return;
@@ -1668,7 +1670,6 @@ async function renderVentas(){
         const lin=items.flatMap(it=>it.Lines||[]).map(l=>`<span>${l.Quantity!==1?nf1.format(l.Quantity)+'× ':''}${esc(l.ProductName)}</span>`).join('');
         return `<div class="ticket"><div class="cab"><b>${(f.Date||'').slice(11,16)}</b><span class="pill">${esc(ce||'—')}</span><span>${esc(pag||'sin pago')}</span><span style="color:var(--muted)">${esc((f.User||{}).Name||'')} · ${esc(f.Serie||'')}${f.Number||''}</span><span class="imp">${fmt(+T.GrossAmount||0)} €</span></div><div class="lin">${lin}</div></div>`; }).join('');
       const el=$('venDia'); if(el) el.innerHTML=`<h2>Tickets del ${DSEM[diaSemana(venSel)]} ${fmtFecha(venSel)}</h2><div class="sub">${pl(inv.length,'ticket','tickets')} · ${eur(R.b)} · de ${R.pri||'—'} a ${R.ult||'—'} · <button type="button" class="linkbtn" data-dia="${venSel}">Cerrar</button></div>${tk2||'<div class="vacio">Sin tickets.</div>'}`;
-      el&&el.scrollIntoView({behavior:'smooth',block:'start'});
     }catch(e){ const el=$('venDia'); if(el) el.querySelector('.sub').textContent='No se pudieron cargar los tickets: '+errMsg(e); }
   }
 }
