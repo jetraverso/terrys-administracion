@@ -43,19 +43,19 @@ foreach ($k in 'agoraExport', 'agoraToken', 'supabaseUrl', 'supabaseKey', 'integ
 $empresa = if ($cfg.empresa) { $cfg.empresa } else { 'terrys-burgers-sl' }
 
 # ---------- qué días subir ----------
-$dias = @()
+$lista = @()
 if ($Desde) {
   $d = [datetime]::ParseExact($Desde, 'yyyy-MM-dd', $null)
   $h = if ($Hasta) { [datetime]::ParseExact($Hasta, 'yyyy-MM-dd', $null) } else { (Get-Date).Date.AddDays(-1) }
-  while ($d -le $h) { $dias += $d; $d = $d.AddDays(1) }
+  while ($d -le $h) { $lista += $d; $d = $d.AddDays(1) }
 } else {
-  for ($i = $Dias; $i -ge 1; $i--) { $dias += (Get-Date).Date.AddDays(-$i) }
+  for ($i = $Dias; $i -ge 1; $i--) { $lista += (Get-Date).Date.AddDays(-$i) }
 }
-if ($Hoy) { $dias += (Get-Date).Date }
+if ($Hoy) { $lista += (Get-Date).Date }
 
 # ---------- subida ----------
 $ok = 0; $mal = 0
-foreach ($dia in $dias) {
+foreach ($dia in $lista) {
   $iso = $dia.ToString('yyyy-MM-dd')
   try {
     # 1) pedir el día a Ágora (texto crudo, en UTF-8, sin volver a serializar)
