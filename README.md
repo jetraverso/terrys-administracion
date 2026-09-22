@@ -40,7 +40,7 @@ Solapa **Ventas**: reportes de las ventas del local que llegan solas desde Ágor
 - **Ventas por día** del mes (o por mes en la vista de año). Fines de semana sombreados y rayas en los días que no llegaron (arriba avisa cuáles faltan y qué comando correr en el TPV).
 - **Promedio por día de la semana**, **por hora**, **centro de venta** (local, terraza, delivery, take away), **formas de pago** (efectivo, tarjeta, Glovo), **familia y preparación**, **quién cobró**.
 - **Productos más vendidos** con unidades, importe, % y margen (ordenables por importe, unidades o margen).
-- **Tickets del día:** tocando un día del gráfico aparecen todos sus tickets con hora, centro, forma de pago, quién cobró y los productos.
+- **Un día en detalle:** tocando un día del gráfico, todas las estadísticas (resumen, por hora, centro, pago, familias, productos, quién cobró) pasan a ser de ese día, comparadas con el mismo día de la semana anterior, y abajo aparecen todos sus tickets con hora, centro, forma de pago, quién cobró y los productos. Tocándolo de nuevo (o "Volver al mes completo") se vuelve al mes.
 
 Mientras `SUPABASE_URL` esté vacío la página funciona en **modo demo**: entra con cualquier email y contraseña `1234`, y guarda solo en ese navegador. Sirve para probarla, no para trabajar.
 

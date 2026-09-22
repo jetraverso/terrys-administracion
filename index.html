@@ -458,7 +458,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.1';
+const VERSION='2.2';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1559,11 +1559,22 @@ async function renderVentas(){
   if(tk!==repTk||vista!=='ventas') return;
   renderMeses();
   const hoy=hoyISO();
-  const per=ventasPeriodo(dias,year,month), A=sumarResumenes(per);
-  const nomPer=month<0?`${year}`:`${MESES[month].toLowerCase()} de ${year}`;
+  const perMes=ventasPeriodo(dias,year,month), porDia=new Map(perMes.map(d=>[d.dia,d]));
+  if(venSel&&!porDia.get(venSel)) venSel=null;
+  // con un día elegido, todas las estadísticas son de ese día; si no, del mes (o del año)
+  const per=venSel?[porDia.get(venSel)]:perMes, A=sumarResumenes(per);
+  const nomPer=venSel?`${DSEM[diaSemana(venSel)].toLowerCase()} ${fmtFecha(venSel)}`:month<0?`${year}`:`${MESES[month].toLowerCase()} de ${year}`;
   let prevA=null, nomPrev='';
   try{
-    if(month<0){ const l=await filasVentas(year-1); if(l.length){ prevA=sumarResumenes(l); nomPrev=String(year-1); } }
+    if(venSel){
+      // se compara con el mismo día de la semana anterior; si no está, con el día anterior con ventas
+      const sem=new Date(venSel+'T12:00:00'); sem.setDate(sem.getDate()-7); const isoSem=sem.toISOString().slice(0,10);
+      const todos=isoSem.slice(0,4)===String(year)?dias:await filasVentas(+isoSem.slice(0,4));
+      const s7=todos.find(d=>d.dia===isoSem);
+      if(s7){ prevA=sumarResumenes([s7]); nomPrev=`el ${DSEM[diaSemana(isoSem)].toLowerCase()} anterior (${fmtFecha(isoSem).slice(0,5)})`; }
+      else { const ant=dias.filter(d=>d.dia<venSel).pop(); if(ant){ prevA=sumarResumenes([ant]); nomPrev=`el ${fmtFecha(ant.dia).slice(0,5)}`; } }
+    }
+    else if(month<0){ const l=await filasVentas(year-1); if(l.length){ prevA=sumarResumenes(l); nomPrev=String(year-1); } }
     else if(month===0){ const l=ventasPeriodo(await filasVentas(year-1),year-1,11); if(l.length){ prevA=sumarResumenes(l); nomPrev='diciembre'; } }
     else { const l=ventasPeriodo(dias,year,month-1); if(l.length){ prevA=sumarResumenes(l); nomPrev=MESES[month-1].toLowerCase(); } }
   }catch(_){}
@@ -1575,21 +1586,21 @@ async function renderVentas(){
   }
   // días que faltan (hasta ayer) en el período
   const faltan=[];
-  if(month>=0){ const n=new Date(Date.UTC(year,month+1,0)).getUTCDate(); for(let d=1;d<=n;d++){ const iso=`${year}-${pad(month+1)}-${pad(d)}`; if(iso<hoy&&!per.some(x=>x.dia===iso)) faltan.push(iso); } }
+  if(month>=0){ const n=new Date(Date.UTC(year,month+1,0)).getUTCDate(); for(let d=1;d<=n;d++){ const iso=`${year}-${pad(month+1)}-${pad(d)}`; if(iso<hoy&&!perMes.some(x=>x.dia===iso)) faltan.push(iso); } }
   const primero=dias[0].dia;
   const faltanReales=faltan.filter(f=>f>=primero);
 
   const ticketProm=A.t?A.b/A.t:0, margen=A.n?(A.n-A.c)/A.n*100:null;
-  const egresosPer=rows.filter(enPeriodo).reduce((t,r)=>t+(r.egreso||0),0);
+  const egresosPer=rows.filter(r=>venSel?r.fecha===venSel:enPeriodo(r)).reduce((t,r)=>t+(r.egreso||0),0);
   const pctVar=(a,b)=>b?(a-b)/b*100:null;
   // si el período todavía no terminó (o al anterior le faltan días) se compara el promedio por día, no el total
   const incompleto=month>=0?(`${year}-${pad(month+1)}-${pad(new Date(Date.UTC(year,month+1,0)).getUTCDate())}`>=hoy):(String(year)>=hoy.slice(0,4));
-  const porDiaCmp=incompleto||(prevA&&A.dias&&prevA.dias&&Math.abs(prevA.dias-A.dias)>3);
+  const porDiaCmp=!venSel&&(incompleto||(prevA&&A.dias&&prevA.dias&&Math.abs(prevA.dias-A.dias)>3));
   const varTxt=(v,contra)=>v==null?'':txtVar(v,false,contra).replace(' vs ',porDiaCmp?' por día vs ':' vs ');
   const varVentas=prevA?(porDiaCmp?pctVar(A.b/(A.dias||1),prevA.b/(prevA.dias||1)):pctVar(A.b,prevA.b)):null;
-  let h=`${faltanReales.length?`<div class="aviso">Faltan ${pl(faltanReales.length,'día','días')} de ventas en ${esc(nomPer)}: ${faltanReales.slice(0,8).map(f=>f.slice(8)+'/'+f.slice(5,7)).join(', ')}${faltanReales.length>8?'…':''}. En la computadora del TPV: <code>subir-ventas.ps1 -Desde ${faltanReales[0]}</code>.</div>`:''}
+  let h=`${faltanReales.length?`<div class="aviso">Faltan ${pl(faltanReales.length,'día','días')} de ventas en ${esc(MESES[month].toLowerCase()+' de '+year)}: ${faltanReales.slice(0,8).map(f=>f.slice(8)+'/'+f.slice(5,7)).join(', ')}${faltanReales.length>8?'…':''}. En la computadora del TPV: <code>subir-ventas.ps1 -Desde ${faltanReales[0]}</code>.</div>`:''}
   <div class="cards">
-    <div class="card in"><div class="k">Ventas</div><div class="v num">${eur(A.b)}</div><div class="s">${pl(A.t,'ticket','tickets')} en ${pl(A.dias,'día','días')}${A.dias>1?` · ${eur(A.b/A.dias)} por día`:''}</div>${varTxt(varVentas,nomPrev)}</div>
+    <div class="card in"><div class="k">Ventas${venSel?' del día':''}</div><div class="v num">${eur(A.b)}</div><div class="s">${pl(A.t,'ticket','tickets')}${venSel?` · de ${per[0].resumen.pri||'—'} a ${per[0].resumen.ult||'—'}`:` en ${pl(A.dias,'día','días')}${A.dias>1?` · ${eur(A.b/A.dias)} por día`:''}`}</div>${varTxt(varVentas,nomPrev)}</div>
     <div class="card"><div class="k">Ticket promedio</div><div class="v num">${eur(ticketProm)}</div><div class="s">${A.t?`${nf1.format(A.u/A.t)} artículos por ticket`:''}</div>${prevA?txtVar(pctVar(ticketProm,prevA.t?prevA.b/prevA.t:0),false,nomPrev):''}</div>
     <div class="card"><div class="k">Neto sin IVA</div><div class="v num">${eur(A.n)}</div><div class="s">IVA ${eur(A.iva)}</div></div>
     <div class="card ${margen!=null&&margen<50?'alert':''}"><div class="k">Margen sobre producto</div><div class="v num">${margen==null?'—':nf0.format(margen)+' %'}</div><div class="s">costo de producto ${eur(A.c)}${A.csin?` · ${pl(A.csin,'línea','líneas')} sin costo cargado en Ágora`:''}</div></div>
@@ -1597,27 +1608,30 @@ async function renderVentas(){
     <div class="card ${A.b-egresosPer<0?'neg':''}"><div class="k">Ventas − egresos</div><div class="v num">${A.b-egresosPer<0?'−':''}${eur(Math.abs(A.b-egresosPer))}</div><div class="s">egresos de la planilla en ${esc(nomPer)}: ${eur(egresosPer)}</div></div>
   </div>`;
 
+  if(venSel) h=`<div class="aviso info">Mostrando solo el ${esc(nomPer)}. <button type="button" class="linkbtn" data-dia="${venSel}">Volver al mes completo</button></div>`+h;
+
   // ---- gráfico: por día (mes) o por mes (año) ----
-  const porDia=new Map(per.map(d=>[d.dia,d]));
   if(month>=0){
     const n=new Date(Date.UTC(year,month+1,0)).getUTCDate(), cats=[];
-    let maxD=null; for(const d of per) if(!maxD||d.resumen.b>maxD.resumen.b) maxD=d;
+    let maxD=null; for(const d of perMes) if(!maxD||d.resumen.b>maxD.resumen.b) maxD=d;
     for(let i=1;i<=n;i++){ const iso=`${year}-${pad(month+1)}-${pad(i)}`, d=porDia.get(iso), ds=diaSemana(iso), R=d&&d.resumen;
       cats.push({lab:String(i),v:R?R.b:0,sel:venSel===iso,finde:ds>=5,falta:!d&&iso<hoy&&iso>=primero,data:{dia:iso},etiqueta:(R&&(venSel===iso||(!venSel&&d===maxD)))?nf0.format(R.b)+' €':'',
         tip:R?`${DSEM[ds]} ${fmtFecha(iso)}\nVentas  ${eur(R.b)}\n${pl(R.t,'ticket','tickets')} · promedio ${eur(R.t?R.b/R.t:0)}\nDe ${R.pri||'—'} a ${R.ult||'—'}`:`${DSEM[ds]} ${fmtFecha(iso)}\nsin datos`}); }
-    h+=`<div class="panel"><h2>Ventas por día · ${esc(MESES[month])} ${year}</h2><div class="sub">Tocá un día para ver sus tickets. Los fines de semana van sombreados; las rayas son días que no llegaron.</div>${columnasHTML(cats)}</div>`;
+    h+=`<div class="panel"><h2>Ventas por día · ${esc(MESES[month])} ${year}</h2><div class="sub">Tocá un día para que todo lo de abajo muestre solo ese día (y sus tickets); tocalo de nuevo para volver al mes. Fines de semana sombreados; las rayas son días que no llegaron.</div>${columnasHTML(cats)}</div>`;
   }else{
     const pm=Array.from({length:12},(_,m)=>sumarResumenes(ventasPeriodo(dias,year,m)));
     const cats=pm.map((x,m)=>({lab:MES3[m],v:x.b,falta:false,data:{mes:m},etiqueta:x.b&&x.b===Math.max(...pm.map(y=>y.b))?nf0.format(x.b)+' €':'',tip:`${MESES[m]} ${year}\nVentas  ${eur(x.b)}\n${pl(x.t,'ticket','tickets')} en ${pl(x.dias,'día','días')}${x.dias?`\n${eur(x.b/x.dias)} por día`:''}`}));
     h+=`<div class="panel"><h2>Ventas por mes · ${year}</h2><div class="sub">Tocá un mes para ver su detalle.</div>${columnasHTML(cats)}</div>`;
   }
 
-  // ---- día de la semana ----
+  // ---- día de la semana (solo con el mes o el año completo) ----
+  if(!venSel){
   const ds=Array.from({length:7},()=>({b:0,t:0,n:0}));
   for(const d of per){ const x=ds[diaSemana(d.dia)]; x.b+=d.resumen.b; x.t+=d.resumen.t; x.n++; }
   const mejor=ds.reduce((a,x,i)=>(x.n&&x.b/x.n>(ds[a].n?ds[a].b/ds[a].n:-1))?i:a,0);
   h+=`<div class="panel"><h2>Promedio por día de la semana</h2><div class="sub">Ventas promedio de cada día de la semana en ${esc(nomPer)}.</div>
     <div class="dsem">${ds.map((x,i)=>`<div class="${i===mejor&&x.n?'top':''}"><div class="k">${DSEM[i]}</div><div class="v num">${x.n?nf0.format(x.b/x.n)+' €':'—'}</div><div class="s">${x.n?`${pl(x.n,'día','días')} · ${nf0.format(x.t/x.n)} tickets`:'sin datos'}</div></div>`).join('')}</div></div>`;
+  }
 
   // ---- por hora / centro / pago ----
   const horas=[]; for(let hh=8;hh<=25;hh++){ const k=pad(hh%24), a=A.h[k]; if(a||(hh>=12&&hh<=23)) horas.push({lab:k+'h',v:a?a[0]:0,tip:`${k}:00 a ${k}:59\nVentas  ${eur(a?a[0]:0)}\n${pl(a?a[1]:0,'ticket','tickets')}`}); }
