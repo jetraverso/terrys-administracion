@@ -296,6 +296,16 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .ac div:hover{background:var(--surface-2)}
 .ac div.on{background:var(--accent-soft);color:var(--accent-ink);font-weight:600}
 
+/* ---------- filas automáticas (ventas de Ágora) ---------- */
+.sheet tr.auto td{background:color-mix(in oklab,var(--s-ven) 7%,var(--surface))}
+.sheet tr.auto input,.sheet tr.auto textarea{color:var(--ink-2);cursor:default}
+.sheet tr.auto td.c-money.ingreso input{color:var(--ok)}
+.sheet tr.auto .tag{position:absolute;right:6px;top:9px;font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;font-weight:700;padding:1px 6px;border-radius:4px;background:color-mix(in oklab,var(--s-ven) 25%,var(--surface));color:var(--accent-ink);pointer-events:none}
+.sheet tr.auto td.c-det{position:relative}
+.sheet tr.auto td.c-det textarea{padding-right:56px}
+.sheet tr.auto td.c-check input{accent-color:var(--muted);cursor:default}
+.aviso-doble{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:9px 14px;font-size:13.5px;font-weight:600;margin:-6px 0 12px}
+
 /* ---------- modal ---------- */
 .overlay{position:fixed;inset:0;z-index:60;background:rgba(21,19,15,.5);display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{width:100%;max-width:640px;max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow);padding:20px 22px}
@@ -409,6 +419,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
           <option value="porpagar">Por pagar</option>
           <option value="sinfactura">Sin factura</option>
           <option value="sinclara">Sin Clara</option>
+          <option value="sinventas">Ocultar ventas</option>
         </select>
         <button class="btn" id="btnPegar">Pegar desde Sheet</button>
         <button class="btn" id="btnCsv">Exportar CSV</button>
@@ -418,6 +429,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 
     <div class="months" id="months"></div>
     <div class="cards" id="cards"></div>
+    <div class="aviso-doble" id="avisoDoble" hidden></div>
     <div id="reportes" hidden></div>
 
     <div class="sheetwrap" id="sheetwrap">
@@ -436,6 +448,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <li>Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda). Enter baja a la fila de abajo.</li>
         <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
         <li>Información: escribí el texto y ponele el link de la factura con el botón de la cadenita o Ctrl/Cmd + K (o pegá el link directo y queda como FACTURA). Al tener link, Facturas se tilda sola.</li>
+        <li>Las filas azuladas con la etiqueta Ágora son las ventas de cada día, cargadas solas desde el TPV: no se editan ni se borran (si el día se vuelve a subir, se actualizan). Con el filtro "Ocultar ventas" desaparecen de la vista.</li>
         <li>Ancho de columnas: arrastrá el borde derecho del título. Queda guardado en este navegador. Doble clic en ese borde la vuelve a automática.</li>
       </ul>
     </details>
@@ -458,7 +471,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.3';
+const VERSION='2.4';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -586,7 +599,7 @@ const db=SB?{
   async list(empresa,y){
     const out=[]; const paso=1000;
     for(let desde=0;;desde+=paso){
-      const {data,error}=await sbc.from('movimientos').select('id,'+FIELDS.join(','))
+      const {data,error}=await sbc.from('movimientos').select('id,origen,'+FIELDS.join(','))
         .eq('empresa',empresa).gte('fecha',`${y}-01-01`).lte('fecha',`${y}-12-31`)
         .order('fecha').order('id').range(desde,desde+paso-1);
       if(error) throw error;
@@ -771,6 +784,7 @@ function aplicarVista(){
   const rep=vista!=='planilla';
   $('reportes').hidden=!rep; $('repTools').hidden=vista!=='reportes'; $('venTools').hidden=vista!=='ventas';
   for(const el of [$('planTools'),$('cards'),$('sheetwrap'),document.querySelector('details.ayuda'),document.querySelector('p.hint')]) if(el) el.hidden=rep;
+  if(rep) $('avisoDoble').hidden=true;
   acCerrar(); ocultarTip();
 }
 $('tabs').addEventListener('click',async e=>{
@@ -841,6 +855,7 @@ function pasaFiltro(r){
   if(filtro==='porpagar'&&!((r.egreso||0)>0&&!r.pagado)) return false;
   if(filtro==='sinfactura'&&r.factura) return false;
   if(filtro==='sinclara'&&r.clara) return false;
+  if(filtro==='sinventas'&&r.origen) return false;
   if(q){
     const txt=[r.fecha,r.fecha.split('-').reverse().join('/'),fmt(r.ingreso),fmt(r.egreso),r.detalle,r.tipo,r.desde,r.hacia,r.estado,r.informacion,r.comentarios].join(' ').toLowerCase();
     if(!q.toLowerCase().split(/\s+/).every(p=>txt.includes(p))) return false;
@@ -993,6 +1008,12 @@ const acciones=()=>`<button data-act="dup" title="Duplicar fila" aria-label="Dup
 function crearTr(r){
   const tr=document.createElement('tr');
   if(r.id) tr.dataset.id=r.id; else tr.className='nuevo';
+  if(r.origen){
+    // fila automática (ventas de Ágora): se ve pero no se edita ni se borra; se actualiza sola
+    tr.className='auto';
+    tr.innerHTML=COLS.map(c=>{ let h=celda(c,r).replace(/<(input|textarea)\b/g,'<$1 disabled'); if(c.k==='detalle') h=h.replace('<td>','<td class="c-det">').replace('</td>','<span class="tag" title="Cargada sola con las ventas de Ágora de ese día">Ágora</span></td>'); return h.replace(/<button[^>]*class="lk"[\s\S]*?<\/button>/,''); }).join('')+'<td class="c-act"></td>';
+    trRow.set(tr,r); return tr;
+  }
   tr.innerHTML=COLS.map(c=>celda(c,r)).join('')+`<td class="c-act">${r.id?acciones():''}</td>`;
   trRow.set(tr,r);
   return tr;
@@ -1040,6 +1061,13 @@ function recalc(){
     <div class="card ${porPagar.length?'alert':''}"><div class="k">Por pagar</div><div class="v num">${eur(sum(porPagar,'egreso'))}</div><div class="s">${pl(porPagar.length,'egreso','egresos')} sin marcar pagado</div></div>
     <div class="card"><div class="k">Sin factura</div><div class="v num">${sinFac.length}</div><div class="s">egresos sin tildar Facturas</div></div>`;
 
+  const av=$('avisoDoble');
+  if(av){
+    const auto=per.filter(r=>r.origen), manuales=per.filter(r=>!r.origen&&(r.ingreso||0)>0&&/factur|venta/i.test(r.detalle||''));
+    const conflicto=auto.length&&manuales.length&&vista==='planilla';
+    av.hidden=!conflicto;
+    if(conflicto) av.textContent=`Ojo: este mes tiene ${pl(auto.length,'día','días')} de ventas cargadas solas desde Ágora y además ${pl(manuales.length,'fila manual','filas manuales')} de ventas (${manuales.map(r=>r.detalle).join(', ')}) por ${eur(sum(manuales,'ingreso'))}. Si es la facturación del mes, borrala para no contarla dos veces.`;
+  }
   const vis=rows.filter(r=>enPeriodo(r)&&pasaFiltro(r));
   const vi=sum(vis,'ingreso'), vo=sum(vis,'egreso'), vb=vi-vo;
   $('footrow').innerHTML=`<td class="c-date">Totales</td><td class="r in">${fmt(vi)}</td><td class="r out">${fmt(vo)}</td><td colspan="${COLS.length-2}"><span class="fb">Balance ${vb<0?'−':''}${eur(Math.abs(vb))} · ${vis.length} ${vis.length===1?'fila':'filas'}${(q||filtro!=='todos')?' (filtradas)':''}</span></td>`;
@@ -1258,7 +1286,7 @@ $('tbody').addEventListener('keydown',e=>{
   }
   // Tab recorre todas las celdas, incluidas las casillas (la barra espaciadora las tilda).
   if(e.key==='Tab'&&!e.altKey&&!e.ctrlKey&&!e.metaKey){
-    const todas=[...$('tbody').querySelectorAll('[data-k]')], dest=todas[todas.indexOf(inp)+(e.shiftKey?-1:1)];
+    const todas=[...$('tbody').querySelectorAll('[data-k]:not([disabled])')], dest=todas[todas.indexOf(inp)+(e.shiftKey?-1:1)];
     if(!dest) return;
     e.preventDefault(); dest.focus();
     return;
