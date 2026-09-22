@@ -35,7 +35,7 @@
   --ok:#5cb47f; --ok-soft:#1c3326; --warn:#e29a4a; --warn-soft:#3a3010; --danger:#e5665e;
   --row-hover:#22201c; --shadow:0 12px 30px rgba(0,0,0,.5);
 }
-:root{color-scheme:dark; --s-in:#199e70; --s-out:#d95926}
+:root{color-scheme:dark; --s-in:#199e70; --s-out:#d95926; --s-ven:#3987e5}
 *{box-sizing:border-box}
 html,body{margin:0}
 body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased}
@@ -258,6 +258,38 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .tip{position:fixed;z-index:90;pointer-events:none;background:var(--brand);color:var(--brand-ink);border-radius:9px;padding:8px 11px;font-size:12.5px;line-height:1.45;white-space:pre-line;box-shadow:var(--shadow);max-width:280px;font-variant-numeric:tabular-nums}
 @media (max-width:980px){ .rep-grid{grid-template-columns:minmax(0,1fr)} }
 
+/* ---------- ventas ---------- */
+.cols .cats{position:absolute;inset:0;display:grid;grid-template-columns:repeat(var(--n,12),1fr)}
+.cols .mes i.ven{background:var(--s-ven)}
+.cols .mes i.falta{background:repeating-linear-gradient(45deg,var(--line),var(--line) 3px,transparent 3px,transparent 6px);height:100%;opacity:.6}
+.cols .mes.finde{background:color-mix(in oklab,var(--surface-2) 55%,transparent)}
+.cols .mes.finde.sel,.cols .mes.finde:hover{background:var(--surface-2)}
+.cols-x.dias{grid-template-columns:repeat(var(--n,31),1fr);letter-spacing:0}
+.cols-x.dias span{font-variant-numeric:tabular-nums}
+.cols-x.dias span.finde{color:var(--ink-2)}
+.rank .barra i.ven{background:var(--s-ven)}
+.rep-grid.tres{grid-template-columns:repeat(3,minmax(0,1fr))}
+@media (max-width:1180px){ .rep-grid.tres{grid-template-columns:repeat(2,minmax(0,1fr))} }
+@media (max-width:760px){ .rep-grid.tres{grid-template-columns:minmax(0,1fr)} }
+.aviso{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:9px 14px;font-size:13.5px;font-weight:600;margin-bottom:12px}
+.aviso.info{background:var(--accent-soft);color:var(--accent-ink)}
+.ticket{border-top:1px solid var(--line);padding:8px 0}
+.ticket:first-child{border-top:0}
+.ticket .cab{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.ticket .cab b{font-variant-numeric:tabular-nums}
+.ticket .cab .imp{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
+.ticket .cab .pill{display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--surface-2);color:var(--ink-2);margin:0;width:auto}
+.ticket .lin{font-size:12.5px;color:var(--ink-2);margin-top:3px;line-height:1.5}
+.ticket .lin span{white-space:nowrap}
+.ticket .lin span+span::before{content:" · ";color:var(--muted)}
+.dsem{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
+.dsem div{background:var(--surface-2);border-radius:8px;padding:8px 6px;text-align:center}
+.dsem .k{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.dsem .v{font-family:var(--display);font-size:22px;line-height:1.1;margin-top:2px;white-space:nowrap}
+.dsem .s{font-size:11px;color:var(--muted);margin-top:2px}
+.dsem div.top .v{color:var(--accent)}
+@media (max-width:760px){ .dsem{grid-template-columns:repeat(4,1fr)} }
+
 /* ---------- sugerencias ---------- */
 .ac{position:fixed;z-index:70;background:var(--surface);border:1px solid var(--line-2);border-radius:9px;box-shadow:var(--shadow);padding:4px;max-height:236px;overflow:auto;font-size:13px;min-width:150px}
 .ac div{padding:6px 9px;border-radius:6px;cursor:pointer;white-space:nowrap}
@@ -364,6 +396,9 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <button id="hoy">Hoy</button>
         <button id="next" aria-label="Mes siguiente">›</button>
       </div>
+      <div class="tools" id="venTools" hidden>
+        <label>Ordenar productos por <select id="venOrden" aria-label="Ordenar productos por"><option value="b">importe</option><option value="u">unidades</option><option value="m">margen</option></select></label>
+      </div>
       <div class="tools" id="repTools" hidden>
         <label>Agrupar por <select id="repDim" aria-label="Agrupar los egresos por"></select></label>
       </div>
@@ -423,7 +458,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='1.9';
+const VERSION='2.0';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -560,6 +595,15 @@ const db=SB?{
     }
     return out;
   },
+  async ventasDias(empresa,y){
+    const {data,error}=await sbc.from('ventas_dias').select('id,dia,origen,resumen,resumen_v,subido').eq('empresa',empresa).gte('dia',`${y}-01-01`).lte('dia',`${y}-12-31`).order('dia');
+    if(error) throw error; return data;
+  },
+  async ventasBruto(empresa,dias){
+    const {data,error}=await sbc.from('ventas_dias').select('id,dia,bruto').eq('empresa',empresa).in('dia',dias);
+    if(error) throw error; return data;
+  },
+  async ventasResumen(id,resumen,v){ const {error}=await sbc.from('ventas_dias').update({resumen,resumen_v:v}).eq('id',id); if(error) throw error; },
   async listAll(){
     const out=[]; const paso=1000;
     for(let desde=0;;desde+=paso){
@@ -595,6 +639,7 @@ const db=SB?{
     async list(e,y){ return leer(e).filter(r=>r.fecha.startsWith(y+'-')).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id-b.id); },
     async listAll(){ return TABS.flatMap(t=>leer(t.empresa).map(r=>({...r,empresa:t.empresa}))).sort((a,b)=>a.empresa.localeCompare(b.empresa)||a.fecha.localeCompare(b.fecha)||a.id-b.id); },
     async listSug(e){ return leer(e); },
+    async ventasDias(){ return []; }, async ventasBruto(){ return []; }, async ventasResumen(){},
     async insert(r){ const l=leer(tab.empresa); const o={id:nuevoId(),...limpio(r)}; l.push(o); grabar(tab.empresa,l); return {id:o.id}; },
     async insertMany(list){ const l=leer(tab.empresa); for(const r of list) l.push({id:nuevoId(),...limpio(r)}); grabar(tab.empresa,l); },
     async update(id,patch){ const l=leer(tab.empresa); const o=l.find(x=>x.id===id); if(o) Object.assign(o,aDb(patch)); grabar(tab.empresa,l); },
@@ -626,7 +671,7 @@ window.addEventListener('beforeunload',e=>{ if(pendientes>0){ e.preventDefault()
 
 /* ---------- login ---------- */
 function showLogin(msg){
-  user=null; rows=[]; loadedKey=''; mfaUser=null; mfaFactor=null; for(const k in memoria) delete memoria[k]; for(const k in cacheAnio) delete cacheAnio[k];
+  user=null; rows=[]; loadedKey=''; mfaUser=null; mfaFactor=null; for(const k in memoria) delete memoria[k]; for(const k in cacheAnio) delete cacheAnio[k]; for(const k in cacheVentas) delete cacheVentas[k]; for(const k in cacheBruto) delete cacheBruto[k];
   $('app').hidden=true; $('login').hidden=false; $('loginForm').hidden=false; $('mfaForm').hidden=true;
   $('mfaQr').removeAttribute('src'); $('mfaSecret').textContent='';
   $('lgDemo').hidden=SB; $('lgErr').textContent=msg||''; $('lgPass').value='';
@@ -720,11 +765,11 @@ $('btnSalir').onclick=async()=>{
 let vista='planilla';   // 'planilla' | 'reportes'
 function renderTabs(){
   $('tabs').innerHTML=TABS.map(t=>`<button class="tab ${vista==='planilla'&&t.id===tab.id?'on':''}" data-tab="${esc(t.id)}">${esc(t.titulo)}</button>`).join('')
-    +`<button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button>`;
+    +`<button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button><button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button>`;
 }
 function aplicarVista(){
-  const rep=vista==='reportes';
-  $('reportes').hidden=!rep; $('repTools').hidden=!rep;
+  const rep=vista!=='planilla';
+  $('reportes').hidden=!rep; $('repTools').hidden=vista!=='reportes'; $('venTools').hidden=vista!=='ventas';
   for(const el of [$('planTools'),$('cards'),$('sheetwrap'),document.querySelector('details.ayuda'),document.querySelector('p.hint')]) if(el) el.hidden=rep;
   acCerrar(); ocultarTip();
 }
@@ -762,7 +807,7 @@ async function cargarMemoria(){
     if(tab.empresa===e&&user) recalc();
   }catch(_){ delete memoria[e]; }
 }
-function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); renderReportes(); } else { renderTabla(); recalc(); } }
+function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); renderReportes(); } else if(vista==='ventas'){ recalc(); renderVentas(); } else { renderTabla(); recalc(); } }
 
 /* ---------- período ---------- */
 function renderPeriodo(){
@@ -772,12 +817,14 @@ function renderMeses(){
   const tot=Array.from({length:12},()=>({n:0,out:0,inn:0}));
   for(const r of rows){ const m=+r.fecha.slice(5,7)-1; tot[m].n++; tot[m].out+=r.egreso||0; tot[m].inn+=r.ingreso||0; }
   const esHoy=m=>year===hoyD.getFullYear()&&m===hoyD.getMonth();
+  const ven=vista==='ventas'?(cacheVentas[tab.empresa+'|'+year]||null):null;
+  if(ven){ for(const t of tot){ t.n=0; t.ven=0; } for(const d of ven) if(d.resumen){ const m=+d.dia.slice(5,7)-1; tot[m].n++; tot[m].ven+=d.resumen.b; } }
   let h=`<button class="mchip ${month<0?'on':''}" data-m="-1"><b>${year}</b><small>año completo</small></button>`;
-  h+=tot.map((t,m)=>`<button class="mchip ${m===month?'on':''} ${t.n?'':'vacio'} ${esHoy(m)?'hoy':''}" data-m="${m}" aria-label="${MESES[m]} ${year}"><b>${MES3[m]}</b><small>${t.n?'−'+nf0.format(t.out)+' €':'sin datos'}</small></button>`).join('');
+  h+=tot.map((t,m)=>`<button class="mchip ${m===month?'on':''} ${t.n?'':'vacio'} ${esHoy(m)?'hoy':''}" data-m="${m}" aria-label="${MESES[m]} ${year}"><b>${MES3[m]}</b><small>${t.n?(ven?'':'−')+nf0.format(ven?t.ven:t.out)+' €':'sin datos'}</small></button>`).join('');
   $('months').innerHTML=h;
   const on=$('months').querySelector('.on'); if(on) $('months').scrollLeft=Math.max(0,on.offsetLeft-$('months').offsetLeft-90);
 }
-$('months').addEventListener('click',e=>{ const b=e.target.closest('[data-m]'); if(!b) return; month=+b.dataset.m; renderTodo(); });
+$('months').addEventListener('click',e=>{ const b=e.target.closest('[data-m]'); if(!b) return; month=+b.dataset.m; venSel=null; renderTodo(); });
 async function mover(d){
   if(month<0){ year+=d; }
   else{ month+=d; if(month<0){month=11;year--;} if(month>11){month=0;year++;} }
@@ -1320,7 +1367,7 @@ $('reportes').addEventListener('focusin',e=>{ const el=e.target.closest('[data-t
 $('reportes').addEventListener('focusout',ocultarTip);
 $('reportes').addEventListener('scroll',ocultarTip,{passive:true});
 $('reportes').addEventListener('click',e=>{
-  const m=e.target.closest('[data-mes]'); if(m){ month=+m.dataset.mes; repSel=null; renderTodo(); return; }
+  const m=e.target.closest('[data-mes]'); if(m){ month=+m.dataset.mes; repSel=null; venSel=null; renderTodo(); return; }
   const g=e.target.closest('[data-grupo]'); if(g){ repSel=repSel===g.dataset.grupo?null:g.dataset.grupo; renderReportes(); return; }
   const v=e.target.closest('[data-ver]'); if(v){ q=v.dataset.ver; $('q').value=q; vista='planilla'; renderTabs(); aplicarVista(); renderTodo(); }
 });
@@ -1402,6 +1449,213 @@ async function renderReportes(){
       <tbody>${topA.map(g=>`<tr class="clic ${repSel===g.k?'sel':''}" data-grupo="${esc(g.k)}"><td title="${esc(g.nombre)}">${esc(g.nombre)}</td>${g.porMes.map(celdaCalor).join('')}<td class="tot">${nf0.format(g.total)}</td></tr>`).join('')}
       <tr><td>Todos los egresos</td>${totMes.map(v=>`<td class="r"><b>${v?nf0.format(v):'·'}</b></td>`).join('')}<td class="tot">${nf0.format(totMes.reduce((a,b)=>a+b,0))}</td></tr></tbody></table></div>`:'<div class="vacio">No hay egresos cargados en este año.</div>'}</div>`;
   cont.innerHTML=h;
+}
+
+/* ---------- ventas (Ágora) ----------
+   Cada día llega como el JSON crudo de Ágora (tabla ventas_dias.bruto). De ahí se
+   arma un resumen compacto por día (resumirVentas) que se guarda en la misma fila
+   y es lo único que se baja para los reportes. Si cambia lo que se resume, se
+   sube RES_V y los días se vuelven a procesar solos. */
+const RES_V=1;
+const cacheVentas={}, cacheBruto={};
+let venSel=null, venOrden='b';
+try{ const o=localStorage.getItem('terrys_admin_ven_orden'); if(/^[bum]$/.test(o||'')) venOrden=o; }catch(_){}
+$('venOrden').value=venOrden;
+$('venOrden').addEventListener('change',e=>{ venOrden=e.target.value; try{ localStorage.setItem('terrys_admin_ven_orden',venOrden); }catch(_){} renderVentas(); });
+const r2=n=>Math.round((n||0)*100)/100;
+function resumirVentas(bruto){
+  const inv=(bruto&&bruto.Invoices)||[];
+  const R={v:RES_V,t:0,t0:0,b:0,n:0,iva:0,c:0,csin:0,d:0,prop:0,g:0,u:0,h:{},ce:{},pg:{},fa:{},pr:{},us:{},p:{},pri:null,ult:null};
+  const add=(o,k,i,v)=>{ const a=o[k]||(o[k]=[0,0,0]); a[i]+=v; };
+  for(const f of inv){
+    const T=f.Totals||{}, g=+T.GrossAmount||0, hh=(f.Date||'').slice(11,13), hm=(f.Date||'').slice(11,16);
+    if(g>0){ R.t++; if(!R.pri||hm<R.pri) R.pri=hm; if(!R.ult||hm>R.ult) R.ult=hm; } else R.t0++;
+    R.b+=g; R.n+=+T.NetAmount||0; R.iva+=+T.VatAmount||0;
+    if(hh){ add(R.h,hh,0,g); add(R.h,hh,1,g>0?1:0); }
+    const un=(f.User&&f.User.Name)||'—'; add(R.us,un,0,g); add(R.us,un,1,g>0?1:0);
+    for(const p of (f.Payments||[])){ const m=p.MethodName||'—'; add(R.pg,m,0,+p.Amount||0); add(R.pg,m,1,1); R.prop+=+p.TipAmount||0; }
+    for(const it of (f.InvoiceItems||[])){
+      const ig=+((it.Totals||{}).GrossAmount)||0, ce=(it.SaleCenter&&it.SaleCenter.Name)||'—';
+      add(R.ce,ce,0,ig); add(R.ce,ce,1,ig>0?1:0); R.g+=+it.Guests||0;
+      let sumL=0;
+      for(const l of (it.Lines||[])){
+        const q=+l.Quantity||0, ta=+l.TotalAmount||0, co=+l.TotalCostPrice||0;
+        sumL+=ta; R.u+=q; R.c+=co; if(!co&&ta>0) R.csin++;
+        const teor=(+l.UnitPrice||0)*q; if(teor-ta>0.005) R.d+=teor-ta;
+        const fa=l.FamilyName||'—', pr=l.PreparationTypeName||'—', pn=l.ProductName||'—';
+        add(R.fa,fa,0,ta); add(R.fa,fa,1,q); add(R.fa,fa,2,co);
+        add(R.pr,pr,0,ta); add(R.pr,pr,1,q); add(R.pr,pr,2,co);
+        const P=R.p[pn]||(R.p[pn]=[0,0,0,fa]); P[0]+=ta; P[1]+=q; P[2]+=co;
+      }
+      if(sumL-ig>0.005) R.d+=sumL-ig;
+    }
+  }
+  for(const k of ['b','n','iva','c','d','prop','u']) R[k]=r2(R[k]);
+  for(const o of [R.h,R.ce,R.pg,R.fa,R.pr,R.us,R.p]) for(const k in o) o[k]=o[k].map(x=>typeof x==='number'?r2(x):x);
+  return R;
+}
+async function filasVentas(y){
+  const key=tab.empresa+'|'+y;
+  if(cacheVentas[key]) return cacheVentas[key];
+  const dias=await db.ventasDias(tab.empresa,y);
+  const pend=dias.filter(d=>!d.resumen||d.resumen_v!==RES_V);
+  for(let i=0;i<pend.length;i+=8){
+    const lote=pend.slice(i,i+8);
+    setSync(`procesando ventas ${Math.min(i+8,pend.length)}/${pend.length}…`);
+    const brutos=await db.ventasBruto(tab.empresa,lote.map(d=>d.dia));
+    for(const b of brutos){
+      const d=lote.find(x=>x.dia===b.dia); if(!d) continue;
+      d.resumen=resumirVentas(b.bruto); d.resumen_v=RES_V; cacheBruto[tab.empresa+'|'+b.dia]=b.bruto;
+      try{ await db.ventasResumen(d.id,d.resumen,RES_V); }catch(_){}
+    }
+  }
+  if(pend.length) setSync(SB?'supabase':'demo local');
+  cacheVentas[key]=dias.filter(d=>d.resumen);
+  return cacheVentas[key];
+}
+async function brutoDeDia(dia){
+  const k=tab.empresa+'|'+dia;
+  if(!cacheBruto[k]){ const l=await db.ventasBruto(tab.empresa,[dia]); cacheBruto[k]=l.length?l[0].bruto:{Invoices:[]}; }
+  return cacheBruto[k];
+}
+function sumarResumenes(dias){
+  const A={t:0,t0:0,b:0,n:0,iva:0,c:0,csin:0,d:0,prop:0,g:0,u:0,h:{},ce:{},pg:{},fa:{},pr:{},us:{},p:{},dias:dias.length};
+  const merge=(dst,src,fijo)=>{ for(const k in src){ const a=dst[k]||(dst[k]=src[k].map(x=>typeof x==='number'?0:x)); src[k].forEach((v,i)=>{ if(typeof v==='number') a[i]+=v; }); } };
+  for(const d of dias){ const R=d.resumen; for(const k of ['t','t0','b','n','iva','c','csin','d','prop','g','u']) A[k]+=R[k]||0; for(const k of ['h','ce','pg','fa','pr','us','p']) merge(A[k],R[k]||{}); }
+  return A;
+}
+const DSEM=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const diaSemana=iso=>(new Date(iso+'T12:00:00').getDay()+6)%7;
+const ventasPeriodo=(dias,y,m)=>dias.filter(d=>d.dia.startsWith(m<0?y+'-':`${y}-${pad(m+1)}-`));
+
+function rankHTML(obj,idx,total,opts){
+  opts=opts||{}; const cls=opts.cls||'ven';
+  const l=Object.entries(obj).map(([k,a])=>({k,v:a[idx],n:a[1],c:a[2]})).filter(x=>x.v>0.004).sort((a,b)=>b.v-a.v);
+  if(!l.length) return '<div class="vacio">Sin datos.</div>';
+  const max=l[0].v;
+  return `<div class="rank">${l.slice(0,opts.max||12).map(x=>`<div class="fila" data-tip="${esc(`${x.k}\n${eur(x.v)} · ${Math.round(x.v/total*100)} %${opts.tipN?`\n${opts.tipN(x)}`:''}`)}"><span class="nom">${esc(x.k)}</span><span class="barra"><i class="${cls}" style="width:${Math.max(.5,x.v/max*100)}%"></i></span><span class="num"><b>${fmt(x.v)} €</b><small>${Math.round(x.v/total*100)} %</small></span></div>`).join('')}</div>`;
+}
+function columnasHTML(cats,opts){
+  // cats: [{lab, v, sel, finde, falta, tip, data:{...}, etiqueta}] — una serie, una columna por categoría
+  const techo=techoLindo(Math.max(1,...cats.map(c=>c.v||0)));
+  const grid=[0,.25,.5,.75,1].map(f=>`<div class="grid" style="bottom:${f*100}%"><b>${f?kfmt(techo*f)+' €':'0'}</b></div>`).join('');
+  const cols=cats.map(c=>{
+    const attrs=Object.entries(c.data||{}).map(([k,v])=>` data-${k}="${esc(v)}"`).join('');
+    return `<button type="button" class="mes ${c.sel?'sel':''} ${c.finde?'finde':''}"${attrs} aria-label="${esc(c.lab+': '+(c.falta?'sin datos':eur(c.v)))}" data-tip="${esc(c.tip||'')}">${c.falta?'<i class="falta"></i>':`<i class="ven" style="height:${(c.v||0)/techo*100}%">${c.etiqueta?`<span class="val">${c.etiqueta}</span>`:''}</i>`}</button>`; }).join('');
+  return `<div class="cols ${cats.some(c=>c.sel)?'conSel':''}">${grid}<div class="cats" style="--n:${cats.length}">${cols}</div></div>
+    <div class="cols-x dias" style="--n:${cats.length}">${cats.map(c=>`<span class="${c.sel?'sel':''} ${c.finde?'finde':''}">${esc(c.lab)}</span>`).join('')}</div>`;
+}
+$('reportes').addEventListener('click',e=>{
+  if(vista!=='ventas') return;
+  const d=e.target.closest('[data-dia]'); if(d){ venSel=venSel===d.dataset.dia?null:d.dataset.dia; renderVentas(); }
+});
+
+async function renderVentas(){
+  const tk=++repTk, cont=$('reportes');
+  let dias;
+  try{ dias=await filasVentas(year); }
+  catch(e){ cont.innerHTML=`<div class="aviso">No se pudieron cargar las ventas: ${esc(errMsg(e))}${/ventas_dias|does not exist/i.test(errMsg(e))?' (falta correr el schema.sql nuevo en Supabase)':''}</div>`; return; }
+  if(tk!==repTk||vista!=='ventas') return;
+  renderMeses();
+  const hoy=hoyISO();
+  const per=ventasPeriodo(dias,year,month), A=sumarResumenes(per);
+  const nomPer=month<0?`${year}`:`${MESES[month].toLowerCase()} de ${year}`;
+  let prevA=null, nomPrev='';
+  try{
+    if(month<0){ const l=await filasVentas(year-1); if(l.length){ prevA=sumarResumenes(l); nomPrev=String(year-1); } }
+    else if(month===0){ const l=ventasPeriodo(await filasVentas(year-1),year-1,11); if(l.length){ prevA=sumarResumenes(l); nomPrev='diciembre'; } }
+    else { const l=ventasPeriodo(dias,year,month-1); if(l.length){ prevA=sumarResumenes(l); nomPrev=MESES[month-1].toLowerCase(); } }
+  }catch(_){}
+  if(tk!==repTk||vista!=='ventas') return;
+
+  if(!dias.length){
+    cont.innerHTML=`<div class="aviso info">Todavía no llegaron ventas de Ágora para ${year}. Cuando el script del TPV suba el primer día, aparecen acá. Cómo instalarlo: carpeta <code>agora</code> del repositorio.</div>`;
+    return;
+  }
+  // días que faltan (hasta ayer) en el período
+  const faltan=[];
+  if(month>=0){ const n=new Date(Date.UTC(year,month+1,0)).getUTCDate(); for(let d=1;d<=n;d++){ const iso=`${year}-${pad(month+1)}-${pad(d)}`; if(iso<hoy&&!per.some(x=>x.dia===iso)) faltan.push(iso); } }
+  const primero=dias[0].dia;
+  const faltanReales=faltan.filter(f=>f>=primero);
+
+  const ticketProm=A.t?A.b/A.t:0, margen=A.n?(A.n-A.c)/A.n*100:null;
+  const egresosPer=rows.filter(enPeriodo).reduce((t,r)=>t+(r.egreso||0),0);
+  const pctVar=(a,b)=>b?(a-b)/b*100:null;
+  // si el período todavía no terminó (o al anterior le faltan días) se compara el promedio por día, no el total
+  const incompleto=month>=0?(`${year}-${pad(month+1)}-${pad(new Date(Date.UTC(year,month+1,0)).getUTCDate())}`>=hoy):(String(year)>=hoy.slice(0,4));
+  const porDiaCmp=incompleto||(prevA&&A.dias&&prevA.dias&&Math.abs(prevA.dias-A.dias)>3);
+  const varTxt=(v,contra)=>v==null?'':txtVar(v,false,contra).replace(' vs ',porDiaCmp?' por día vs ':' vs ');
+  const varVentas=prevA?(porDiaCmp?pctVar(A.b/(A.dias||1),prevA.b/(prevA.dias||1)):pctVar(A.b,prevA.b)):null;
+  let h=`${faltanReales.length?`<div class="aviso">Faltan ${pl(faltanReales.length,'día','días')} de ventas en ${esc(nomPer)}: ${faltanReales.slice(0,8).map(f=>f.slice(8)+'/'+f.slice(5,7)).join(', ')}${faltanReales.length>8?'…':''}. En la computadora del TPV: <code>subir-ventas.ps1 -Desde ${faltanReales[0]}</code>.</div>`:''}
+  <div class="cards">
+    <div class="card in"><div class="k">Ventas</div><div class="v num">${eur(A.b)}</div><div class="s">${pl(A.t,'ticket','tickets')} en ${pl(A.dias,'día','días')}${A.dias>1?` · ${eur(A.b/A.dias)} por día`:''}</div>${varTxt(varVentas,nomPrev)}</div>
+    <div class="card"><div class="k">Ticket promedio</div><div class="v num">${eur(ticketProm)}</div><div class="s">${A.t?`${nf1.format(A.u/A.t)} artículos por ticket`:''}</div>${prevA?txtVar(pctVar(ticketProm,prevA.t?prevA.b/prevA.t:0),false,nomPrev):''}</div>
+    <div class="card"><div class="k">Neto sin IVA</div><div class="v num">${eur(A.n)}</div><div class="s">IVA ${eur(A.iva)}</div></div>
+    <div class="card ${margen!=null&&margen<50?'alert':''}"><div class="k">Margen sobre producto</div><div class="v num">${margen==null?'—':nf0.format(margen)+' %'}</div><div class="s">costo de producto ${eur(A.c)}${A.csin?` · ${pl(A.csin,'línea','líneas')} sin costo cargado en Ágora`:''}</div></div>
+    <div class="card"><div class="k">Descuentos e invitaciones</div><div class="v num">${eur(A.d)}</div><div class="s">${A.t0?`${pl(A.t0,'ticket','tickets')} a 0 € (empleados, invitaciones)`:'sobre el precio de lista'}</div></div>
+    <div class="card ${A.b-egresosPer<0?'neg':''}"><div class="k">Ventas − egresos</div><div class="v num">${A.b-egresosPer<0?'−':''}${eur(Math.abs(A.b-egresosPer))}</div><div class="s">egresos de la planilla en ${esc(nomPer)}: ${eur(egresosPer)}</div></div>
+  </div>`;
+
+  // ---- gráfico: por día (mes) o por mes (año) ----
+  const porDia=new Map(per.map(d=>[d.dia,d]));
+  if(month>=0){
+    const n=new Date(Date.UTC(year,month+1,0)).getUTCDate(), cats=[];
+    let maxD=null; for(const d of per) if(!maxD||d.resumen.b>maxD.resumen.b) maxD=d;
+    for(let i=1;i<=n;i++){ const iso=`${year}-${pad(month+1)}-${pad(i)}`, d=porDia.get(iso), ds=diaSemana(iso), R=d&&d.resumen;
+      cats.push({lab:String(i),v:R?R.b:0,sel:venSel===iso,finde:ds>=5,falta:!d&&iso<hoy&&iso>=primero,data:{dia:iso},etiqueta:(R&&(venSel===iso||(!venSel&&d===maxD)))?nf0.format(R.b)+' €':'',
+        tip:R?`${DSEM[ds]} ${fmtFecha(iso)}\nVentas  ${eur(R.b)}\n${pl(R.t,'ticket','tickets')} · promedio ${eur(R.t?R.b/R.t:0)}\nDe ${R.pri||'—'} a ${R.ult||'—'}`:`${DSEM[ds]} ${fmtFecha(iso)}\nsin datos`}); }
+    h+=`<div class="panel"><h2>Ventas por día · ${esc(MESES[month])} ${year}</h2><div class="sub">Tocá un día para ver sus tickets. Los fines de semana van sombreados; las rayas son días que no llegaron.</div>${columnasHTML(cats)}</div>`;
+  }else{
+    const pm=Array.from({length:12},(_,m)=>sumarResumenes(ventasPeriodo(dias,year,m)));
+    const cats=pm.map((x,m)=>({lab:MES3[m],v:x.b,falta:false,data:{mes:m},etiqueta:x.b&&x.b===Math.max(...pm.map(y=>y.b))?nf0.format(x.b)+' €':'',tip:`${MESES[m]} ${year}\nVentas  ${eur(x.b)}\n${pl(x.t,'ticket','tickets')} en ${pl(x.dias,'día','días')}${x.dias?`\n${eur(x.b/x.dias)} por día`:''}`}));
+    h+=`<div class="panel"><h2>Ventas por mes · ${year}</h2><div class="sub">Tocá un mes para ver su detalle.</div>${columnasHTML(cats)}</div>`;
+  }
+
+  // ---- día de la semana ----
+  const ds=Array.from({length:7},()=>({b:0,t:0,n:0}));
+  for(const d of per){ const x=ds[diaSemana(d.dia)]; x.b+=d.resumen.b; x.t+=d.resumen.t; x.n++; }
+  const mejor=ds.reduce((a,x,i)=>(x.n&&x.b/x.n>(ds[a].n?ds[a].b/ds[a].n:-1))?i:a,0);
+  h+=`<div class="panel"><h2>Promedio por día de la semana</h2><div class="sub">Ventas promedio de cada día de la semana en ${esc(nomPer)}.</div>
+    <div class="dsem">${ds.map((x,i)=>`<div class="${i===mejor&&x.n?'top':''}"><div class="k">${DSEM[i]}</div><div class="v num">${x.n?nf0.format(x.b/x.n)+' €':'—'}</div><div class="s">${x.n?`${pl(x.n,'día','días')} · ${nf0.format(x.t/x.n)} tickets`:'sin datos'}</div></div>`).join('')}</div></div>`;
+
+  // ---- por hora / centro / pago ----
+  const horas=[]; for(let hh=8;hh<=25;hh++){ const k=pad(hh%24), a=A.h[k]; if(a||(hh>=12&&hh<=23)) horas.push({lab:k+'h',v:a?a[0]:0,tip:`${k}:00 a ${k}:59\nVentas  ${eur(a?a[0]:0)}\n${pl(a?a[1]:0,'ticket','tickets')}`}); }
+  h+=`<div class="rep-grid tres">
+    <div class="panel"><h2>Por hora</h2><div class="sub">Ventas según la hora en que se cobró el ticket.</div>${columnasHTML(horas)}</div>
+    <div class="panel"><h2>Centro de venta</h2><div class="sub">Local, terraza, delivery, take away…</div>${rankHTML(A.ce,0,A.b,{tipN:x=>pl(x.n,'ticket','tickets')})}</div>
+    <div class="panel"><h2>Formas de pago</h2><div class="sub">Cómo se cobró${A.prop?` · propinas ${eur(A.prop)}`:''}.</div>${rankHTML(A.pg,0,Object.values(A.pg).reduce((t,a)=>t+a[0],0)||1,{tipN:x=>pl(x.n,'cobro','cobros')})}</div>
+  </div>`;
+
+  // ---- productos / familia / quién cobró ----
+  const prods=Object.entries(A.p).map(([k,a])=>({k,b:a[0],u:a[1],c:a[2],fa:a[3],m:a[0]>0&&a[2]>0?(a[0]/1.1-a[2])/(a[0]/1.1)*100:null})).filter(x=>x.u>0);
+  prods.sort((x,y)=>venOrden==='u'?y.u-x.u:venOrden==='m'?((y.m==null?-1e9:y.m)-(x.m==null?-1e9:x.m)):y.b-x.b);
+  const filasP=prods.slice(0,30).map(x=>`<tr><td title="${esc(x.k)}">${esc(x.k)}</td><td>${esc(x.fa)}</td><td class="r">${nf1.format(x.u)}</td><td class="r"><b>${fmt(x.b)} €</b></td><td class="r">${Math.round(x.b/A.b*100)} %</td><td class="r">${x.m==null?'—':nf0.format(x.m)+' %'}</td></tr>`).join('');
+  h+=`<div class="rep-grid">
+    <div class="panel"><h2>Productos más vendidos</h2><div class="sub">${prods.length} productos distintos en ${esc(nomPer)}; se muestran los primeros 30 por ${venOrden==='u'?'unidades':venOrden==='m'?'margen':'importe'}. El margen usa el precio de costo cargado en Ágora (sobre el precio sin IVA).</div>
+      ${prods.length?`<div class="scrollx"><table class="tablita"><thead><tr><th>Producto</th><th>Familia</th><th class="r">Unid.</th><th class="r">Importe</th><th class="r">%</th><th class="r">Margen</th></tr></thead><tbody>${filasP}</tbody></table></div>`:'<div class="vacio">Sin datos.</div>'}</div>
+    <div>
+      <div class="panel"><h2>Por familia y preparación</h2><div class="sub">Comida, bebida, y por dónde sale (barra, hamburguesas, fritos).</div>${rankHTML(A.fa,0,A.b,{tipN:x=>`${nf1.format(x.n)} unidades · costo ${eur(x.c)}`})}<div style="height:10px"></div>${rankHTML(A.pr,0,A.b,{tipN:x=>`${nf1.format(x.n)} unidades · costo ${eur(x.c)}`})}</div>
+      <div class="panel"><h2>Quién cobró</h2><div class="sub">Tickets cobrados por cada usuario del TPV.</div>${rankHTML(A.us,0,A.b,{tipN:x=>pl(x.n,'ticket','tickets')})}</div>
+    </div>
+  </div>`;
+
+  // ---- tickets del día elegido ----
+  if(venSel&&porDia.get(venSel)){
+    h+=`<div class="panel" id="venDia"><h2>Tickets del ${fmtFecha(venSel)}</h2><div class="sub">Cargando…</div></div>`;
+  }
+  cont.innerHTML=h;
+  if(venSel&&porDia.get(venSel)){
+    try{
+      const b=await brutoDeDia(venSel); if(tk!==repTk||vista!=='ventas') return;
+      const inv=(b.Invoices||[]).slice().sort((x,y)=>(x.Date||'').localeCompare(y.Date||''));
+      const R=porDia.get(venSel).resumen;
+      const tk2=inv.map(f=>{ const T=f.Totals||{}, items=f.InvoiceItems||[], ce=[...new Set(items.map(it=>(it.SaleCenter||{}).Name).filter(Boolean))].join(' + '), pag=(f.Payments||[]).map(p=>p.MethodName).join(' + ');
+        const lin=items.flatMap(it=>it.Lines||[]).map(l=>`<span>${l.Quantity!==1?nf1.format(l.Quantity)+'× ':''}${esc(l.ProductName)}</span>`).join('');
+        return `<div class="ticket"><div class="cab"><b>${(f.Date||'').slice(11,16)}</b><span class="pill">${esc(ce||'—')}</span><span>${esc(pag||'sin pago')}</span><span style="color:var(--muted)">${esc((f.User||{}).Name||'')} · ${esc(f.Serie||'')}${f.Number||''}</span><span class="imp">${fmt(+T.GrossAmount||0)} €</span></div><div class="lin">${lin}</div></div>`; }).join('');
+      const el=$('venDia'); if(el) el.innerHTML=`<h2>Tickets del ${DSEM[diaSemana(venSel)]} ${fmtFecha(venSel)}</h2><div class="sub">${pl(inv.length,'ticket','tickets')} · ${eur(R.b)} · de ${R.pri||'—'} a ${R.ult||'—'} · <button type="button" class="linkbtn" data-dia="${venSel}">Cerrar</button></div>${tk2||'<div class="vacio">Sin tickets.</div>'}`;
+      el&&el.scrollIntoView({behavior:'smooth',block:'start'});
+    }catch(e){ const el=$('venDia'); if(el) el.querySelector('.sub').textContent='No se pudieron cargar los tickets: '+errMsg(e); }
+  }
 }
 
 /* ---------- modales ---------- */

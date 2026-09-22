@@ -1,3 +1,6 @@
 migracion/
 .DS_Store
 .claude/
+agora/muestras/
+agora/config.json
+agora/*.log

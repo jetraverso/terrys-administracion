@@ -1,0 +1,8 @@
+{
+  "agoraExport": "http://localhost:8984/api/export/?filter=Invoices&business-day={dia}",
+  "agoraToken": "EL-TOKEN-DE-LA-API-DE-AGORA",
+  "supabaseUrl": "https://cgkpklimplpedgxbgzvu.supabase.co",
+  "supabaseKey": "sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC",
+  "integracionToken": "EL-TOKEN-QUE-DISTE-DE-ALTA-EN-integraciones",
+  "empresa": "terrys-burgers-sl"
+}

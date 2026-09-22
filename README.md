@@ -32,6 +32,16 @@ Solapa **Reportes** en la barra de arriba. Usa el mismo mes/año que la planilla
 - **En qué se fue la plata:** ranking de egresos agrupados por *Proveedor (Hacia dónde)*, *Detalle*, *Tipo de operación* o *Desde dónde* (selector "Agrupar por"), con el % del total y la variación contra el período anterior. Junta solo las variantes de escritura (mayúsculas y acentos: "Reposición" y "Reposicion" cuentan como lo mismo). Tocando una fila se ven sus movimientos, con link a la factura y un atajo para verlos en la planilla.
 - **Mes a mes:** tabla del año con los 15 grupos de más gasto y un color más fuerte cuanto más se gastó, para ver qué viene subiendo.
 
+## Ventas (Ágora POS)
+
+Solapa **Ventas**: reportes de las ventas del local que llegan solas desde Ágora cada noche (ver [`agora/README.md`](agora/README.md) para instalar el script en la computadora del TPV). Mismo mes/año que la planilla; el primer botón de la tira es el año completo.
+
+- **Resumen:** ventas, tickets y promedio por día, ticket promedio y artículos por ticket, neto sin IVA, margen sobre producto (con el precio de costo cargado en Ágora), descuentos e invitaciones, y ventas menos los egresos de la planilla. Con la variación contra el mes anterior (por día si el mes no terminó).
+- **Ventas por día** del mes (o por mes en la vista de año). Fines de semana sombreados y rayas en los días que no llegaron (arriba avisa cuáles faltan y qué comando correr en el TPV).
+- **Promedio por día de la semana**, **por hora**, **centro de venta** (local, terraza, delivery, take away), **formas de pago** (efectivo, tarjeta, Glovo), **familia y preparación**, **quién cobró**.
+- **Productos más vendidos** con unidades, importe, % y margen (ordenables por importe, unidades o margen).
+- **Tickets del día:** tocando un día del gráfico aparecen todos sus tickets con hora, centro, forma de pago, quién cobró y los productos.
+
 Mientras `SUPABASE_URL` esté vacío la página funciona en **modo demo**: entra con cualquier email y contraseña `1234`, y guarda solo en ese navegador. Sirve para probarla, no para trabajar.
 
 ## Puesta en marcha (una sola vez)
@@ -103,3 +113,4 @@ Para quitárselo: `delete from public.admin_usuarios where email = 'persona@mail
 
 - `index.html` — toda la aplicación.
 - `schema.sql` — tablas, seguridad (RLS) y registro de cambios para Supabase. Se puede correr las veces que haga falta: no borra datos.
+- `agora/` — script de PowerShell que sube las ventas diarias de Ágora a Supabase, con su README de instalación.

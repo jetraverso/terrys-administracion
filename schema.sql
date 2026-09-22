@@ -173,3 +173,78 @@ drop trigger if exists movimientos_auditar_alta_tg on public.movimientos;
 create trigger movimientos_auditar_alta_tg
   after insert on public.movimientos
   for each row execute function public.movimientos_auditar_alta();
+
+-- ---------------------------------------------------------------
+-- 4. Ventas diarias (Ágora POS)
+-- ---------------------------------------------------------------
+-- Un script en la computadora del TPV (agora/subir-ventas.ps1) le pide a Ágora
+-- las ventas de cada día y las manda acá con la función subir_ventas(), que se
+-- autentica con un token propio (tabla integraciones), sin usuario ni 2FA.
+-- Se guarda el JSON tal cual lo devuelve Ágora ("bruto"); la página arma sola
+-- un resumen compacto ("resumen") la primera vez que lo necesita.
+create extension if not exists pgcrypto with schema extensions;
+
+create table if not exists public.integraciones (
+  nombre      text primary key,
+  token_hash  text not null,
+  creado      timestamptz not null default now(),
+  ultimo_uso  timestamptz
+);
+alter table public.integraciones enable row level security;
+revoke all on public.integraciones from anon, authenticated;
+-- (nadie la lee desde la página; solo la usa subir_ventas)
+
+-- Para dar de alta el token del script (elegí uno largo y al azar; el mismo va en agora/config.json):
+--   insert into public.integraciones (nombre, token_hash)
+--   values ('agora', encode(extensions.digest('EL-TOKEN', 'sha256'), 'hex'))
+--   on conflict (nombre) do update set token_hash = excluded.token_hash;
+
+create table if not exists public.ventas_dias (
+  id         bigint generated always as identity primary key,
+  empresa    text not null default 'terrys-burgers-sl',
+  dia        date not null,
+  origen     text not null default 'agora',
+  bruto      jsonb not null,
+  resumen    jsonb,
+  resumen_v  int not null default 0,
+  subido     timestamptz not null default now(),
+  unique (empresa, dia, origen)
+);
+alter table public.ventas_dias enable row level security;
+revoke all on public.ventas_dias from anon, authenticated;
+grant select, update on public.ventas_dias to authenticated;
+
+drop policy if exists ventas_dias_ver on public.ventas_dias;
+create policy ventas_dias_ver on public.ventas_dias
+  for select to authenticated using (public.es_admin());
+drop policy if exists ventas_dias_resumir on public.ventas_dias;
+create policy ventas_dias_resumir on public.ventas_dias
+  for update to authenticated using (public.es_admin()) with check (public.es_admin());
+
+create or replace function public.subir_ventas(p_token text, p_dia date, p_datos jsonb, p_empresa text default 'terrys-burgers-sl', p_origen text default 'agora')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  ok boolean;
+begin
+  select true into ok from public.integraciones
+   where nombre = p_origen and token_hash = encode(extensions.digest(coalesce(p_token,''), 'sha256'), 'hex');
+  if not coalesce(ok, false) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  if p_datos is null or jsonb_typeof(p_datos) <> 'object' then
+    raise exception 'datos inválidos: se esperaba el JSON de Ágora' using errcode = '22023';
+  end if;
+  insert into public.ventas_dias (empresa, dia, origen, bruto, resumen, resumen_v, subido)
+  values (p_empresa, p_dia, p_origen, p_datos, null, 0, now())
+  on conflict (empresa, dia, origen) do update
+    set bruto = excluded.bruto, resumen = null, resumen_v = 0, subido = now();
+  update public.integraciones set ultimo_uso = now() where nombre = p_origen;
+  return jsonb_build_object('ok', true, 'dia', p_dia, 'tickets', coalesce(jsonb_array_length(p_datos -> 'Invoices'), 0));
+end;
+$$;
+revoke all on function public.subir_ventas(text, date, jsonb, text, text) from public;
+grant execute on function public.subir_ventas(text, date, jsonb, text, text) to anon, authenticated;
