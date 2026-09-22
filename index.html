@@ -232,7 +232,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .rank button.fila:hover,.rank button.fila:focus-visible{background:var(--surface-2);outline:none}
 .rank .fila.sel{background:var(--surface-2)}
 .rank .nom{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rank .barra{height:14px;display:block}
+.rank .barra{height:14px;display:block;overflow:hidden}
 .rank .barra i{display:block;height:100%;min-width:2px;background:var(--s-out);border-radius:0 4px 4px 0}
 .rank.conSel .fila:not(.sel) .barra i{opacity:.4}
 .rank .num{font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
@@ -471,7 +471,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.6';
+const VERSION='2.7';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1449,7 +1449,8 @@ async function renderReportes(){
     <div class="cols-x">${MES3.map((t,n)=>`<span class="${n===month?'sel':''}">${t}</span>`).join('')}</div></div>`;
 
   // ---- ranking + movimientos ----
-  const MAXR=12, primeros=grupos.slice(0,MAXR), resto=grupos.slice(MAXR), maxG=primeros.length?primeros[0].total:1;
+  const MAXR=12, primeros=grupos.slice(0,MAXR), resto=grupos.slice(MAXR), totOtros=resto.reduce((t,g)=>t+g.total,0);
+  const maxG=Math.max(1,primeros.length?primeros[0].total:0,totOtros);   // la barra de "Otros" también entra en la escala
   const filaRank=(g,clic)=>{
     const ant=gruposPrev.get(g.k), v=g.k?variacion(g.total,ant?ant.total:0):null;
     const tip=`${g.nombre}\n${eur(g.total)} · ${pct(g.total,eg)} % de los egresos\n${pl(g.n,'movimiento','movimientos')} · promedio ${eur(g.total/g.n)}${ant?`\nEn ${nomPrev}: ${eur(ant.total)}`:(prev.length&&g.k?`\nEn ${nomPrev}: nada`:'')}`;
