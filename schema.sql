@@ -249,8 +249,8 @@ grant execute on function public.subir_ventas(text, date, jsonb, text, text) to 
 -- 5. Ventas del día en Compras
 -- ---------------------------------------------------------------
 -- Cada día que sube el script de Ágora se convierte también en una fila de
--- ingresos en la planilla de Compras (una por día, total cobrado con IVA, y el
--- desglose por forma de pago en Información). Esas filas llevan origen='agora'
+-- ingresos en la planilla de Compras (una por día, total cobrado con IVA, y en
+-- Detalle la cantidad de tickets y el desglose por forma de pago). Esas filas llevan origen='agora'
 -- y desde la página no se editan ni se borran: se actualizan solas si el día
 -- se vuelve a subir.
 alter table public.movimientos add column if not exists origen text;
@@ -281,17 +281,17 @@ begin
   select string_agg(m || ' ' || replace(to_char(s, 'FM999999990.00'), '.', ','), ' · ' order by s desc)
     into desglose
     from (
-      select coalesce(p ->> 'MethodName', '—') m, sum((p ->> 'Amount')::numeric) s
+      select regexp_replace(coalesce(p ->> 'MethodName', '—'), ' de (crédito|débito)$', '', 'i') m, sum((p ->> 'Amount')::numeric) s
         from jsonb_array_elements(coalesce(p_datos -> 'Invoices', '[]'::jsonb)) i,
              jsonb_array_elements(coalesce(i -> 'Payments', '[]'::jsonb)) p
        group by 1
     ) x;
 
   insert into public.movimientos (empresa, fecha, ingreso, egreso, detalle, tipo, desde, hacia, estado, informacion, factura, pagado, clara, comentarios, origen, ref, creado_por)
-  values (p_empresa, p_dia, total, null, 'Ventas del día', 'Ventas', 'Ágora', 'Terrys', 'Terminado',
-          tickets || ' tickets · ' || coalesce(desglose, ''), '', true, false, '', 'agora', p_dia::text, 'agora')
+  values (p_empresa, p_dia, total, null, 'Ventas del día: ' || tickets || ' tickets · ' || coalesce(desglose, ''), 'Ventas', 'Ágora', 'Terrys', 'Terminado',
+          '', '', true, false, '', 'agora', p_dia::text, 'agora')
   on conflict (empresa, origen, ref) where origen is not null do update
-    set fecha = excluded.fecha, ingreso = excluded.ingreso, informacion = excluded.informacion, actualizado_por = 'agora';
+    set fecha = excluded.fecha, ingreso = excluded.ingreso, detalle = excluded.detalle, informacion = excluded.informacion, actualizado_por = 'agora';
 end;
 $$;
 revoke all on function public.sincronizar_venta_compra(text, date, jsonb) from public, anon, authenticated;
