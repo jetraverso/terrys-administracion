@@ -1,4 +1,4 @@
-# Terry's Administración — sube a Supabase las ventas diarias de Ágora POS.
+﻿# Terry's Administración — sube a Supabase las ventas diarias de Ágora POS.
 #
 # Corre en la computadora del TPV (Windows). Le pide a la API de Ágora las ventas
 # de cada día y las manda a la función subir_ventas() de Supabase.
@@ -83,8 +83,8 @@ foreach ($dia in $lista) {
     if ($ex.Response) {
       try { $sr = New-Object IO.StreamReader($ex.Response.GetResponseStream()); $msg += ' · ' + $sr.ReadToEnd() } catch {}
     }
-    if ($msg -match '403') { $msg += ' → el integracionToken de config.json no coincide con el dado de alta en Supabase' }
-    if ($msg -match '401') { $msg += ' → revisá supabaseKey en config.json' }
+    if ($msg -match '403') { $msg += ' - el integracionToken de config.json no coincide con el dado de alta en Supabase' }
+    if ($msg -match '401') { $msg += ' - revisa supabaseKey en config.json' }
     Escribir ("ERROR {0}: {1}" -f $iso, $msg)
     $mal++
   }
