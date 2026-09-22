@@ -458,12 +458,12 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.0';
+const VERSION='2.1';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
 const TABS=[
-  {id:'tbsl', titulo:'Terrys Burgers S.L.', empresa:'terrys-burgers-sl'},
+  {id:'tbsl', titulo:'Compras', empresa:'terrys-burgers-sl', sociedad:'Terrys Burgers S.L.'},
 ];
 
 const COLS=[
@@ -765,7 +765,7 @@ $('btnSalir').onclick=async()=>{
 let vista='planilla';   // 'planilla' | 'reportes'
 function renderTabs(){
   $('tabs').innerHTML=TABS.map(t=>`<button class="tab ${vista==='planilla'&&t.id===tab.id?'on':''}" data-tab="${esc(t.id)}">${esc(t.titulo)}</button>`).join('')
-    +`<button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button><button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button>`;
+    +`<button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button><button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button>`;
 }
 function aplicarVista(){
   const rep=vista!=='planilla';
@@ -811,7 +811,8 @@ function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); render
 
 /* ---------- período ---------- */
 function renderPeriodo(){
-  $('period').innerHTML=month<0?`Año ${year}<small>${esc(tab.titulo)}</small>`:`${esc(MESES[month])} ${year}<small>${esc(tab.titulo)}</small>`;
+  const sub=tab.sociedad||tab.titulo;
+  $('period').innerHTML=month<0?`Año ${year}<small>${esc(sub)}</small>`:`${esc(MESES[month])} ${year}<small>${esc(sub)}</small>`;
 }
 function renderMeses(){
   const tot=Array.from({length:12},()=>({n:0,out:0,inn:0}));
@@ -1826,7 +1827,7 @@ $('btnCopia').onclick=async()=>{
     if(pendientes>0) await new Promise(r=>setTimeout(r,800));
     const todo=await db.listAll(); todo.forEach(deDb);
     if(!todo.length){ toast('Todavía no hay movimientos para copiar'); return; }
-    const nombres=Object.fromEntries(TABS.map(t=>[t.empresa,t.titulo]));
+    const nombres=Object.fromEntries(TABS.map(t=>[t.empresa,t.sociedad||t.titulo]));
     for(const r of todo) r._sociedad=nombres[r.empresa]||r.empresa;
     bajarCsv(`terrys-admin-copia-completa-${hoyISO()}.csv`,todo,
       [{k:'_sociedad',t:'Sociedad'}],

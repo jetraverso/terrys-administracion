@@ -1,6 +1,6 @@
 # Terry's Administración
 
-Página de administración general de Terry's Burgers. Hoy tiene una solapa, **Terrys Burgers S.L.**, con el control de ingresos, egresos y facturas a proveedores mes a mes (reemplaza al Google Sheet). Es una sola página (`index.html`) que guarda todo en Supabase y pide email y contraseña para entrar.
+Página de administración general de Terry's Burgers. Tiene tres solapas: **Compras** (ingresos, egresos y facturas a proveedores de Terrys Burgers S.L., mes a mes; reemplaza al Google Sheet), **Ventas** (las ventas diarias que llegan de Ágora) y **Reportes** (en qué se va la plata). Es una sola página (`index.html`) que guarda todo en Supabase y pide email y contraseña para entrar.
 
 Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horarios), siempre en modo noche.
 
@@ -25,7 +25,7 @@ Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horari
 
 ## Reportes
 
-Solapa **Reportes** en la barra de arriba. Usa el mismo mes/año que la planilla (la tira de meses; el primer botón es el año completo) y no guarda nada: todo se calcula en el momento con los movimientos cargados.
+Solapa **Reportes**. Usa el mismo mes/año que la planilla (la tira de meses; el primer botón es el año completo) y no guarda nada: todo se calcula en el momento con los movimientos cargados.
 
 - **Resumen del período:** egresos e ingresos (con la variación contra el mes anterior, o contra el año anterior en la vista de año), balance, dónde más se gastó, % pagado y % con factura.
 - **Ingresos y egresos por mes** del año. Tocando un mes se pasa a su detalle.
