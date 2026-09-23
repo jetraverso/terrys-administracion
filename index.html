@@ -198,7 +198,8 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 
 /* ---------- reportes ---------- */
 .tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
-#reportes{padding-bottom:8px}
+#reportes{padding-bottom:8px;overflow-x:hidden}
+.panel{overflow:hidden}
 .rep-grid{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:12px;margin-bottom:12px;align-items:start}
 .panel{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px;min-width:0}
 .rep-grid .panel{margin-bottom:0}
@@ -279,9 +280,9 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .ticket .cab b{font-variant-numeric:tabular-nums}
 .ticket .cab .imp{margin-left:auto;font-weight:700;font-variant-numeric:tabular-nums}
 .ticket .cab .pill{display:inline-block;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:2px 7px;border-radius:5px;background:var(--surface-2);color:var(--ink-2);margin:0;width:auto}
-.ticket .lin{font-size:12.5px;color:var(--ink-2);margin-top:3px;line-height:1.5}
+.ticket .lin{font-size:12.5px;color:var(--ink-2);margin-top:3px;line-height:1.5;overflow-wrap:anywhere}
 .ticket .lin span{white-space:nowrap}
-.ticket .lin span+span::before{content:" · ";color:var(--muted)}
+.ticket .lin i{font-style:normal;color:var(--muted)}
 .dsem{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}
 .dsem div{background:var(--surface-2);border-radius:8px;padding:8px 6px;text-align:center}
 .dsem .k{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
@@ -332,7 +333,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
   #app>main{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;overflow:auto;padding-bottom:12px}
   #app>main>*{flex:none}
   #app>main>.sheetwrap{flex:1 1 0;min-height:200px;max-height:none}
-  #app>main>#reportes{flex:1 1 0;min-height:0;overflow:auto;margin-right:-8px;padding-right:8px}
+  #app>main>#reportes{flex:1 1 0;min-height:0;overflow:auto;overflow-x:hidden;margin-right:-8px;padding-right:8px}
   .ayuda[open] ul{max-height:22vh;overflow:auto}
   .hint{margin-top:8px}
 }
@@ -471,7 +472,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.7';
+const VERSION='2.8';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1696,7 +1697,7 @@ async function renderVentas(){
       const inv=(b.Invoices||[]).slice().sort((x,y)=>(x.Date||'').localeCompare(y.Date||''));
       const R=porDia.get(venSel).resumen;
       const tk2=inv.map(f=>{ const T=f.Totals||{}, items=f.InvoiceItems||[], ce=[...new Set(items.map(it=>(it.SaleCenter||{}).Name).filter(Boolean))].join(' + '), pag=(f.Payments||[]).map(p=>p.MethodName).join(' + ');
-        const lin=items.flatMap(it=>it.Lines||[]).map(l=>`<span>${l.Quantity!==1?nf1.format(l.Quantity)+'× ':''}${esc(l.ProductName)}</span>`).join('');
+        const lin=items.flatMap(it=>it.Lines||[]).map(l=>`<span>${l.Quantity!==1?nf1.format(l.Quantity)+'× ':''}${esc(l.ProductName)}</span>`).join('<i> · </i>');
         return `<div class="ticket"><div class="cab"><b>${(f.Date||'').slice(11,16)}</b><span class="pill">${esc(ce||'—')}</span><span>${esc(pag||'sin pago')}</span><span style="color:var(--muted)">${esc((f.User||{}).Name||'')} · ${esc(f.Serie||'')}${f.Number||''}</span><span class="imp">${fmt(+T.GrossAmount||0)} €</span></div><div class="lin">${lin}</div></div>`; }).join('');
       const el=$('venDia'); if(el) el.innerHTML=`<h2>Tickets del ${DSEM[diaSemana(venSel)]} ${fmtFecha(venSel)}</h2><div class="sub">${pl(inv.length,'ticket','tickets')} · ${eur(R.b)} · de ${R.pri||'—'} a ${R.ult||'—'} · <button type="button" class="linkbtn" data-dia="${venSel}">Cerrar</button></div>${tk2||'<div class="vacio">Sin tickets.</div>'}`;
     }catch(e){ const el=$('venDia'); if(el) el.querySelector('.sub').textContent='No se pudieron cargar los tickets: '+errMsg(e); }
