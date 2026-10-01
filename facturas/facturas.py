@@ -67,7 +67,7 @@ def listar(mes=None):
         e = estado.get(a['id']) if a['id'] else None
         a['cargada'] = e
     print(json.dumps(l, ensure_ascii=False, indent=1))
-    pend = [a for a in l if a['id'] and not a['cargada']]
+    pend = [a for a in l if a['id'] and not a['cargada']]   # 'cargada' también trae {'descartada': true} si alguien borró su fila
     print(f"\n{len(l)} archivos · {len(l) - len(pend)} cargados · {len(pend)} pendientes", file=sys.stderr)
 
 
@@ -81,7 +81,7 @@ def subir(datos):
     cuerpo = {'archivo': fid, 'link': f'https://drive.google.com/file/d/{fid}/view',
               'fecha': datos['fecha'], 'total': datos['total'], 'proveedor': datos.get('proveedor', ''),
               'detalle': datos.get('detalle', ''), 'nota': datos.get('nota', '')}
-    for k in ('ingreso', 'tipo', 'desde', 'hacia', 'reemplazar'):   # opcionales (ver schema.sql, subir_factura)
+    for k in ('ingreso', 'tipo', 'desde', 'hacia', 'reemplazar', 'forzar'):   # opcionales (ver schema.sql, subir_factura)
         if k in datos:
             cuerpo[k] = datos[k]
     r = rpc('subir_factura', {'p_token': CFG['token'], 'p_datos': cuerpo, 'p_empresa': CFG['empresa']})

@@ -381,8 +381,11 @@ begin
     raise exception 'token inválido' using errcode = '28000';
   end if;
   return coalesce((
-    select jsonb_object_agg(a, (select jsonb_build_object('id', m.id, 'fecha', m.fecha, 'egreso', m.egreso, 'detalle', m.detalle, 'revisar', m.revisar)
-                                  from public.movimientos m where m.empresa = p_empresa and m.archivo = a))
+    select jsonb_object_agg(a, coalesce(
+             (select jsonb_build_object('id', m.id, 'fecha', m.fecha, 'egreso', m.egreso, 'ingreso', m.ingreso, 'detalle', m.detalle, 'revisar', m.revisar)
+                from public.movimientos m where m.empresa = p_empresa and m.archivo = a),
+             (select jsonb_build_object('descartada', true, 'cuando', max(l.cuando))
+                from public.movimientos_log l where l.accion = 'borrar' and l.antes ->> 'archivo' = a having count(*) > 0)))
       from unnest(p_archivos) a), '{}'::jsonb);
 end;
 $$;
@@ -398,6 +401,7 @@ $$;
 --   ingreso: true      el documento es plata que entra (abono, liquidación): va a Ingresos
 --   tipo, desde, hacia para fijarlos en vez de copiarlos de la última fila del proveedor
 --   reemplazar: true   corrige una fila que subió Claude y que todavía nadie aprobó
+--   forzar: true       vuelve a subir un archivo cuya fila alguien borró (si no, se respeta el borrado)
 create or replace function public.subir_factura(p_token text, p_datos jsonb, p_empresa text default 'terrys-burgers-sl')
 returns jsonb
 language plpgsql
@@ -460,6 +464,12 @@ begin
       return jsonb_build_object('estado', 'corregida', 'id', ex.id, 'tipo', v_tipo, 'desde', v_desde, 'hacia', v_hacia);
     end if;
     return jsonb_build_object('estado', 'ya_cargada', 'id', ex.id, 'revisar', ex.revisar);
+  end if;
+
+  -- 1b) si alguien borró la fila de este archivo (por duplicada o porque no corresponde), no se vuelve a crear
+  if not coalesce((p_datos ->> 'forzar')::boolean, false)
+     and exists (select 1 from public.movimientos_log l where l.accion = 'borrar' and l.antes ->> 'archivo' = v_archivo) then
+    return jsonb_build_object('estado', 'descartada');
   end if;
 
   -- 2) ¿hay una fila cargada a mano que sea este documento? (mismo importe, fecha a ±5 días, sin archivo)
