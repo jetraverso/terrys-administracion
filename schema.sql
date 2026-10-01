@@ -389,7 +389,15 @@ $$;
 revoke all on function public.facturas_estado(text, text[], text) from public;
 grant execute on function public.facturas_estado(text, text[], text) to anon, authenticated;
 
--- p_datos: {archivo, link, fecha, total, proveedor, detalle, nota}
+create or replace function public._sin_acentos(t text)
+returns text language sql immutable as $$
+  select translate(lower(coalesce(t, '')), 'áàäâéèëêíìïîóòöôúùüûñç', 'aaaaeeeeiiiioooouuuunc');
+$$;
+
+-- p_datos: {archivo, link, fecha, total, proveedor, detalle, nota}  y opcionales:
+--   ingreso: true      el documento es plata que entra (abono, liquidación): va a Ingresos
+--   tipo, desde, hacia para fijarlos en vez de copiarlos de la última fila del proveedor
+--   reemplazar: true   corrige una fila que subió Claude y que todavía nadie aprobó
 create or replace function public.subir_factura(p_token text, p_datos jsonb, p_empresa text default 'terrys-burgers-sl')
 returns jsonb
 language plpgsql
@@ -404,10 +412,16 @@ declare
   v_prov    text := btrim(coalesce(p_datos ->> 'proveedor', ''));
   v_det     text := btrim(coalesce(p_datos ->> 'detalle', ''));
   v_nota    text := btrim(coalesce(p_datos ->> 'nota', ''));
-  v_pal     text := lower(split_part(v_prov, ' ', 1));
+  v_ing     boolean := coalesce((p_datos ->> 'ingreso')::boolean, false);
+  v_reemp   boolean := coalesce((p_datos ->> 'reemplazar')::boolean, false);
+  v_tipo    text := nullif(btrim(p_datos ->> 'tipo'), '');
+  v_desde   text := nullif(btrim(p_datos ->> 'desde'), '');
+  v_hacia   text := nullif(btrim(p_datos ->> 'hacia'), '');
+  v_pal     text := public._sin_acentos(split_part(v_prov, ' ', 1));
   v_id      bigint;
   v_n       int;
   r         public.movimientos%rowtype;
+  ex        public.movimientos%rowtype;
 begin
   if not public._token_valido('facturas', p_token) then
     raise exception 'token inválido' using errcode = '28000';
@@ -416,21 +430,49 @@ begin
     raise exception 'datos inválidos: hacen falta archivo, link, fecha y total' using errcode = '22023';
   end if;
 
-  -- 1) ¿ese archivo ya está?
-  select id into v_id from public.movimientos where empresa = p_empresa and archivo = v_archivo;
-  if v_id is not null then
-    return jsonb_build_object('estado', 'ya_cargada', 'id', v_id);
+  -- Tipo, Desde y Hacia: los que vengan indicados; si no, para un egreso se copian de la
+  -- última fila del mismo proveedor (sin distinguir acentos), y para un ingreso van
+  -- Tipo "Ingreso", Desde el proveedor y Hacia "CAIXA".
+  if v_ing then
+    v_tipo := coalesce(v_tipo, 'Ingreso'); v_desde := coalesce(v_desde, v_prov); v_hacia := coalesce(v_hacia, 'CAIXA');
+  else
+    select * into r from public.movimientos
+     where empresa = p_empresa and origen is null and coalesce(egreso, 0) > 0 and v_pal <> '' and not revisar
+       and (public._sin_acentos(hacia) = public._sin_acentos(v_prov) or public._sin_acentos(hacia) like v_pal || '%')
+     order by (public._sin_acentos(hacia) = public._sin_acentos(v_prov)) desc, fecha desc, id desc
+     limit 1;
+    v_tipo := coalesce(v_tipo, r.tipo, ''); v_desde := coalesce(v_desde, r.desde, ''); v_hacia := coalesce(v_hacia, nullif(r.hacia, ''), v_prov);
   end if;
 
-  -- 2) ¿hay una fila cargada a mano que sea esta factura? (mismo importe, fecha a ±5 días, sin archivo)
+  -- 1) ¿ese archivo ya está?
+  select * into ex from public.movimientos where empresa = p_empresa and archivo = v_archivo;
+  if ex.id is not null then
+    if v_reemp and ex.revisar and ex.creado_por = 'claude' then
+      update public.movimientos
+         set fecha = v_fecha,
+             ingreso = case when v_ing then v_total else null end,
+             egreso  = case when v_ing then null else v_total end,
+             detalle = coalesce(nullif(v_det, ''), detalle),
+             tipo = v_tipo, desde = v_desde, hacia = v_hacia,
+             comentarios = coalesce(nullif(v_nota, ''), comentarios),
+             actualizado_por = 'claude'
+       where id = ex.id;
+      return jsonb_build_object('estado', 'corregida', 'id', ex.id, 'tipo', v_tipo, 'desde', v_desde, 'hacia', v_hacia);
+    end if;
+    return jsonb_build_object('estado', 'ya_cargada', 'id', ex.id, 'revisar', ex.revisar);
+  end if;
+
+  -- 2) ¿hay una fila cargada a mano que sea este documento? (mismo importe, fecha a ±5 días, sin archivo)
   select count(*) into v_n from public.movimientos
-   where empresa = p_empresa and origen is null and archivo is null and egreso = v_total and fecha between v_fecha - 5 and v_fecha + 5;
+   where empresa = p_empresa and origen is null and archivo is null
+     and (case when v_ing then ingreso else egreso end) = v_total and fecha between v_fecha - 5 and v_fecha + 5;
   if v_n >= 1 then
     select * into r from public.movimientos
-     where empresa = p_empresa and origen is null and archivo is null and egreso = v_total and fecha between v_fecha - 5 and v_fecha + 5
-     order by (v_pal <> '' and lower(hacia) like v_pal || '%') desc, abs(fecha - v_fecha), id
+     where empresa = p_empresa and origen is null and archivo is null
+       and (case when v_ing then ingreso else egreso end) = v_total and fecha between v_fecha - 5 and v_fecha + 5
+     order by (v_pal <> '' and public._sin_acentos(case when v_ing then desde else hacia end) like v_pal || '%') desc, abs(fecha - v_fecha), id
      limit 1;
-    if v_n = 1 or (v_pal <> '' and lower(r.hacia) like v_pal || '%') then
+    if v_n = 1 or (v_pal <> '' and public._sin_acentos(case when v_ing then r.desde else r.hacia end) like v_pal || '%') then
       update public.movimientos
          set archivo = v_archivo,
              factura = 'Sí',
@@ -440,22 +482,16 @@ begin
              end,
              actualizado_por = 'claude'
        where id = r.id;
-      return jsonb_build_object('estado', 'vinculada', 'id', r.id, 'fecha', r.fecha, 'detalle', r.detalle, 'hacia', r.hacia);
+      return jsonb_build_object('estado', 'vinculada', 'id', r.id, 'fecha', r.fecha, 'detalle', r.detalle, 'hacia', r.hacia, 'desde', r.desde);
     end if;
   end if;
 
-  -- 3) fila nueva "por revisar"; Tipo y Desde se copian de la última fila del mismo proveedor
-  select * into r from public.movimientos
-   where empresa = p_empresa and origen is null and coalesce(egreso, 0) > 0 and v_pal <> ''
-     and (lower(hacia) = lower(v_prov) or lower(hacia) like v_pal || '%')
-   order by (lower(hacia) = lower(v_prov)) desc, fecha desc, id desc
-   limit 1;
-
+  -- 3) fila nueva "por revisar"
   insert into public.movimientos (empresa, fecha, ingreso, egreso, detalle, tipo, desde, hacia, estado, informacion, factura, pagado, clara, comentarios, archivo, revisar, creado_por)
-  values (p_empresa, v_fecha, null, v_total, v_det, coalesce(r.tipo, ''), coalesce(r.desde, ''), coalesce(nullif(r.hacia, ''), v_prov), 'Pendiente',
+  values (p_empresa, v_fecha, case when v_ing then v_total end, case when v_ing then null else v_total end, v_det, v_tipo, v_desde, v_hacia, 'Pendiente',
           '[Factura](' || v_link || ')', 'Sí', false, false, v_nota, v_archivo, true, 'claude')
   returning id into v_id;
-  return jsonb_build_object('estado', 'nueva', 'id', v_id, 'tipo', coalesce(r.tipo, ''), 'desde', coalesce(r.desde, ''), 'hacia', coalesce(nullif(r.hacia, ''), v_prov), 'posible_duplicado', v_n > 0);
+  return jsonb_build_object('estado', 'nueva', 'id', v_id, 'tipo', v_tipo, 'desde', v_desde, 'hacia', v_hacia, 'posible_duplicado', v_n > 0);
 end;
 $$;
 revoke all on function public.subir_factura(text, jsonb, text) from public;

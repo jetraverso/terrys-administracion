@@ -7,6 +7,8 @@ Lo usa Claude (no hace falta correrlo a mano):
   python3 facturas/facturas.py subir '<json>'          sube una factura leída; el json lleva:
         {"ruta": "2026/10_Octubre/archivo.pdf", "fecha": "2026-10-01", "total": 138.59,
          "proveedor": "Europastry", "detalle": "Reposicion panes", "nota": "Factura 24015086 · vence 06/10 · giro"}
+        opcionales: "ingreso": true (abonos, liquidaciones: va a Ingresos; Tipo "Ingreso", Desde proveedor, Hacia "CAIXA"),
+        "tipo"/"desde"/"hacia" para fijarlos, "reemplazar": true para corregir una fila propia todavía sin aprobar.
 
 La carpeta de Drive tiene que estar sincronizada en esta Mac (Google Drive para escritorio):
 el id de cada archivo se lee del atributo que le pone Drive, y con ese id se arma el link
@@ -79,6 +81,9 @@ def subir(datos):
     cuerpo = {'archivo': fid, 'link': f'https://drive.google.com/file/d/{fid}/view',
               'fecha': datos['fecha'], 'total': datos['total'], 'proveedor': datos.get('proveedor', ''),
               'detalle': datos.get('detalle', ''), 'nota': datos.get('nota', '')}
+    for k in ('ingreso', 'tipo', 'desde', 'hacia', 'reemplazar'):   # opcionales (ver schema.sql, subir_factura)
+        if k in datos:
+            cuerpo[k] = datos[k]
     r = rpc('subir_factura', {'p_token': CFG['token'], 'p_datos': cuerpo, 'p_empresa': CFG['empresa']})
     print(json.dumps({'ruta': datos['ruta'], **r}, ensure_ascii=False))
 
