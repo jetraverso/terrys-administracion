@@ -337,3 +337,126 @@ create policy movimientos_borrar on public.movimientos for delete to authenticat
 
 -- Los días que ya estaban subidos se pasan a Compras ahora (se puede repetir sin problema).
 select public.sincronizar_venta_compra(empresa, dia, bruto) from public.ventas_dias where origen = 'agora';
+
+-- ---------------------------------------------------------------
+-- 6. Facturas leídas desde Drive (bandeja "por revisar")
+-- ---------------------------------------------------------------
+-- Claude lee las facturas de la carpeta de Drive y las manda con subir_factura()
+-- (token propio 'facturas' en integraciones). Cada archivo se identifica por su
+-- id de Drive ("archivo") y entra una sola vez:
+--   · si ya hay una fila cargada a mano con el mismo importe y fecha cercana,
+--     se VINCULA a esa fila (se le pone el link y se tilda Facturas);
+--   · si no, se crea una fila nueva marcada "revisar", editable como cualquier
+--     otra, que se aprueba desde la página.
+alter table public.movimientos add column if not exists archivo text;
+alter table public.movimientos add column if not exists revisar boolean not null default false;
+create unique index if not exists movimientos_archivo on public.movimientos (empresa, archivo) where archivo is not null;
+
+-- Alta del token (el mismo va en facturas/config.json, que no se sube al repositorio):
+--   insert into public.integraciones (nombre, token_hash)
+--   values ('facturas', encode(extensions.digest('EL-TOKEN', 'sha256'), 'hex'))
+--   on conflict (nombre) do update set token_hash = excluded.token_hash;
+
+create or replace function public._token_valido(p_nombre text, p_token text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (select 1 from public.integraciones
+                  where nombre = p_nombre and token_hash = encode(extensions.digest(coalesce(p_token,''), 'sha256'), 'hex'));
+$$;
+revoke all on function public._token_valido(text, text) from public, anon, authenticated;
+
+-- ¿Cuáles de estos archivos ya están cargados?  → {"idDeDrive": {id, fecha, egreso, detalle, revisar} | null, ...}
+create or replace function public.facturas_estado(p_token text, p_archivos text[], p_empresa text default 'terrys-burgers-sl')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_object_agg(a, (select jsonb_build_object('id', m.id, 'fecha', m.fecha, 'egreso', m.egreso, 'detalle', m.detalle, 'revisar', m.revisar)
+                                  from public.movimientos m where m.empresa = p_empresa and m.archivo = a))
+      from unnest(p_archivos) a), '{}'::jsonb);
+end;
+$$;
+revoke all on function public.facturas_estado(text, text[], text) from public;
+grant execute on function public.facturas_estado(text, text[], text) to anon, authenticated;
+
+-- p_datos: {archivo, link, fecha, total, proveedor, detalle, nota}
+create or replace function public.subir_factura(p_token text, p_datos jsonb, p_empresa text default 'terrys-burgers-sl')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_archivo text := nullif(btrim(p_datos ->> 'archivo'), '');
+  v_link    text := nullif(btrim(p_datos ->> 'link'), '');
+  v_fecha   date := (p_datos ->> 'fecha')::date;
+  v_total   numeric(12,2) := (p_datos ->> 'total')::numeric;
+  v_prov    text := btrim(coalesce(p_datos ->> 'proveedor', ''));
+  v_det     text := btrim(coalesce(p_datos ->> 'detalle', ''));
+  v_nota    text := btrim(coalesce(p_datos ->> 'nota', ''));
+  v_pal     text := lower(split_part(v_prov, ' ', 1));
+  v_id      bigint;
+  v_n       int;
+  r         public.movimientos%rowtype;
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  if v_archivo is null or v_fecha is null or v_total is null or v_total <= 0 or v_link is null or v_link !~ '^https://' then
+    raise exception 'datos inválidos: hacen falta archivo, link, fecha y total' using errcode = '22023';
+  end if;
+
+  -- 1) ¿ese archivo ya está?
+  select id into v_id from public.movimientos where empresa = p_empresa and archivo = v_archivo;
+  if v_id is not null then
+    return jsonb_build_object('estado', 'ya_cargada', 'id', v_id);
+  end if;
+
+  -- 2) ¿hay una fila cargada a mano que sea esta factura? (mismo importe, fecha a ±5 días, sin archivo)
+  select count(*) into v_n from public.movimientos
+   where empresa = p_empresa and origen is null and archivo is null and egreso = v_total and fecha between v_fecha - 5 and v_fecha + 5;
+  if v_n >= 1 then
+    select * into r from public.movimientos
+     where empresa = p_empresa and origen is null and archivo is null and egreso = v_total and fecha between v_fecha - 5 and v_fecha + 5
+     order by (v_pal <> '' and lower(hacia) like v_pal || '%') desc, abs(fecha - v_fecha), id
+     limit 1;
+    if v_n = 1 or (v_pal <> '' and lower(r.hacia) like v_pal || '%') then
+      update public.movimientos
+         set archivo = v_archivo,
+             factura = 'Sí',
+             informacion = case
+               when informacion ~ '^\[[^\]]*\]\(https?://' or informacion ~ '^https?://' then informacion        -- ya tenía link: no se toca
+               else '[' || coalesce(nullif(replace(replace(btrim(informacion), '[', ''), ']', ''), ''), 'Factura') || '](' || v_link || ')'
+             end,
+             actualizado_por = 'claude'
+       where id = r.id;
+      return jsonb_build_object('estado', 'vinculada', 'id', r.id, 'fecha', r.fecha, 'detalle', r.detalle, 'hacia', r.hacia);
+    end if;
+  end if;
+
+  -- 3) fila nueva "por revisar"; Tipo y Desde se copian de la última fila del mismo proveedor
+  select * into r from public.movimientos
+   where empresa = p_empresa and origen is null and coalesce(egreso, 0) > 0 and v_pal <> ''
+     and (lower(hacia) = lower(v_prov) or lower(hacia) like v_pal || '%')
+   order by (lower(hacia) = lower(v_prov)) desc, fecha desc, id desc
+   limit 1;
+
+  insert into public.movimientos (empresa, fecha, ingreso, egreso, detalle, tipo, desde, hacia, estado, informacion, factura, pagado, clara, comentarios, archivo, revisar, creado_por)
+  values (p_empresa, v_fecha, null, v_total, v_det, coalesce(r.tipo, ''), coalesce(r.desde, ''), coalesce(nullif(r.hacia, ''), v_prov), 'Pendiente',
+          '[Factura](' || v_link || ')', 'Sí', false, false, v_nota, v_archivo, true, 'claude')
+  returning id into v_id;
+  return jsonb_build_object('estado', 'nueva', 'id', v_id, 'tipo', coalesce(r.tipo, ''), 'desde', coalesce(r.desde, ''), 'hacia', coalesce(nullif(r.hacia, ''), v_prov), 'posible_duplicado', v_n > 0);
+end;
+$$;
+revoke all on function public.subir_factura(text, jsonb, text) from public;
+grant execute on function public.subir_factura(text, jsonb, text) to anon, authenticated;

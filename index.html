@@ -305,6 +305,12 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .sheet tr.auto td.c-det{position:relative}
 .sheet tr.auto td.c-det textarea{padding-right:56px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:34px!important}
 .sheet tr.auto td.c-check input{accent-color:var(--muted);cursor:default}
+.sheet tr.rev td{background:color-mix(in oklab,var(--warn) 9%,var(--surface))}
+.sheet tr.rev td.c-det{position:relative}
+.sheet tr.rev td.c-det textarea{padding-right:84px}
+.sheet tr.rev .tag{position:absolute;right:5px;top:7px;font-size:10px;letter-spacing:.06em;text-transform:uppercase;font-weight:700;padding:3px 8px;border-radius:5px;border:0;background:var(--warn);color:#1a1400;cursor:pointer}
+.sheet tr.rev .tag:hover{filter:brightness(1.12)}
+.aviso-doble button{margin-left:6px}
 .aviso-doble{background:var(--warn-soft);color:var(--warn);border-radius:10px;padding:9px 14px;font-size:13.5px;font-weight:600;margin:-6px 0 12px}
 
 /* ---------- modal ---------- */
@@ -421,6 +427,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
           <option value="sinfactura">Sin factura</option>
           <option value="sinclara">Sin Clara</option>
           <option value="sinventas">Ocultar ventas</option>
+          <option value="porrevisar">Por revisar</option>
         </select>
         <button class="btn" id="btnPegar">Pegar desde Sheet</button>
         <button class="btn" id="btnCsv">Exportar CSV</button>
@@ -431,6 +438,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
     <div class="months" id="months"></div>
     <div class="cards" id="cards"></div>
     <div class="aviso-doble" id="avisoDoble" hidden></div>
+    <div class="aviso-doble" id="avisoRev" hidden></div>
     <div id="reportes" hidden></div>
 
     <div class="sheetwrap" id="sheetwrap">
@@ -450,6 +458,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
         <li>Información: escribí el texto y ponele el link de la factura con el botón de la cadenita o Ctrl/Cmd + K (o pegá el link directo y queda como FACTURA). Al tener link, Facturas se tilda sola.</li>
         <li>Las filas azuladas con la etiqueta Ágora son las ventas de cada día, cargadas solas desde el TPV: no se editan ni se borran (si el día se vuelve a subir, se actualizan). Con el filtro "Ocultar ventas" desaparecen de la vista.</li>
+        <li>Las filas amarillentas con el botón "Aprobar ✓" son facturas leídas solas desde la carpeta de Drive: revisalas contra el original (link en Información), corregí lo que haga falta y aprobalas. Filtro "Por revisar" para verlas juntas.</li>
         <li>Ancho de columnas: arrastrá el borde derecho del título. Queda guardado en este navegador. Doble clic en ese borde la vuelve a automática.</li>
       </ul>
     </details>
@@ -472,7 +481,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='2.8';
+const VERSION='2.9';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -600,7 +609,7 @@ const db=SB?{
   async list(empresa,y){
     const out=[]; const paso=1000;
     for(let desde=0;;desde+=paso){
-      const {data,error}=await sbc.from('movimientos').select('id,origen,'+FIELDS.join(','))
+      const {data,error}=await sbc.from('movimientos').select('id,origen,archivo,revisar,'+FIELDS.join(','))
         .eq('empresa',empresa).gte('fecha',`${y}-01-01`).lte('fecha',`${y}-12-31`)
         .order('fecha').order('id').range(desde,desde+paso-1);
       if(error) throw error;
@@ -785,7 +794,7 @@ function aplicarVista(){
   const rep=vista!=='planilla';
   $('reportes').hidden=!rep; $('repTools').hidden=vista!=='reportes'; $('venTools').hidden=vista!=='ventas';
   for(const el of [$('planTools'),$('cards'),$('sheetwrap'),document.querySelector('details.ayuda'),document.querySelector('p.hint')]) if(el) el.hidden=rep;
-  if(rep) $('avisoDoble').hidden=true;
+  if(rep){ $('avisoDoble').hidden=true; $('avisoRev').hidden=true; }
   acCerrar(); ocultarTip();
 }
 $('tabs').addEventListener('click',async e=>{
@@ -857,6 +866,7 @@ function pasaFiltro(r){
   if(filtro==='sinfactura'&&r.factura) return false;
   if(filtro==='sinclara'&&r.clara) return false;
   if(filtro==='sinventas'&&r.origen) return false;
+  if(filtro==='porrevisar'&&!r.revisar) return false;
   if(q){
     const txt=[r.fecha,r.fecha.split('-').reverse().join('/'),fmt(r.ingreso),fmt(r.egreso),r.detalle,r.tipo,r.desde,r.hacia,r.estado,r.informacion,r.comentarios].join(' ').toLowerCase();
     if(!q.toLowerCase().split(/\s+/).every(p=>txt.includes(p))) return false;
@@ -1015,6 +1025,12 @@ function crearTr(r){
     tr.innerHTML=COLS.map(c=>{ let h=celda(c,r).replace(/<(input|textarea)\b/g,'<$1 disabled'); if(c.k==='detalle') h=h.replace('<td>','<td class="c-det">').replace('</td>','<span class="tag" title="Cargada sola con las ventas de Ágora de ese día">Ágora</span></td>'); return h.replace(/<button[^>]*class="lk"[\s\S]*?<\/button>/,''); }).join('')+'<td class="c-act"></td>';
     trRow.set(tr,r); return tr;
   }
+  if(r.revisar&&r.id){
+    // factura leída de Drive, pendiente de que alguien la mire: se edita como cualquier fila y se aprueba con el botón
+    tr.className='rev';
+    tr.innerHTML=COLS.map(c=>{ let h=celda(c,r); if(c.k==='detalle') h=h.replace('<td>','<td class="c-det">').replace('</td>','<button type="button" class="tag" data-act="ok" tabindex="-1" title="Leída de la factura en Drive. Comparala con el original (link en Información), corregí lo que haga falta y tocá acá para aprobarla.">Aprobar ✓</button></td>'); return h; }).join('')+`<td class="c-act">${acciones()}</td>`;
+    trRow.set(tr,r); return tr;
+  }
   tr.innerHTML=COLS.map(c=>celda(c,r)).join('')+`<td class="c-act">${r.id?acciones():''}</td>`;
   trRow.set(tr,r);
   return tr;
@@ -1068,6 +1084,16 @@ function recalc(){
     const conflicto=auto.length&&manuales.length&&vista==='planilla';
     av.hidden=!conflicto;
     if(conflicto) av.textContent=`Ojo: este mes tiene ${pl(auto.length,'día','días')} de ventas cargadas solas desde Ágora y además ${pl(manuales.length,'fila manual','filas manuales')} de ventas (${manuales.map(r=>r.detalle).join(', ')}) por ${eur(sum(manuales,'ingreso'))}. Si es la facturación del mes, borrala para no contarla dos veces.`;
+  }
+  const ar=$('avisoRev');
+  if(ar){
+    const pr=per.filter(r=>r.revisar), prAnio=rows.filter(r=>r.revisar);
+    ar.hidden=!(prAnio.length&&vista==='planilla');
+    if(!ar.hidden){
+      ar.textContent=pr.length?`${pl(pr.length,'factura leída','facturas leídas')} de Drive por revisar en este período (${eur(sum(pr,'egreso'))}). Compará cada una con el original (link en Información) y aprobala con el botón amarillo.`
+        :`Hay ${pl(prAnio.length,'factura','facturas')} por revisar en otros meses de ${year}: ${[...new Set(prAnio.map(r=>MESES[+r.fecha.slice(5,7)-1].toLowerCase()))].join(', ')}.`;
+      if(pr.length&&filtro!=='porrevisar'){ const b=document.createElement('button'); b.type='button'; b.className='linkbtn'; b.textContent='Ver solo esas'; b.onclick=()=>{ filtro='porrevisar'; $('filtro').value='porrevisar'; renderTabla(); recalc(); }; ar.appendChild(b); }
+    }
   }
   const vis=rows.filter(r=>enPeriodo(r)&&pasaFiltro(r));
   const vi=sum(vis,'ingreso'), vo=sum(vis,'egreso'), vb=vi-vo;
@@ -1308,6 +1334,12 @@ $('tbody').addEventListener('click',async e=>{
   const tr=b.closest('tr'), r=trRow.get(tr); if(!r) return;
   if(b.dataset.act==='link'){ editarLink(tr); return; }
   if(!r.id) return;
+  if(b.dataset.act==='ok'){
+    r.revisar=false; guardar(tr,{revisar:false},false);
+    const nueva=crearTr(r); nueva._q=tr._q; tr.replaceWith(nueva); ajustarAltos(nueva); recalc();
+    toast('Factura aprobada','Deshacer',()=>{ r.revisar=true; const t=[...$('tbody').children].find(x=>trRow.get(x)===r); if(t){ guardar(t,{revisar:true},false); const n2=crearTr(r); n2._q=t._q; t.replaceWith(n2); ajustarAltos(n2); } recalc(); });
+    return;
+  }
   if(b.dataset.act==='del'){
     setSync('guardando');
     try{

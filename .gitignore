@@ -4,3 +4,4 @@ migracion/
 agora/muestras/
 agora/config.json
 agora/*.log
+facturas/config.json
