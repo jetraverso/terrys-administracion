@@ -4,6 +4,9 @@
 Lo usa Claude (no hace falta correrlo a mano):
 
   python3 facturas/facturas.py listar [2026-10]        archivos de la carpeta (todo el año o un mes) y si ya están cargados
+  python3 facturas/facturas.py pedidos                 pedidos pendientes del botón "Actualizar facturas" de la página
+  python3 facturas/facturas.py pedido 12 listo '{...}' marca un pedido (en curso / listo / error) con un resumen
+  python3 facturas/facturas.py pedir 2026-10           crea un pedido (igual que el botón)
   python3 facturas/facturas.py subir '<json>'          sube una factura leída; el json lleva:
         {"ruta": "2026/10_Octubre/archivo.pdf", "fecha": "2026-10-01", "total": 138.59,
          "proveedor": "Europastry", "detalle": "Reposicion panes", "nota": "Factura 24015086 · vence 06/10 · giro"}
@@ -88,8 +91,26 @@ def subir(datos):
     print(json.dumps({'ruta': datos['ruta'], **r}, ensure_ascii=False))
 
 
+def pedidos():
+    print(json.dumps(rpc('pedidos_pendientes', {'p_token': CFG['token'], 'p_empresa': CFG['empresa']}), ensure_ascii=False))
+
+
+def pedido(id_, estado, resultado=None):
+    print(json.dumps(rpc('pedido_estado', {'p_token': CFG['token'], 'p_id': int(id_), 'p_estado': estado, 'p_resultado': json.loads(resultado) if resultado else None}), ensure_ascii=False))
+
+
+def pedir(periodo):
+    print(json.dumps(rpc('pedido_crear', {'p_token': CFG['token'], 'p_periodo': periodo, 'p_empresa': CFG['empresa']}), ensure_ascii=False))
+
+
 if __name__ == '__main__':
-    if len(sys.argv) >= 2 and sys.argv[1] == 'listar':
+    if len(sys.argv) >= 2 and sys.argv[1] == 'pedidos':          # pedidos pendientes del botón "Actualizar facturas"
+        pedidos()
+    elif len(sys.argv) >= 4 and sys.argv[1] == 'pedido':         # pedido <id> <en curso|listo|error> ['<json resumen>']
+        pedido(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
+    elif len(sys.argv) == 3 and sys.argv[1] == 'pedir':          # pedir 2026-10  (crea un pedido como desde el botón)
+        pedir(sys.argv[2])
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'listar':
         listar(sys.argv[2] if len(sys.argv) > 2 else None)
     elif len(sys.argv) == 3 and sys.argv[1] == 'subir':
         subir(json.loads(sys.argv[2]))

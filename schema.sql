@@ -506,3 +506,87 @@ end;
 $$;
 revoke all on function public.subir_factura(text, jsonb, text) from public;
 grant execute on function public.subir_factura(text, jsonb, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 7. Pedidos de actualización de facturas (botón "Actualizar facturas")
+-- ---------------------------------------------------------------
+-- El botón de Finanzas deja un pedido ("revisá la carpeta de octubre"). Una
+-- tarea programada en la Mac de Juan lo atiende: lee las facturas nuevas de
+-- Drive, las sube con subir_factura() y marca el pedido como listo.
+create table if not exists public.pedidos (
+  id          bigint generated always as identity primary key,
+  empresa     text not null default 'terrys-burgers-sl',
+  tipo        text not null default 'facturas',
+  periodo     text not null,                       -- '2026-10' (un mes) o '2026' (todo el año)
+  estado      text not null default 'pendiente',   -- pendiente · en curso · listo · error
+  resultado   jsonb,
+  pedido_por  text default (auth.jwt() ->> 'email'),
+  creado      timestamptz not null default now(),
+  actualizado timestamptz not null default now()
+);
+alter table public.pedidos enable row level security;
+revoke all on public.pedidos from anon, authenticated;
+grant select, insert on public.pedidos to authenticated;
+drop policy if exists pedidos_ver on public.pedidos;
+create policy pedidos_ver on public.pedidos for select to authenticated using (public.es_admin());
+drop policy if exists pedidos_crear on public.pedidos;
+create policy pedidos_crear on public.pedidos for insert to authenticated with check (public.es_admin() and estado = 'pendiente');
+
+-- Lo que usa la tarea de la Mac (token 'facturas'):
+create or replace function public.pedidos_pendientes(p_token text, p_empresa text default 'terrys-burgers-sl')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  -- un pedido "en curso" desde hace más de 30 minutos se considera caído y se vuelve a atender
+  return coalesce((select jsonb_agg(jsonb_build_object('id', id, 'periodo', periodo, 'estado', estado, 'creado', creado, 'pedido_por', pedido_por) order by id)
+                     from public.pedidos
+                    where empresa = p_empresa and tipo = 'facturas'
+                      and (estado = 'pendiente' or (estado = 'en curso' and actualizado < now() - interval '30 minutes'))), '[]'::jsonb);
+end;
+$$;
+revoke all on function public.pedidos_pendientes(text, text) from public;
+grant execute on function public.pedidos_pendientes(text, text) to anon, authenticated;
+
+create or replace function public.pedido_estado(p_token text, p_id bigint, p_estado text, p_resultado jsonb default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  if p_estado not in ('pendiente', 'en curso', 'listo', 'error') then
+    raise exception 'estado inválido' using errcode = '22023';
+  end if;
+  update public.pedidos set estado = p_estado, resultado = coalesce(p_resultado, resultado), actualizado = now() where id = p_id;
+  return jsonb_build_object('ok', found, 'id', p_id, 'estado', p_estado);
+end;
+$$;
+revoke all on function public.pedido_estado(text, bigint, text, jsonb) from public;
+grant execute on function public.pedido_estado(text, bigint, text, jsonb) to anon, authenticated;
+
+create or replace function public.pedido_crear(p_token text, p_periodo text, p_empresa text default 'terrys-burgers-sl')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_id bigint;
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  insert into public.pedidos (empresa, periodo, pedido_por) values (p_empresa, p_periodo, 'claude') returning id into v_id;
+  return jsonb_build_object('ok', true, 'id', v_id);
+end;
+$$;
+revoke all on function public.pedido_crear(text, text, text) from public;
+grant execute on function public.pedido_crear(text, text, text) to anon, authenticated;
