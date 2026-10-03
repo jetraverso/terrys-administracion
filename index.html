@@ -459,6 +459,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
       <ul>
         <li>Los cambios se guardan solos al salir de cada celda, y la fila se acomoda sola por fecha. La última fila en blanco es para cargar un movimiento nuevo.</li>
         <li>Fecha: día/mes/año. Se puede escribir corto (23/7, 2307 o solo 23: el mes y el año que falten se toman de la fila) o elegir con el ícono del calendario.</li>
+        <li>Al tildar Pagado, Estado pasa solo a "Terminado" (verde); al destildarlo, a "Pendiente" (amarillo). Igual podés escribir otro estado a mano.</li>
         <li>Tab pasa a la celda de al lado (en Pagado y Clara, la barra espaciadora tilda). Enter baja a la fila de abajo.</li>
         <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
         <li>Información: escribí el texto y ponele el link de la factura con el botón de la cadenita o Ctrl/Cmd + K (o pegá el link directo y queda como FACTURA). Al tener link, Facturas se tilda sola.</li>
@@ -487,7 +488,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.0';
+const VERSION='3.1';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1004,7 +1005,7 @@ let anchoT=null;
 window.addEventListener('resize',()=>{ clearTimeout(anchoT); anchoT=setTimeout(()=>ajustarAnchos(false),150); });
 if(document.fonts&&document.fonts.ready) document.fonts.ready.then(()=>{ medirCache.clear(); ajustarAnchos(false); });
 
-function claseEstado(v){ v=(v||'').toLowerCase(); return /pend|falta|espera|impag/.test(v)?'est-pend':/pag|complet|ok|hecho|concil|cobr/.test(v)?'est-ok':''; }
+function claseEstado(v){ v=(v||'').toLowerCase(); return /pend|falta|espera|impag/.test(v)?'est-pend':/termin|pag|complet|ok|hecho|concil|cobr/.test(v)?'est-ok':''; }
 function celda(c,r){
   const v=r[c.k];
   if(c.type==='check') return `<td class="c-check"><input type="checkbox" data-k="${c.k}" ${v?'checked':''} aria-label="${esc(c.t)}"></td>`;
@@ -1284,6 +1285,11 @@ $('tbody').addEventListener('change',e=>{
   }
   if(r[k]===v) return;
   r[k]=v; patch[k]=v;
+  if(k==='pagado'){
+    // el tilde de Pagado lleva el Estado: Terminado (verde) con tilde, Pendiente (amarillo) sin tilde
+    const est=v?'Terminado':'Pendiente';
+    if(r.estado!==est){ r.estado=est; patch.estado=est; const ie=tr.querySelector('[data-k=estado]'); if(ie){ ie.value=est; ie.title=est; ie.className=claseEstado(est); } }
+  }
   if(c.type==='list') inp.title=v;
   if(inp.tagName==='TEXTAREA') inp.value=v;
   if(k==='estado') inp.className=claseEstado(v);
