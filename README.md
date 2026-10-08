@@ -25,6 +25,7 @@ Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horari
 - **Buscar y filtrar** (por pagar, sin factura, sin Clara, ocultar ventas, por revisar), **duplicar** una fila (para gastos que se repiten), **borrar** con "Deshacer".
 - **Pegar desde Sheet:** copiás las filas del Google Sheet (las 13 columnas en ese orden) y las importa de una. Saltea solos los títulos de mes y los subtotales.
 - **Exportar CSV** del mes o del año que estés viendo (abre bien en Excel y Sheets).
+- **Exportar para la gestora:** un Excel del período que elijas (trimestre, últimos 4 meses o cualquier rango de meses) con tres hojas: **Resumen** por mes (ventas base/IVA/total, compras, otros ingresos, resultado, sin pagar, por revisar), **Compras** con el formato de la planilla (ingresos y egresos en columnas, colores, link a cada factura, subtotal por mes) y **Ventas** con el formato del informe de Ágora (por día y serie de documento T/F/TD, base, IVA y total por tipo de IVA, totales por mes). Se arma en el navegador.
 - **Copia completa:** baja un solo CSV con todos los movimientos de todos los años y todas las solapas. Es la copia de seguridad: conviene bajarla cada tanto y guardarla (el plan gratis de Supabase no hace backups). Abajo de la planilla dice cuándo fue la última.
 
 ## Reportes

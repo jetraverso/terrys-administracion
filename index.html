@@ -320,6 +320,11 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .overlay{position:fixed;inset:0;z-index:60;background:rgba(21,19,15,.5);display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{width:100%;max-width:640px;max-height:calc(100vh - 32px);overflow:auto;background:var(--surface);border:1px solid var(--line-2);border-radius:14px;box-shadow:var(--shadow);padding:20px 22px}
 .modal.sm{max-width:380px}
+.modal .periodo{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.modal .periodo select,.modal select{padding:8px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--paper);color:inherit}
+.modal .rapidos{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.modal .rapidos .btn{padding:5px 10px;font-size:13px}
+.modal label.chk{display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:14px;color:var(--ink);font-weight:500}
 .modal h3{font-family:var(--display);font-size:28px;letter-spacing:.03em}
 .modal p{margin:6px 0 12px;color:var(--ink-2);font-size:14px}
 .modal label{display:block;font-size:12px;color:var(--muted);margin:12px 0 5px;letter-spacing:.08em;text-transform:uppercase;font-weight:600}
@@ -435,6 +440,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <button class="btn" id="btnPegar">Pegar desde Sheet</button>
         <button class="btn" id="btnCsv">Exportar CSV</button>
         <button class="btn" id="btnCopia" title="Baja un archivo con todos los movimientos de todos los años">Copia completa</button>
+        <button class="btn" id="btnGestora" title="Excel de compras y ventas del período, con el formato que recibe la gestora">Exportar para la gestora</button>
         <button class="btn" id="btnFact" title="Le pide a Claude (en la Mac de Juan) que revise la carpeta de facturas de Drive de este período y cargue las nuevas">Actualizar facturas</button>
       </div>
     </div>
@@ -464,6 +470,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <li>Tipo, Desde, Hacia y Estado recuerdan lo que ya cargaste en esa misma columna: flechas para elegir, Enter o Tab para aceptar.</li>
         <li>Información: escribí el texto y ponele el link de la factura con el botón de la cadenita o Ctrl/Cmd + K (o pegá el link directo y queda como FACTURA). Al tener link, Facturas se tilda sola.</li>
         <li>Las filas azuladas con la etiqueta Ágora son las ventas de cada día, cargadas solas desde el TPV: no se editan ni se borran (si el día se vuelve a subir, se actualizan). Con el filtro "Ocultar ventas" desaparecen de la vista.</li>
+        <li>"Exportar para la gestora": baja un Excel del período que elijas con la hoja Compras (esta planilla, con links a las facturas y colores) y la hoja Ventas (el informe diario de Ágora por tipo de IVA), más un resumen por mes. Las filas por revisar van marcadas en amarillo: conviene aprobarlas antes de enviarlo.</li>
         <li>"Actualizar facturas" le pide a Claude que revise la carpeta de Drive del mes que estás viendo (o de todo el año en la vista anual) y cargue las nuevas. Lo atiende la Mac de Juan con la app de Claude abierta; tarda unos minutos y la página avisa cuando termina.</li>
         <li>Las filas amarillentas con el botón "Aprobar ✓" son facturas leídas solas desde la carpeta de Drive: revisalas contra el original (link en Información), corregí lo que haga falta y aprobalas. Filtro "Por revisar" para verlas juntas.</li>
         <li>Ancho de columnas: arrastrá el borde derecho del título. Queda guardado en este navegador. Doble clic en ese borde la vuelve a automática.</li>
@@ -488,7 +495,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.1';
+const VERSION='3.2';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1534,7 +1541,7 @@ async function renderReportes(){
    arma un resumen compacto por día (resumirVentas) que se guarda en la misma fila
    y es lo único que se baja para los reportes. Si cambia lo que se resume, se
    sube RES_V y los días se vuelven a procesar solos. */
-const RES_V=1;
+const RES_V=2;   // 2: agrega `sr` (por serie T/F/TD y tipo de IVA)
 const cacheVentas={}, cacheBruto={};
 let venSel=null, venOrden='b';
 try{ const o=localStorage.getItem('terrys_admin_ven_orden'); if(/^[bum]$/.test(o||'')) venOrden=o; }catch(_){}
@@ -1543,12 +1550,16 @@ $('venOrden').addEventListener('change',e=>{ venOrden=e.target.value; try{ local
 const r2=n=>Math.round((n||0)*100)/100;
 function resumirVentas(bruto){
   const inv=(bruto&&bruto.Invoices)||[];
-  const R={v:RES_V,t:0,t0:0,b:0,n:0,iva:0,c:0,csin:0,d:0,prop:0,g:0,u:0,h:{},ce:{},pg:{},fa:{},pr:{},us:{},p:{},pri:null,ult:null};
+  const R={v:RES_V,t:0,t0:0,b:0,n:0,iva:0,c:0,csin:0,d:0,prop:0,g:0,u:0,h:{},ce:{},pg:{},fa:{},pr:{},us:{},p:{},sr:{},pri:null,ult:null};
   const add=(o,k,i,v)=>{ const a=o[k]||(o[k]=[0,0,0]); a[i]+=v; };
   for(const f of inv){
     const T=f.Totals||{}, g=+T.GrossAmount||0, hh=(f.Date||'').slice(11,13), hm=(f.Date||'').slice(11,16);
     if(g>0){ R.t++; if(!R.pri||hm<R.pri) R.pri=hm; if(!R.ult||hm>R.ult) R.ult=hm; } else R.t0++;
     R.b+=g; R.n+=+T.NetAmount||0; R.iva+=+T.VatAmount||0;
+    // por serie de documento (T tickets, F facturas, TD devoluciones…) y tipo de IVA: base, IVA, total
+    const se=String(f.Serie||'?'), S=R.sr[se]||(R.sr[se]={n:0,min:null,max:null,tx:{}}), num=+f.Number;
+    S.n++; if(!isNaN(num)){ if(S.min==null||num<S.min) S.min=num; if(S.max==null||num>S.max) S.max=num; }
+    for(const tx of (T.Taxes||[])){ const k=String(Math.round((+tx.VatRate||0)*100)); const a=S.tx[k]||(S.tx[k]=[0,0,0]); a[0]+=+tx.NetAmount||0; a[1]+=+tx.VatAmount||0; a[2]+=+tx.GrossAmount||0; }
     if(hh){ add(R.h,hh,0,g); add(R.h,hh,1,g>0?1:0); }
     const un=(f.User&&f.User.Name)||'—'; add(R.us,un,0,g); add(R.us,un,1,g>0?1:0);
     for(const p of (f.Payments||[])){ const m=p.MethodName||'—'; add(R.pg,m,0,+p.Amount||0); add(R.pg,m,1,1); R.prop+=+p.TipAmount||0; }
@@ -1570,6 +1581,7 @@ function resumirVentas(bruto){
   }
   for(const k of ['b','n','iva','c','d','prop','u']) R[k]=r2(R[k]);
   for(const o of [R.h,R.ce,R.pg,R.fa,R.pr,R.us,R.p]) for(const k in o) o[k]=o[k].map(x=>typeof x==='number'?r2(x):x);
+  for(const se in R.sr) for(const k in R.sr[se].tx) R.sr[se].tx[k]=R.sr[se].tx[k].map(r2);
   return R;
 }
 async function filasVentas(y){
@@ -1750,6 +1762,135 @@ async function renderVentas(){
     }catch(e){ const el=$('venDia'); if(el) el.querySelector('.sub').textContent='No se pudieron cargar los tickets: '+errMsg(e); }
   }
 }
+
+/* ---------- exportar para la gestora ----------
+   Un Excel con dos hojas en el formato que ya recibe la gestora: "Compras" (la planilla,
+   con ingresos y egresos en columnas, links a las facturas y colores) y "Ventas" (el
+   informe de Ágora: por día y serie de documento, base/IVA/total por tipo de IVA),
+   más un resumen por mes. Se arma en el navegador con ExcelJS. */
+let excelJsP=null;
+function cargarExcelJs(){
+  if(window.ExcelJS) return Promise.resolve();
+  if(!excelJsP) excelJsP=new Promise((ok,no)=>{ const sc=document.createElement('script'); sc.src='https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js'; sc.onload=ok; sc.onerror=()=>no(new Error('No se pudo cargar la librería de Excel')); document.head.appendChild(sc); });
+  return excelJsP;
+}
+const mesesEntre=(d,h)=>{ const out=[]; let [y,m]=d.split('-').map(Number); const [hy,hm]=h.split('-').map(Number); while(y<hy||(y===hy&&m<=hm)){ out.push(`${y}-${pad(m)}`); m++; if(m>12){m=1;y++;} } return out; };
+const fechaXl=iso=>new Date(Date.UTC(+iso.slice(0,4),+iso.slice(5,7)-1,+iso.slice(8,10)));
+const EUR='#,##0.00 "€"', ROJO='FFC00000', AZUL='FF1F4E9A', VERDE='FF2F7D4F', AMBAR='FFB85C00', LINK='FF0563C1', GRIS='FFEFEFEF', GRIS2='FFDDDDDD';
+
+async function exportarGestora(desde,hasta,opc){
+  await cargarExcelJs();
+  const meses=mesesEntre(desde,hasta), anios=[...new Set(meses.map(m=>m.slice(0,4)))].map(Number);
+  const mov=[], ven=[];
+  for(const y of anios){ mov.push(...(await filasDeAnio(y))); if(opc.ventas) ven.push(...(await filasVentas(y))); }
+  const enPer=f=>meses.includes(f.slice(0,7));
+  const filas=mov.filter(r=>enPer(r.fecha)&&!r.origen).sort((a,b)=>a.fecha.localeCompare(b.fecha)||a.id-b.id);
+  const dias=ven.filter(d=>enPer(d.dia)).sort((a,b)=>a.dia.localeCompare(b.dia));
+  const wb=new ExcelJS.Workbook(); wb.creator="Terry's Administración";
+  const bold=c=>{ c.font={...(c.font||{}),bold:true}; };
+  const relleno=(c,argb)=>{ c.fill={type:'pattern',pattern:'solid',fgColor:{argb}}; };
+
+  // ---------- Resumen ----------
+  const wr=wb.addWorksheet('Resumen');
+  wr.columns=[{header:'Mes',key:'mes',width:16},{header:'Ventas base',key:'vb',width:14},{header:'IVA ventas',key:'vi',width:13},{header:'Ventas total',key:'vt',width:14},{header:'Días con ventas',key:'vd',width:15},{header:'Compras (egresos)',key:'ce',width:17},{header:'Nº compras',key:'cn',width:11},{header:'Otros ingresos',key:'oi',width:14},{header:'Resultado (ventas + otros − compras)',key:'res',width:30},{header:'Sin pagar',key:'sp',width:13},{header:'Por revisar',key:'pr',width:12}];
+  let tot={vb:0,vi:0,vt:0,vd:0,ce:0,cn:0,oi:0,sp:0,pr:0};
+  for(const m of meses){
+    const dm=dias.filter(d=>d.dia.startsWith(m)), fm=filas.filter(r=>r.fecha.startsWith(m));
+    const o={mes:`${MESES[+m.slice(5,7)-1]} ${m.slice(0,4)}`,vb:r2(dm.reduce((t,d)=>t+d.resumen.n,0)),vi:r2(dm.reduce((t,d)=>t+d.resumen.iva,0)),vt:r2(dm.reduce((t,d)=>t+d.resumen.b,0)),vd:dm.length,
+      ce:r2(fm.reduce((t,r)=>t+(r.egreso||0),0)),cn:fm.filter(r=>r.egreso).length,oi:r2(fm.reduce((t,r)=>t+(r.ingreso||0),0)),sp:r2(fm.filter(r=>r.egreso&&!r.pagado).reduce((t,r)=>t+r.egreso,0)),pr:fm.filter(r=>r.revisar).length};
+    o.res=r2(o.vt+o.oi-o.ce); wr.addRow(o); for(const k in tot) tot[k]+=o[k];
+  }
+  const rt=wr.addRow({mes:'TOTAL',...Object.fromEntries(Object.entries(tot).map(([k,v])=>[k,r2(v)])),res:r2(tot.vt+tot.oi-tot.ce)}); rt.eachCell(c=>{ bold(c); relleno(c,GRIS2); });
+  for(const k of ['vb','vi','vt','ce','oi','res','sp']) wr.getColumn(k).numFmt=EUR;
+  wr.getRow(1).eachCell(c=>{ bold(c); relleno(c,GRIS); }); wr.views=[{state:'frozen',ySplit:1}];
+  const notas=[]; if(!opc.ventas) notas.push('Hoja Ventas no incluida.');
+  if(opc.ventas){ for(const m of meses){ const n=new Date(Date.UTC(+m.slice(0,4),+m.slice(5,7),0)).getUTCDate(), hay=dias.filter(d=>d.dia.startsWith(m)).length; const ult=`${m}-${pad(n)}`; if(ult<hoyISO()&&hay<n) notas.push(`${MESES[+m.slice(5,7)-1]}: ${n-hay} ${n-hay===1?'día sin datos de ventas':'días sin datos de ventas'} (local cerrado o día no subido).`); } }
+  if(tot.pr) notas.push(`Hay ${tot.pr} ${tot.pr===1?'compra por revisar (sin aprobar)':'compras por revisar (sin aprobar)'}: están incluidas y marcadas en la hoja Compras.`);
+  if(notas.length){ wr.addRow([]); for(const n of notas){ const r=wr.addRow(['Nota: '+n]); r.getCell(1).font={italic:true,color:{argb:AMBAR}}; } }
+
+  // ---------- Compras (la planilla) ----------
+  const wc=wb.addWorksheet('Compras');
+  wc.columns=[{header:'FECHA',key:'fecha',width:12},{header:'INGRESOS',key:'ing',width:12},{header:'EGRESOS',key:'eg',width:12},{header:'DESCRIPCION',key:'det',width:48},{header:'FORMA DE PAGO',key:'tipo',width:22},{header:'DESDE DONDE SE PAGO',key:'desde',width:24},{header:'HACIA DONDE SE PAGO',key:'hacia',width:30},{header:'ESTADO',key:'est',width:12},{header:'FACTURA',key:'fac',width:12},{header:'COMENTARIOS',key:'com',width:40}];
+  wc.getRow(1).eachCell(c=>{ bold(c); relleno(c,GRIS); c.alignment={horizontal:'center'}; }); wc.views=[{state:'frozen',ySplit:1}];
+  let mesAct='', si=0, se=0, gi=0, ge=0;
+  const subtotal=()=>{ if(!mesAct) return; const r=wc.addRow({fecha:'',det:`Total ${MESES[+mesAct.slice(5,7)-1].toLowerCase()} ${mesAct.slice(0,4)}`,ing:r2(si)||null,eg:r2(se)||null}); r.eachCell({includeEmpty:true},c=>{ bold(c); relleno(c,GRIS); }); wc.addRow([]); gi+=si; ge+=se; si=0; se=0; };
+  for(const r of filas){
+    const m=r.fecha.slice(0,7); if(m!==mesAct){ subtotal(); mesAct=m; }
+    const li=linkPartes(r.informacion);
+    const row=wc.addRow({fecha:fechaXl(r.fecha),ing:r.ingreso||null,eg:r.egreso||null,det:r.detalle+(r.revisar?'  [POR REVISAR]':''),tipo:r.tipo,desde:r.desde,hacia:r.hacia,est:r.estado,com:[li.url?'':li.txt,r.comentarios].filter(Boolean).join(' · ')});
+    if(r.ingreso) row.getCell('ing').font={color:{argb:AZUL},bold:true};
+    if(r.egreso) row.getCell('eg').font={color:{argb:ROJO}};
+    row.getCell('tipo').font={color:{argb:ROJO}}; row.getCell('hacia').font={color:{argb:ROJO}};
+    const ce=claseEstado(r.estado); if(ce) row.getCell('est').font={color:{argb:ce==='est-ok'?VERDE:AMBAR}};
+    if(li.url){ const c=row.getCell('fac'); c.value={text:li.txt||'Factura',hyperlink:li.url}; c.font={color:{argb:LINK},underline:true}; }
+    else if(r.factura) row.getCell('fac').value='Sí';
+    if(r.revisar) row.eachCell({includeEmpty:true},c=>relleno(c,'FFFFF3CD'));
+    si+=r.ingreso||0; se+=r.egreso||0;
+  }
+  subtotal();
+  const rg=wc.addRow({det:'TOTAL DEL PERÍODO',ing:r2(gi)||null,eg:r2(ge)||null}); rg.eachCell({includeEmpty:true},c=>{ bold(c); relleno(c,GRIS2); });
+  wc.getColumn('fecha').numFmt='dd/mm/yyyy'; wc.getColumn('ing').numFmt=EUR; wc.getColumn('eg').numFmt=EUR;
+
+  // ---------- Ventas (informe de Ágora) ----------
+  if(opc.ventas){
+    const wv=wb.addWorksheet('Ventas');
+    const tasas=[...new Set(dias.flatMap(d=>Object.values(d.resumen.sr||{}).flatMap(S=>Object.keys(S.tx))))].sort((a,b)=>+a-+b);
+    const cab1=['',...tasas.flatMap(t=>[`${t},00 %`,'','']),'Total','',''], cab2=['Fecha / documentos',...tasas.flatMap(()=>['Base','Imp. IVA','Total']),'Base','Imp. IVA','Total'];
+    const r1=wv.addRow(cab1), r2b=wv.addRow(cab2); for(const r of [r1,r2b]) r.eachCell({includeEmpty:true},c=>{ bold(c); relleno(c,GRIS); c.alignment={horizontal:'center'}; });
+    tasas.forEach((t,i)=>wv.mergeCells(1,2+i*3,1,4+i*3)); wv.mergeCells(1,2+tasas.length*3,1,4+tasas.length*3);
+    wv.views=[{state:'frozen',ySplit:2}];
+    const celdas=(tx)=>{ let B=0,I=0,T=0; const v=tasas.flatMap(t=>{ const a=tx[t]||[0,0,0]; B+=a[0]; I+=a[1]; T+=a[2]; return a.map(x=>x?r2(x):null); }); return [...v,r2(B),r2(I),r2(T)]; };
+    const sumaTx=(lista)=>{ const o={}; for(const S of lista) for(const k in S.tx){ const a=o[k]||(o[k]=[0,0,0]); S.tx[k].forEach((x,i)=>a[i]+=x); } return o; };
+    const totMes={}, totGen={}; let mesV='';
+    const filaMes=()=>{ if(!mesV) return; const r=wv.addRow([`Total ${MESES[+mesV.slice(5,7)-1].toLowerCase()} ${mesV.slice(0,4)}`,...celdas(totMes[mesV])]); r.eachCell({includeEmpty:true},c=>{ bold(c); relleno(c,GRIS2); }); wv.addRow([]); };
+    for(const d of dias){
+      const m=d.dia.slice(0,7); if(m!==mesV){ filaMes(); mesV=m; totMes[m]={}; }
+      const sr=d.resumen.sr||{}, series=Object.keys(sr).sort();
+      const rd=wv.addRow([fechaXl(d.dia),...celdas(sumaTx(Object.values(sr)))]); rd.getCell(1).numFmt='dd/mm/yyyy'; bold(rd.getCell(1));
+      for(const se of series){ const S=sr[se]; wv.addRow([`${fmtFecha(d.dia)} -> ${se}/${S.min??''}...${S.max??''} (${S.n})`,...celdas(S.tx)]).getCell(1).font={color:{argb:'FF666666'}}; }
+      for(const S of Object.values(sr)) for(const k in S.tx){ for(const o of [totMes[m],totGen]){ const a=o[k]||(o[k]=[0,0,0]); S.tx[k].forEach((x,i)=>a[i]+=x); } }
+    }
+    filaMes();
+    const rt2=wv.addRow(['TOTAL DEL PERÍODO',...celdas(totGen)]); rt2.eachCell({includeEmpty:true},c=>{ bold(c); relleno(c,GRIS2); });
+    wv.getColumn(1).width=34; for(let c=2;c<=4+tasas.length*3;c++){ wv.getColumn(c).width=13; wv.getColumn(c).numFmt='#,##0.00'; }
+    if(!dias.length) wv.addRow(['Sin datos de ventas en el período.']);
+  }
+
+  const buf=await wb.xlsx.writeBuffer();
+  const blob=new Blob([buf],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`terrys-gestora-${desde}_${hasta}.xlsx`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  return {compras:filas.length,dias:dias.length,porRevisar:tot.pr};
+}
+$('btnGestora').onclick=()=>{
+  const hoy=new Date(), opciones=[]; for(let y=hoy.getFullYear();y>=hoy.getFullYear()-2;y--) for(let m=12;m>=1;m--){ if(y===hoy.getFullYear()&&m>hoy.getMonth()+1) continue; opciones.push(`${y}-${pad(m)}`); }
+  const sel=(id)=>`<select id="${id}">${opciones.map(o=>`<option value="${o}">${MESES[+o.slice(5,7)-1]} ${o.slice(0,4)}</option>`).join('')}</select>`;
+  const ov=abrirModal(`<h3>Exportar para la gestora</h3>
+    <p>Un Excel con la hoja <b>Compras</b> (la planilla, con links a las facturas) y la hoja <b>Ventas</b> (el informe diario de Ágora por tipo de IVA), más un resumen por mes.</p>
+    <label>Período</label>
+    <div class="periodo">desde ${sel('gxDesde')} hasta ${sel('gxHasta')}</div>
+    <div class="rapidos" id="gxRapidos"></div>
+    <label class="chk" style="margin-top:14px"><input type="checkbox" id="gxVentas" checked> Incluir la hoja de ventas</label>
+    <div class="msg" id="gxMsg"></div>
+    <div class="row"><button class="btn" id="gxCancel">Cancelar</button><button class="btn primary" id="gxOk">Descargar Excel</button></div>`);
+  const D=ov.querySelector('#gxDesde'), H=ov.querySelector('#gxHasta'), R=ov.querySelector('#gxRapidos'), M=ov.querySelector('#gxMsg');
+  const mesIso=(y,m)=>`${y}-${pad(m)}`, poner=(d,h)=>{ D.value=d; H.value=h; };
+  // atajos: últimos 4 meses completos, último trimestre cerrado y los trimestres del año
+  const ym=hoy.getFullYear(), mm=hoy.getMonth()+1;
+  const hastaC=mm===1?mesIso(ym-1,12):mesIso(ym,mm-1), desde4=(()=>{ let y=ym,m=mm-4; while(m<1){m+=12;y--;} return mesIso(y,m); })();
+  const tri=[['T1','01','03'],['T2','04','06'],['T3','07','09'],['T4','10','12']];
+  const triCerrado=(()=>{ const q=Math.floor((mm-1)/3); return q===0?{y:ym-1,i:3}:{y:ym,i:q-1}; })();
+  const atajos=[['Últimos 4 meses',desde4,hastaC],[`Último trimestre cerrado (${tri[triCerrado.i][0]} ${triCerrado.y})`,mesIso(triCerrado.y,+tri[triCerrado.i][1]),mesIso(triCerrado.y,+tri[triCerrado.i][2])],...tri.map(t=>[`${t[0]} ${ym}`,`${ym}-${t[1]}`,`${ym}-${t[2]}`])];
+  for(const [t,d,h] of atajos){ const b=document.createElement('button'); b.type='button'; b.className='btn'; b.textContent=t; b.onclick=()=>poner(d,h); R.appendChild(b); }
+  poner(desde4,hastaC);
+  ov.querySelector('#gxCancel').onclick=cerrarModal;
+  ov.querySelector('#gxOk').onclick=async()=>{
+    if(D.value>H.value){ M.className='msg bad'; M.textContent='El mes "desde" tiene que ser anterior al "hasta".'; return; }
+    const b=ov.querySelector('#gxOk'); b.disabled=true; b.textContent='Armando…'; M.className='msg'; M.textContent='Juntando compras y ventas del período…';
+    try{ const r=await exportarGestora(D.value,H.value,{ventas:ov.querySelector('#gxVentas').checked}); cerrarModal(); toast(`Excel listo: ${pl(r.compras,'movimiento','movimientos')} y ${pl(r.dias,'día de ventas','días de ventas')}${r.porRevisar?` · ojo: ${pl(r.porRevisar,'compra por revisar','compras por revisar')}`:''}`,null,null,6000); }
+    catch(e){ M.className='msg bad'; M.textContent='No se pudo armar el Excel: '+errMsg(e); b.disabled=false; b.textContent='Descargar Excel'; }
+  };
+};
 
 /* ---------- modales ---------- */
 function abrirModal(html,chico){

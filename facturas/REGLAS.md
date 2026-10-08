@@ -28,12 +28,12 @@ Los archivos se llaman `MMDD_Proveedor_Detalle.pdf|jpg` (ej. `0918_Europastry_Re
 - **Factura mensual de Ruibal Losada** (archivo tipo `004587M...pdf` que agrupa los albaranes del mes): no se sube. Sí se comprueba que la suma de los albaranes del mes dé lo mismo (±0,05 €) y se avisa si no.
 - **Albaranes sin precio** (ej. Chef Click sin importes) y hojas manuscritas sin importe.
 - **Liquidaciones de Glovo**: NO se carga el pago como ingreso (las ventas por Glovo ya entran con las ventas diarias de Ágora). Se carga SOLO la comisión de Glovo como egreso: `"proveedor": "Glovo"`, `"detalle": "Comision Glovo periodo ..."`, fecha = fecha del documento.
+- **Harmonia** (recogida de aceite usado: autofacturas y hojas manuscritas): no se sube. Lo que paga Harmonia se imputa en Ágora, así que ya entra con las ventas diarias.
 - **Albarán + factura del mismo envío** (pasa con Crusat: la factura dice "Nº alb. APxxxxx" y tiene el mismo importe que un albarán de días antes): es UN solo gasto. Si el albarán ya está cargado, no subir la factura: avisar del duplicado.
 
 ## Qué va como ingreso (`"ingreso": true`)
 
 - **Abonos / devoluciones a favor** (ej. Discer devolución de envase, importe negativo): ingreso por el valor absoluto.
-- **Hojas manuscritas de Harmonia** (recogida de aceite usado) cuando tienen importe: ingreso con `"tipo": "Ingresos", "desde": "Harmonia", "hacia": "CAIXA"`.
 
 ## Después de subir
 
