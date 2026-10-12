@@ -525,12 +525,12 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.4';
+const VERSION='3.5';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
 const TABS=[
-  {id:'tbsl', titulo:'Finanzas', empresa:'terrys-burgers-sl', sociedad:'Terrys Burgers S.L.'},
+  {id:'tbsl', titulo:'Compras', empresa:'terrys-burgers-sl', sociedad:'Terrys Burgers S.L.'},
 ];
 
 const COLS=[
@@ -1923,7 +1923,7 @@ $('btnGestora').onclick=()=>{
 };
 
 /* ---------- proyección anual ----------
-   Con lo que ya hay cargado: ventas diarias de Ágora y gastos de Finanzas. Para cada
+   Con lo que ya hay cargado: ventas diarias de Ágora y gastos de Compras. Para cada
    mes del año: lo real si ya pasó, y una proyección si falta. Las ventas se proyectan
    por día de la semana (lo que vende un martes no es lo que vende un sábado); los
    gastos por total mensual. Todo se calcula en el navegador; nada se guarda salvo

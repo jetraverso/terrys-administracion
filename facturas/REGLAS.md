@@ -1,4 +1,4 @@
-# Cómo se cargan las facturas de Drive en Finanzas
+# Cómo se cargan las facturas de Drive en Compras
 
 Lo sigue Claude, tanto a pedido en el chat como desde la tarea programada que atiende el botón "Actualizar facturas".
 
