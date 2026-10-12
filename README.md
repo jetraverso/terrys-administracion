@@ -1,6 +1,6 @@
 # Terry's Administración
 
-Página de administración general de Terry's Burgers. Tiene tres solapas: **Finanzas** (ingresos, egresos y facturas a proveedores de Terrys Burgers S.L., mes a mes; reemplaza al Google Sheet), **Ventas** (las ventas diarias que llegan de Ágora) y **Reportes** (en qué se va la plata). Es una sola página (`index.html`) que guarda todo en Supabase y pide email y contraseña para entrar.
+Página de administración general de Terry's Burgers. Tiene cuatro solapas: **Finanzas** (ingresos, egresos y facturas a proveedores de Terrys Burgers S.L., mes a mes; reemplaza al Google Sheet), **Ventas** (las ventas diarias que llegan de Ágora), **Reportes** (en qué se va la plata) y **Proyección** (cómo va a cerrar el año). Es una sola página (`index.html`) que guarda todo en Supabase y pide email y contraseña para entrar.
 
 Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horarios), siempre en modo noche.
 
@@ -36,6 +36,16 @@ Solapa **Reportes**. Usa el mismo mes/año que la planilla (la tira de meses; el
 - **Ingresos y egresos por mes** del año. Tocando un mes se pasa a su detalle.
 - **En qué se fue la plata:** ranking de egresos agrupados por *Proveedor (Hacia dónde)*, *Detalle*, *Tipo de operación* o *Desde dónde* (selector "Agrupar por"), con el % del total y la variación contra el período anterior. Junta solo las variantes de escritura (mayúsculas y acentos: "Reposición" y "Reposicion" cuentan como lo mismo). Tocando una fila se ven sus movimientos, con link a la factura y un atajo para verlos en la planilla.
 - **Mes a mes:** tabla del año con los 15 grupos de más gasto y un color más fuerte cuanto más se gastó, para ver qué viene subiendo.
+
+## Proyección
+
+Solapa **Proyección**. Toma el año de la tira de meses y arma cómo cerraría: para cada mes muestra lo real si ya pasó y una proyección si falta (el mes en curso suma lo real hasta hoy más lo que resta). No guarda nada en la base; el escenario elegido queda recordado en el navegador.
+
+- **Método** (arriba a la derecha): promedio de los últimos 3 o 6 meses cerrados, promedio del año, tendencia lineal, o mismo mes del año anterior multiplicado por el crecimiento observado este año.
+- **Ajustes de ventas y gastos en %:** se aplican solo a la parte proyectada, para probar escenarios ("¿y si vendo un 10 % más?", "¿y si los gastos suben un 5 %?"). "Sin ajuste" vuelve a 0.
+- **Las ventas se proyectan por día de la semana** (un sábado no vende lo que un martes) con las ventas de Ágora de la ventana base; **los gastos** por total mensual de los egresos de Finanzas.
+- Tarjetas con ventas, gastos y resultado del año (real + proyectado), gráfico de columnas con lo proyectado rayado, tabla mes a mes y **"En qué se va a ir la plata"**: gasto proyectado por proveedor (lo real más el promedio mensual por los meses que faltan), que es la mejor pista de la mercadería que se va a comprar.
+- Tocando un mes se ve su detalle con el promedio por día de la semana y cuántos días de cada tipo tiene.
 
 ## Ventas (Ágora POS)
 
