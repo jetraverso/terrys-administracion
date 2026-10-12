@@ -41,8 +41,9 @@ Solapa **Reportes**. Usa el mismo mes/año que la planilla (la tira de meses; el
 
 Solapa **Proyección**. Toma el año de la tira de meses y arma cómo cerraría: para cada mes muestra lo real si ya pasó y una proyección si falta (el mes en curso suma lo real hasta hoy más lo que resta). No guarda nada en la base; el escenario elegido queda recordado en el navegador.
 
+- **Hasta:** "fin de este año" o "fin del año que viene". Con la segunda opción se proyecta lo que queda del año y todo el año siguiente (tarjetas, gráfico y tabla por cada año, con la variación de un año contra el otro); el ranking por proveedor cubre hasta fin del año que viene.
 - **Método** (arriba a la derecha): promedio de los últimos 3 o 6 meses cerrados, promedio del año, tendencia lineal, o mismo mes del año anterior multiplicado por el crecimiento observado este año.
-- **Ajustes de ventas y gastos en %:** se aplican solo a la parte proyectada, para probar escenarios ("¿y si vendo un 10 % más?", "¿y si los gastos suben un 5 %?"). "Sin ajuste" vuelve a 0.
+- **Ajustes de ventas y gastos en %:** se aplican solo a la parte proyectada, para probar escenarios ("¿y si vendo un 10 % más?", "¿y si los gastos suben un 5 %?"). **Año que viene %** es un crecimiento que se suma encima, a ventas y gastos del año siguiente ("2027 con un 8 % más"). "Sin ajuste" vuelve todo a 0.
 - **Las ventas se proyectan por día de la semana** (un sábado no vende lo que un martes) con las ventas de Ágora de la ventana base; **los gastos** por total mensual de los egresos de Finanzas.
 - Tarjetas con ventas, gastos y resultado del año (real + proyectado), gráfico de columnas con lo proyectado rayado, tabla mes a mes y **"En qué se va a ir la plata"**: gasto proyectado por proveedor (lo real más el promedio mensual por los meses que faltan), que es la mejor pista de la mercadería que se va a comprar.
 - Tocando un mes se ve su detalle con el promedio por día de la semana y cuántos días de cada tipo tiene.

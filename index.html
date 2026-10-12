@@ -435,6 +435,10 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         <button id="next" aria-label="Mes siguiente">›</button>
       </div>
       <div class="tools" id="proTools" hidden>
+        <label>Hasta <select id="proHor" aria-label="Horizonte de la proyección">
+          <option value="anio">fin de este año</option>
+          <option value="dos">fin del año que viene</option>
+        </select></label>
         <label>Método <select id="proMetodo" aria-label="Método de proyección">
           <option value="prom3">Promedio últimos 3 meses</option>
           <option value="prom6">Promedio últimos 6 meses</option>
@@ -444,7 +448,8 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
         </select></label>
         <label>Ventas <input type="number" id="proAjV" step="1" value="0" style="width:64px" aria-label="Ajuste de ventas en %"> %</label>
         <label>Gastos <input type="number" id="proAjG" step="1" value="0" style="width:64px" aria-label="Ajuste de gastos en %"> %</label>
-        <button class="btn" id="proReset" title="Volver a 0 % en ventas y gastos">Sin ajuste</button>
+        <label title="Crecimiento que se suma a ventas y gastos del año que viene">Año que viene <input type="number" id="proAjN" step="1" value="0" style="width:64px" aria-label="Crecimiento del año que viene en %"> %</label>
+        <button class="btn" id="proReset" title="Volver a 0 % en todos los ajustes">Sin ajuste</button>
       </div>
       <div class="tools" id="venTools" hidden>
         <label>Ordenar productos por <select id="venOrden" aria-label="Ordenar productos por"><option value="b">importe</option><option value="u">unidades</option><option value="m">margen</option></select></label>
@@ -520,7 +525,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.3';
+const VERSION='3.4';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1923,121 +1928,142 @@ $('btnGestora').onclick=()=>{
    por día de la semana (lo que vende un martes no es lo que vende un sábado); los
    gastos por total mensual. Todo se calcula en el navegador; nada se guarda salvo
    el escenario elegido (en este navegador). */
-let proMetodo='prom3', proAjV=0, proAjG=0, proSel=null;
-try{ const o=JSON.parse(localStorage.getItem('terrys_admin_proy')||'{}'); if(o.metodo) proMetodo=o.metodo; if(isFinite(o.ajV)) proAjV=+o.ajV; if(isFinite(o.ajG)) proAjG=+o.ajG; }catch(_){}
-$('proMetodo').value=proMetodo; $('proAjV').value=proAjV; $('proAjG').value=proAjG;
-function guardarProy(){ try{ localStorage.setItem('terrys_admin_proy',JSON.stringify({metodo:proMetodo,ajV:proAjV,ajG:proAjG})); }catch(_){} }
+let proMetodo='prom3', proHor='dos', proAjV=0, proAjG=0, proAjN=0, proSel=null;
+try{ const o=JSON.parse(localStorage.getItem('terrys_admin_proy')||'{}'); if(o.metodo) proMetodo=o.metodo; if(o.hor) proHor=o.hor; if(isFinite(o.ajV)) proAjV=+o.ajV; if(isFinite(o.ajG)) proAjG=+o.ajG; if(isFinite(o.ajN)) proAjN=+o.ajN; }catch(_){}
+$('proMetodo').value=proMetodo; $('proHor').value=proHor; $('proAjV').value=proAjV; $('proAjG').value=proAjG; $('proAjN').value=proAjN;
+function guardarProy(){ try{ localStorage.setItem('terrys_admin_proy',JSON.stringify({metodo:proMetodo,hor:proHor,ajV:proAjV,ajG:proAjG,ajN:proAjN})); }catch(_){} }
 $('proMetodo').addEventListener('change',e=>{ proMetodo=e.target.value; guardarProy(); renderProyeccion(); });
+$('proHor').addEventListener('change',e=>{ proHor=e.target.value; proSel=null; guardarProy(); renderProyeccion(); });
 let proT=null;
-for(const id of ['proAjV','proAjG']) $(id).addEventListener('input',e=>{ const v=Math.max(-90,Math.min(300,+e.target.value||0)); if(id==='proAjV') proAjV=v; else proAjG=v; guardarProy(); clearTimeout(proT); proT=setTimeout(renderProyeccion,250); });
-$('proReset').onclick=()=>{ proAjV=0; proAjG=0; $('proAjV').value=0; $('proAjG').value=0; guardarProy(); renderProyeccion(); };
+for(const id of ['proAjV','proAjG','proAjN']) $(id).addEventListener('input',e=>{ const v=Math.max(-90,Math.min(300,+e.target.value||0)); if(id==='proAjV') proAjV=v; else if(id==='proAjG') proAjG=v; else proAjN=v; guardarProy(); clearTimeout(proT); proT=setTimeout(renderProyeccion,250); });
+$('proReset').onclick=()=>{ proAjV=0; proAjG=0; proAjN=0; $('proAjV').value=0; $('proAjG').value=0; $('proAjN').value=0; guardarProy(); renderProyeccion(); };
 const diasDelMes=(y,m)=>new Date(Date.UTC(y,m+1,0)).getUTCDate();
 const isoDia=(y,m,d)=>`${y}-${pad(m+1)}-${pad(d)}`;
-function regresion(ys){ const n=ys.length; if(n<2) return null; let sx=0,sy=0,sxy=0,sxx=0; ys.forEach((y,i)=>{ sx+=i; sy+=y; sxy+=i*y; sxx+=i*i; }); const b=(n*sxy-sx*sy)/(n*sxx-sx*sx||1), a=(sy-b*sx)/n; return i=>Math.max(0,a+b*i); }
+function regresion(pares){ const n=pares.length; if(n<2) return null; let sx=0,sy=0,sxy=0,sxx=0; for(const [x,y] of pares){ sx+=x; sy+=y; sxy+=x*y; sxx+=x*x; } const b=(n*sxy-sx*sy)/(n*sxx-sx*sx||1), a=(sy-b*sx)/n; return x=>Math.max(0,a+b*x); }
 
 async function renderProyeccion(){
   const tk=++repTk, cont=$('reportes');
-  let ven, venAnt=[], movAnt=[];
-  try{ ven=await filasVentas(year); if(proMetodo==='anterior'){ venAnt=await filasVentas(year-1); movAnt=await filasDeAnio(year-1); } }
+  const dos=proHor==='dos', ys=dos?[year,year+1]:[year], ultimo=ys[ys.length-1];
+  const venDe={}, movDe={};
+  try{
+    venDe[year]=await filasVentas(year); movDe[year]=rows;
+    if(dos){ venDe[year+1]=await filasVentas(year+1); movDe[year+1]=await filasDeAnio(year+1); }
+    if(proMetodo==='anterior'){ venDe[year-1]=await filasVentas(year-1); movDe[year-1]=await filasDeAnio(year-1); }
+  }
   catch(e){ cont.innerHTML=`<div class="aviso">No se pudieron cargar las ventas: ${esc(errMsg(e))}</div>`; return; }
   if(tk!==repTk||vista!=='proyeccion') return;
   const hoy=hoyISO(), hy=+hoy.slice(0,4), hm=+hoy.slice(5,7)-1, hd=+hoy.slice(8,10);
-  const porDia=new Map(ven.map(d=>[d.dia,d.resumen.b]));
-  const gastos=rows.filter(r=>(r.egreso||0)>0);
-  // estado de cada mes del año elegido
-  const estado=m=>{ if(year<hy) return 'cerrado'; if(year>hy) return 'futuro'; return m<hm?'cerrado':m===hm?'curso':'futuro'; };
-  const mesesCerrados=[...Array(12).keys()].filter(m=>estado(m)==='cerrado'&&ven.some(d=>d.dia.startsWith(`${year}-${pad(m+1)}-`)));
-  const realV=m=>ventasPeriodo(ven,year,m).reduce((t,d)=>t+d.resumen.b,0);
-  const realG=m=>gastos.filter(r=>r.fecha.startsWith(`${year}-${pad(m+1)}-`)).reduce((t,r)=>t+r.egreso,0);
-  // ventana base según método
+  const porDia=new Map(ys.flatMap(y=>venDe[y]).map(d=>[d.dia,d.resumen.b]));
+  const gastosDe=y=>(movDe[y]||[]).filter(r=>(r.egreso||0)>0);
+  const estado=(y,m)=>{ if(y<hy) return 'cerrado'; if(y>hy) return 'futuro'; return m<hm?'cerrado':m===hm?'curso':'futuro'; };
+  const realV=(y,m)=>ventasPeriodo(venDe[y]||[],y,m).reduce((t,d)=>t+d.resumen.b,0);
+  const realG=(y,m)=>gastosDe(y).filter(r=>r.fecha.startsWith(`${y}-${pad(m+1)}-`)).reduce((t,r)=>t+r.egreso,0);
+  const idx=(y,m)=>(y-year)*12+m;
+  // meses cerrados con ventas dentro del horizonte, en orden
+  const cerrados=ys.flatMap(y=>[...Array(12).keys()].filter(m=>estado(y,m)==='cerrado'&&(venDe[y]||[]).some(d=>d.dia.startsWith(`${y}-${pad(m+1)}-`))).map(m=>({y,m})));
   const nBase=proMetodo==='prom3'?3:proMetodo==='prom6'?6:12;
-  const base=mesesCerrados.slice(-nBase);
+  const base=cerrados.slice(-nBase);
   // ventas: promedio por día de la semana sobre la ventana base (calendario completo: los días sin venta cuentan como 0)
   const perfil=Array(7).fill(0), cuentaDS=Array(7).fill(0);
-  for(const m of base){ const n=diasDelMes(year,m); for(let d=1;d<=n;d++){ const iso=isoDia(year,m,d), ds=diaSemana(iso); perfil[ds]+=porDia.get(iso)||0; cuentaDS[ds]++; } }
+  for(const b of base){ const n=diasDelMes(b.y,b.m); for(let d=1;d<=n;d++){ const iso=isoDia(b.y,b.m,d), ds=diaSemana(iso); perfil[ds]+=porDia.get(iso)||0; cuentaDS[ds]++; } }
   const avgDS=perfil.map((v,i)=>cuentaDS[i]?v/cuentaDS[i]:0);
   const haySemana=cuentaDS.some(c=>c>0);
-  const tendV=regresion(mesesCerrados.map(realV)), tendG=regresion(mesesCerrados.map(realG));
-  const avgG=base.length?base.reduce((t,m)=>t+realG(m),0)/base.length:0;
-  const fV=1+proAjV/100, fG=1+proAjG/100;
-  // crecimiento observado contra el año anterior (meses cerrados que existen en los dos años)
+  const tendV=regresion(cerrados.map(c=>[idx(c.y,c.m),realV(c.y,c.m)])), tendG=regresion(cerrados.map(c=>[idx(c.y,c.m),realG(c.y,c.m)]));
+  const avgG=base.length?base.reduce((t,b)=>t+realG(b.y,b.m),0)/base.length:0;
+  const fV=1+proAjV/100, fG=1+proAjG/100, fN=1+proAjN/100;
+  // crecimiento observado contra el año anterior (meses cerrados del año elegido que existen en los dos años)
   let crec=null;
-  if(proMetodo==='anterior'){ const com=mesesCerrados.filter(m=>ventasPeriodo(venAnt,year-1,m).length); if(com.length){ const a=com.reduce((t,m)=>t+realV(m),0), b=com.reduce((t,m)=>t+ventasPeriodo(venAnt,year-1,m).reduce((x,d)=>x+d.resumen.b,0),0); if(b) crec=a/b; } }
-  const proyDias=(m,desdeDia)=>{ // suma proyectada de ventas de los días desdeDia..fin del mes
-    const n=diasDelMes(year,m); let t=0;
-    for(let d=desdeDia;d<=n;d++){ const iso=isoDia(year,m,d); t+=avgDS[diaSemana(iso)]; } return t; };
-  const proyMesV=m=>{
-    if(proMetodo==='tendencia'&&tendV) return tendV(m);
-    if(proMetodo==='anterior'){ const b=ventasPeriodo(venAnt,year-1,m).reduce((t,d)=>t+d.resumen.b,0); return b?b*(crec||1):(haySemana?proyDias(m,1):0); }
-    return proyDias(m,1);
+  if(proMetodo==='anterior'){ const com=cerrados.filter(c=>c.y===year&&ventasPeriodo(venDe[year-1],year-1,c.m).length); if(com.length){ const a=com.reduce((t,c)=>t+realV(c.y,c.m),0), b=com.reduce((t,c)=>t+realV(year-1,c.m),0); if(b) crec=a/b; } }
+  const proyDias=(y,m,desdeDia)=>{ // suma proyectada de ventas de los días desdeDia..fin del mes
+    const n=diasDelMes(y,m); let t=0;
+    for(let d=desdeDia;d<=n;d++) t+=avgDS[diaSemana(isoDia(y,m,d))]; return t; };
+  const meses=[]; // cronológico, de a un año
+  const crudo={}; // estimación completa de cada mes sin ajustes, para "mismo mes del año anterior" del año siguiente
+  const proyMesV=(y,m)=>{
+    if(proMetodo==='tendencia'&&tendV) return tendV(idx(y,m));
+    if(proMetodo==='anterior'){ const c=crudo[`${y-1}-${m}`]; const b=c?c.v:realV(y-1,m); return b?b*(crec||1):(haySemana?proyDias(y,m,1):0); }
+    return proyDias(y,m,1);
   };
-  const proyMesG=m=>{
-    if(proMetodo==='tendencia'&&tendG) return tendG(m);
-    if(proMetodo==='anterior'){ const b=movAnt.filter(r=>(r.egreso||0)>0&&r.fecha.startsWith(`${year-1}-${pad(m+1)}-`)).reduce((t,r)=>t+r.egreso,0); if(b) return b*(crec||1); }
+  const proyMesG=(y,m)=>{
+    if(proMetodo==='tendencia'&&tendG) return tendG(idx(y,m));
+    if(proMetodo==='anterior'){ const c=crudo[`${y-1}-${m}`]; const b=c?c.g:realG(y-1,m); if(b) return b*(crec||1); }
     return avgG;
   };
-  const meses=[...Array(12).keys()].map(m=>{
-    const st=estado(m), rv=realV(m), rg=realG(m), n=diasDelMes(year,m);
-    let pv=0,pg=0;
-    if(st==='futuro'){ pv=proyMesV(m)*fV; pg=proyMesG(m)*fG; }
+  for(const y of ys) for(let m=0;m<12;m++){
+    const st=estado(y,m), rv=realV(y,m), rg=realG(y,m), n=diasDelMes(y,m), fy=y===year+1?fN:1;
+    let v=rv, g=rg, cv=rv, cg=rg;
+    if(st==='futuro'){ cv=proyMesV(y,m); cg=proyMesG(y,m); v=cv*fV*fy; g=cg*fG*fy; }
     else if(st==='curso'){
       const restoDias=n-hd; // desde mañana
-      const vFalta=proMetodo==='tendencia'||proMetodo==='anterior'?Math.max(0,proyMesV(m)*(restoDias/n)):proyDias(m,hd+1);
-      pv=rv+vFalta*fV; pg=rg+(proyMesG(m)/n)*restoDias*fG;
+      const vFalta=proMetodo==='tendencia'||proMetodo==='anterior'?Math.max(0,proyMesV(y,m)*(restoDias/n)):proyDias(y,m,hd+1);
+      const gFalta=(proyMesG(y,m)/n)*restoDias;
+      cv=rv+vFalta; cg=rg+gFalta; v=rv+vFalta*fV*fy; g=rg+gFalta*fG*fy;
     }
-    return {m,st,rv,rg,pv,pg,v:st==='cerrado'?rv:pv,g:st==='cerrado'?rg:pg,proyV:st!=='cerrado'?(st==='curso'?pv-rv:pv):0,proyG:st!=='cerrado'?(st==='curso'?pg-rg:pg):0};
-  });
-  const sum=(k)=>meses.reduce((t,x)=>t+x[k],0);
-  const totV=sum('v'), totG=sum('g'), realVTot=sum('rv'), realGTot=sum('rg'), res=totV-totG;
-  const cerradosN=mesesCerrados.length;
+    crudo[`${y}-${m}`]={v:cv,g:cg};
+    meses.push({i:meses.length,y,m,st,rv,rg,v,g,proyV:v-rv,proyG:g-rg});
+  }
+  const porAnio=ys.map(y=>{ const l=meses.filter(x=>x.y===y); const s=k=>l.reduce((t,x)=>t+x[k],0); return {y,l,v:s('v'),g:s('g'),rv:s('rv'),rg:s('rg'),res:s('v')-s('g')}; });
+  const cerradosN=cerrados.length;
   const nombreMetodo={prom3:'promedio de los últimos 3 meses cerrados',prom6:'promedio de los últimos 6 meses cerrados',promAnio:'promedio de los meses cerrados del año',tendencia:'tendencia lineal de los meses cerrados',anterior:'mismo mes del año anterior'+(crec!=null?` × ${nf1.format(crec*100)} % (lo observado este año contra el anterior)`:'')}[proMetodo];
-  const aviso=!cerradosN?`<div class="aviso">Todavía no hay ningún mes cerrado con ventas en ${year}: la proyección usa lo que haya. Cambiá de año en la tira de meses si corresponde.</div>`:(cerradosN<3&&proMetodo==='tendencia'?`<div class="aviso">Con ${pl(cerradosN,'mes cerrado','meses cerrados')} la tendencia es poco fiable; mejor usar un promedio.</div>`:'');
+  const aviso=!cerradosN?`<div class="aviso">Todavía no hay ningún mes cerrado con ventas en ${year}: la proyección usa lo que haya. Cambiá de año en la tira de meses si corresponde.</div>`:(cerradosN<3&&proMetodo==='tendencia'?`<div class="aviso">Con ${pl(cerradosN,'mes cerrado','meses cerrados')} la tendencia es poco fiable; mejor usar un promedio.</div>`:dos&&proMetodo==='tendencia'?`<div class="aviso">Ojo: la tendencia estirada a todo ${year+1} exagera lo que viene subiendo o bajando. Para el año que viene conviene un promedio o "mismo mes del año anterior" y jugar con el % de ${year+1}.</div>`:'');
+  const ajustes=[proAjV?`Ventas ${proAjV>0?'+':''}${proAjV} %`:'',proAjG?`Gastos ${proAjG>0?'+':''}${proAjG} %`:'',dos&&proAjN?`${year+1} ${proAjN>0?'+':''}${proAjN} %`:''].filter(Boolean).join(' · ');
 
-  let h=aviso+`<div class="cards">
-    <div class="card in"><div class="k">Ventas ${year}</div><div class="v num proy">${eur(totV)}</div><div class="s">${eur(realVTot)} reales hasta hoy + ${eur(totV-realVTot)} proyectadas</div></div>
-    <div class="card out"><div class="k">Gastos ${year}</div><div class="v num proy">${eur(totG)}</div><div class="s">${eur(realGTot)} reales + ${eur(totG-realGTot)} proyectados</div></div>
-    <div class="card ${res<0?'neg':''}"><div class="k">Resultado ${year}</div><div class="v num">${res<0?'−':''}${eur(Math.abs(res))}</div><div class="s">${totV?`los gastos serían el ${Math.round(totG/totV*100)} % de las ventas`:''}</div></div>
-    <div class="card"><div class="k">Promedio mensual</div><div class="v num">${eur(totV/12)}</div><div class="s">ventas · gastos ${eur(totG/12)}</div></div>
-    <div class="card"><div class="k">Escenario</div><div class="v chica">${proAjV||proAjG?`Ventas ${proAjV>=0?'+':''}${proAjV} % · Gastos ${proAjG>=0?'+':''}${proAjG} %`:'Sin ajuste'}</div><div class="s">${esc(nombreMetodo)}</div></div>
-  </div>`;
+  let h=aviso+`<div class="cards">`;
+  porAnio.forEach((a,k)=>{
+    const ant=k?porAnio[k-1]:null, todoProy=a.rv===0&&a.rg===0;
+    h+=`<div class="card in"><div class="k">Ventas ${a.y}</div><div class="v num proy">${eur(a.v)}</div><div class="s">${todoProy?'todo proyectado':`${eur(a.rv)} reales + ${eur(a.v-a.rv)} proy.`} · ${eur(a.v/12)}/mes${ant&&ant.v?` · ${a.v>=ant.v?'+':'−'}${nf1.format(Math.abs(a.v/ant.v-1)*100)} % contra ${ant.y}`:''}</div></div>
+    <div class="card out"><div class="k">Gastos ${a.y}</div><div class="v num proy">${eur(a.g)}</div><div class="s">${todoProy?'todo proyectado':`${eur(a.rg)} reales + ${eur(a.g-a.rg)} proy.`} · ${eur(a.g/12)}/mes${ant&&ant.g?` · ${a.g>=ant.g?'+':'−'}${nf1.format(Math.abs(a.g/ant.g-1)*100)} % contra ${ant.y}`:''}</div></div>
+    <div class="card ${a.res<0?'neg':''}"><div class="k">Resultado ${a.y}</div><div class="v num">${a.res<0?'−':''}${eur(Math.abs(a.res))}</div><div class="s">${a.v?`los gastos serían el ${Math.round(a.g/a.v*100)} % de las ventas`:''}</div></div>`;
+  });
+  h+=`<div class="card"><div class="k">Escenario</div><div class="v chica">${ajustes||'Sin ajuste'}</div><div class="s">${esc(nombreMetodo)}</div></div></div>`;
 
-  // ---- gráfico: ventas y gastos por mes, lo proyectado rayado ----
+  // ---- gráfico por año: ventas y gastos por mes, lo proyectado rayado (misma escala en los dos años) ----
   const techo=techoLindo(Math.max(1,...meses.map(x=>Math.max(x.v,x.g))));
-  h+=`<div class="panel"><h2>Ventas y gastos por mes · ${year}</h2><div class="sub">Lo real en color pleno; lo proyectado rayado. Tocá un mes para verlo en detalle.</div>
+  const barra=(real,proy,cls)=>{ const hr=real/techo*100, hp=proy/techo*100; return `<i class="${cls}" style="height:${hr+hp}%;display:flex;flex-direction:column;justify-content:flex-start;background:none"><span class="${cls} proy" style="display:block;height:${(hr+hp)?hp/(hr+hp)*100:0}%;border-radius:4px 4px 0 0"></span><span class="${cls}" style="display:block;flex:1"></span></i>`; };
+  const estTxt=x=>x.st==='cerrado'?'cerrado':x.st==='curso'?'en curso':'proyectado';
+  for(const a of porAnio){
+    h+=`<div class="panel"><h2>Ventas y gastos por mes · ${a.y}</h2><div class="sub">${a.rv||a.rg?'Lo real en color pleno; lo proyectado rayado.':'Todo proyectado.'} Tocá un mes para verlo en detalle.</div>
     <div class="leyenda"><span><i style="background:var(--s-in)"></i>Ventas reales</span><span><i style="background:var(--s-out)"></i>Gastos reales</span><span><i class="raya"></i>Proyectado</span></div>
     <div class="cols ${proSel!=null?'conSel':''}">
       ${[0,.25,.5,.75,1].map(f=>`<div class="grid" style="bottom:${f*100}%"><b>${f?kfmt(techo*f)+' €':'0'}</b></div>`).join('')}
-      <div class="meses">${meses.map(x=>{
-        const barra=(real,proy,cls)=>{ const hr=real/techo*100, hp=proy/techo*100; return `<i class="${cls}" style="height:${hr+hp}%;display:flex;flex-direction:column;justify-content:flex-start;background:none"><span class="${cls} proy" style="display:block;height:${(hr+hp)?hp/(hr+hp)*100:0}%;border-radius:4px 4px 0 0"></span><span class="${cls}" style="display:block;flex:1"></span></i>`; };
-        return `<button type="button" class="mes ${proSel===x.m?'sel':''}" data-pm="${x.m}" aria-label="${MESES[x.m]}: ventas ${eur(x.v)}, gastos ${eur(x.g)}" data-tip="${esc(`${MESES[x.m]} ${year} · ${x.st==='cerrado'?'cerrado':x.st==='curso'?'en curso':'proyectado'}\nVentas  ${eur(x.v)}${x.proyV?` (${eur(x.proyV)} proy.)`:''}\nGastos   ${eur(x.g)}${x.proyG?` (${eur(x.proyG)} proy.)`:''}\nResultado ${x.v-x.g<0?'−':''}${eur(Math.abs(x.v-x.g))}`)}">${barra(x.rv,x.proyV,'ven')}${barra(x.rg,x.proyG,'gas')}</button>`; }).join('')}</div>
+      <div class="meses">${a.l.map(x=>`<button type="button" class="mes ${proSel===x.i?'sel':''}" data-pm="${x.i}" aria-label="${MESES[x.m]} ${x.y}: ventas ${eur(x.v)}, gastos ${eur(x.g)}" data-tip="${esc(`${MESES[x.m]} ${x.y} · ${estTxt(x)}\nVentas  ${eur(x.v)}${x.proyV&&x.st==='curso'?` (${eur(x.proyV)} proy.)`:''}\nGastos   ${eur(x.g)}${x.proyG&&x.st==='curso'?` (${eur(x.proyG)} proy.)`:''}\nResultado ${x.v-x.g<0?'−':''}${eur(Math.abs(x.v-x.g))}`)}">${barra(x.rv,x.proyV,'ven')}${barra(x.rg,x.proyG,'gas')}</button>`).join('')}</div>
     </div>
-    <div class="cols-x">${MES3.map((t,m)=>`<span class="${proSel===m?'sel':''}">${t}</span>`).join('')}</div></div>`;
+    <div class="cols-x">${a.l.map(x=>`<span class="${proSel===x.i?'sel':''}">${MES3[x.m]}</span>`).join('')}</div></div>`;
+  }
 
   // ---- tabla por mes ----
-  h+=`<div class="rep-grid"><div class="panel"><h2>Mes a mes</h2><div class="sub">Real hasta hoy y proyección del resto.</div>
-    <div class="scrollx"><table class="tablita"><thead><tr><th>Mes</th><th></th><th class="r">Ventas</th><th class="r">Gastos</th><th class="r">Resultado</th></tr></thead><tbody>
-    ${meses.map(x=>`<tr class="${x.st==='curso'?'hoy':''}"><td>${MESES[x.m]}</td><td style="color:var(--muted);font-size:11px">${x.st==='cerrado'?'real':x.st==='curso'?'en curso':'proy.'}</td><td class="r ${x.st==='cerrado'?'':'proy'}">${fmt(x.v)} €</td><td class="r ${x.st==='cerrado'?'':'proy'}">${fmt(x.g)} €</td><td class="r ${x.v-x.g>=0?'pos':'neg'}">${x.v-x.g<0?'−':''}${fmt(Math.abs(x.v-x.g))} €</td></tr>`).join('')}
-    <tr><td><b>Total ${year}</b></td><td></td><td class="r"><b>${fmt(totV)} €</b></td><td class="r"><b>${fmt(totG)} €</b></td><td class="r ${res>=0?'pos':'neg'}">${res<0?'−':''}${fmt(Math.abs(res))} €</td></tr></tbody></table></div></div>`;
+  h+=`<div class="rep-grid"><div class="panel"><h2>Mes a mes</h2><div class="sub">Real hasta hoy y proyección del resto${dos?` hasta fin de ${ultimo}`:''}.</div>
+    <div class="scrollx"><table class="tablita"><thead><tr><th>Mes</th><th></th><th class="r">Ventas</th><th class="r">Gastos</th><th class="r">Resultado</th></tr></thead><tbody>`;
+  for(const a of porAnio){
+    if(dos) h+=`<tr><td colspan="5" style="padding-top:10px;color:var(--muted);font-size:11px;letter-spacing:.08em">${a.y}</td></tr>`;
+    h+=a.l.map(x=>`<tr class="${x.st==='curso'?'hoy':''}"><td>${MESES[x.m]}</td><td style="color:var(--muted);font-size:11px">${x.st==='cerrado'?'real':x.st==='curso'?'en curso':'proy.'}</td><td class="r ${x.st==='cerrado'?'':'proy'}">${fmt(x.v)} €</td><td class="r ${x.st==='cerrado'?'':'proy'}">${fmt(x.g)} €</td><td class="r ${x.v-x.g>=0?'pos':'neg'}">${x.v-x.g<0?'−':''}${fmt(Math.abs(x.v-x.g))} €</td></tr>`).join('');
+    h+=`<tr><td><b>Total ${a.y}</b></td><td></td><td class="r"><b>${fmt(a.v)} €</b></td><td class="r"><b>${fmt(a.g)} €</b></td><td class="r ${a.res>=0?'pos':'neg'}"><b>${a.res<0?'−':''}${fmt(Math.abs(a.res))} €</b></td></tr>`;
+  }
+  h+=`</tbody></table></div></div>`;
 
   // ---- gastos por proveedor proyectados ----
-  const mesesRestantes=meses.filter(x=>x.st==='futuro').length+(meses.some(x=>x.st==='curso')?(diasDelMes(year,hm)-hd)/diasDelMes(year,hm):0);
-  const g=agrupar(gastos.filter(r=>base.length?base.some(m=>r.fecha.startsWith(`${year}-${pad(m+1)}-`)):true),'hacia');
-  const gTodo=new Map(agrupar(gastos,'hacia').map(x=>[x.k,x]));
-  const prov=g.map(x=>{ const prom=x.total/(base.length||1); const real=(gTodo.get(x.k)||{total:0}).total; return {k:x.k,nombre:x.nombre,prom,real,anual:real+prom*mesesRestantes*fG,n:x.n}; }).sort((a,b)=>b.anual-a.anual);
+  const restantes=ys.map(y=>meses.filter(x=>x.y===y&&x.st==='futuro').length+(meses.some(x=>x.y===y&&x.st==='curso')?(diasDelMes(y,hm)-hd)/diasDelMes(y,hm):0));
+  const mesesRestantes=restantes.reduce((t,x)=>t+x,0);
+  const gastosH=ys.flatMap(gastosDe);
+  const g=agrupar(gastosH.filter(r=>base.length?base.some(b=>r.fecha.startsWith(`${b.y}-${pad(b.m+1)}-`)):true),'hacia');
+  const gTodo=new Map(agrupar(gastosH,'hacia').map(x=>[x.k,x]));
+  const prov=g.map(x=>{ const prom=x.total/(base.length||1); const real=(gTodo.get(x.k)||{total:0}).total; const porY=ys.map((y,k)=>prom*restantes[k]*fG*(y===year+1?fN:1)); return {k:x.k,nombre:x.nombre,prom,real,porY,anual:real+porY.reduce((t,v)=>t+v,0),n:x.n}; }).sort((a,b)=>b.anual-a.anual);
   const maxA=prov.length?prov[0].anual:1, totProv=prov.reduce((t,x)=>t+x.anual,0);
-  h+=`<div class="panel"><h2>En qué se va a ir la plata</h2><div class="sub">Gasto proyectado por proveedor para ${year}: lo real hasta hoy más el promedio mensual de la ventana base por los ${nf1.format(mesesRestantes)} meses que faltan${proAjG?` (${proAjG>0?'+':''}${proAjG} %)`:''}. Es la mejor pista de la mercadería que vas a comprar.</div>
-    ${prov.length?`<div class="rank">${prov.slice(0,15).map(x=>`<div class="fila" data-tip="${esc(`${x.nombre}\nReal hasta hoy: ${eur(x.real)}\nPromedio mensual (base): ${eur(x.prom)}\nProyección ${year}: ${eur(x.anual)}`)}"><span class="nom">${esc(x.nombre)}</span><span class="barra"><i style="width:${Math.max(.5,x.anual/maxA*100)}%"></i></span><span class="num"><b>${fmt(x.anual)} €</b><small>${Math.round(x.anual/totProv*100)} %</small><em>${eur(x.prom)}/mes</em></span></div>`).join('')}</div>`:'<div class="vacio">Sin gastos en la ventana base.</div>'}</div></div>`;
+  h+=`<div class="panel"><h2>En qué se va a ir la plata</h2><div class="sub">Gasto proyectado por proveedor hasta fin de ${ultimo}: lo real hasta hoy más el promedio mensual de la ventana base por los ${nf1.format(mesesRestantes)} meses que faltan${proAjG?` (${proAjG>0?'+':''}${proAjG} %)`:''}. Es la mejor pista de la mercadería que vas a comprar.</div>
+    ${prov.length?`<div class="rank">${prov.slice(0,15).map(x=>`<div class="fila" data-tip="${esc(`${x.nombre}\nReal hasta hoy: ${eur(x.real)}\nPromedio mensual (base): ${eur(x.prom)}\n${dos?`Lo que falta de ${year}: ${eur(x.porY[0])}\nTodo ${year+1}: ${eur(x.porY[1])}\n`:''}Proyección hasta fin de ${ultimo}: ${eur(x.anual)}`)}"><span class="nom">${esc(x.nombre)}</span><span class="barra"><i style="width:${Math.max(.5,x.anual/maxA*100)}%"></i></span><span class="num"><b>${fmt(x.anual)} €</b><small>${Math.round(x.anual/totProv*100)} %</small><em>${dos?`${eur(x.porY[1])} en ${year+1}`:`${eur(x.prom)}/mes`}</em></span></div>`).join('')}</div>`:'<div class="vacio">Sin gastos en la ventana base.</div>'}</div></div>`;
 
   // ---- detalle del mes elegido ----
-  if(proSel!=null){
-    const x=meses[proSel], n=diasDelMes(year,x.m);
-    const porDS=Array(7).fill(0); for(let d=1;d<=n;d++) porDS[diaSemana(isoDia(year,x.m,d))]++;
-    h+=`<div class="panel"><h2>${MESES[x.m]} ${year} · ${x.st==='cerrado'?'real':x.st==='curso'?'en curso':'proyectado'}</h2>
-      <div class="sub">Ventas ${eur(x.v)} · gastos ${eur(x.g)} · resultado ${x.v-x.g<0?'−':''}${eur(Math.abs(x.v-x.g))}. <button type="button" class="linkbtn" data-pm="${x.m}">Cerrar</button></div>
-      ${haySemana&&proMetodo!=='tendencia'&&proMetodo!=='anterior'?`<div class="dsem">${DSEM.map((d,i)=>`<div><div class="k">${d}</div><div class="v num">${nf0.format(avgDS[i]*fV)} €</div><div class="s">${porDS[i]} en el mes · ${nf0.format(avgDS[i]*fV*porDS[i])} €</div></div>`).join('')}</div><div class="hint">Promedio por día de la semana de la ventana base, ajustado ${proAjV>=0?'+':''}${proAjV} %; multiplicado por los días de cada tipo que tiene el mes.</div>`:''}
+  const sel=proSel!=null?meses[proSel]:null;
+  if(sel){
+    const x=sel, n=diasDelMes(x.y,x.m), fy=x.y===year+1?fN:1;
+    const porDS=Array(7).fill(0); for(let d=1;d<=n;d++) porDS[diaSemana(isoDia(x.y,x.m,d))]++;
+    h+=`<div class="panel"><h2>${MESES[x.m]} ${x.y} · ${estTxt(x)}</h2>
+      <div class="sub">Ventas ${eur(x.v)} · gastos ${eur(x.g)} · resultado ${x.v-x.g<0?'−':''}${eur(Math.abs(x.v-x.g))}. <button type="button" class="linkbtn" data-pm="${x.i}">Cerrar</button></div>
+      ${haySemana&&proMetodo!=='tendencia'&&proMetodo!=='anterior'?`<div class="dsem">${DSEM.map((d,i)=>`<div><div class="k">${d}</div><div class="v num">${nf0.format(avgDS[i]*fV*fy)} €</div><div class="s">${porDS[i]} en el mes · ${nf0.format(avgDS[i]*fV*fy*porDS[i])} €</div></div>`).join('')}</div><div class="hint">Promedio por día de la semana de la ventana base${proAjV||(fy!==1)?`, ajustado ${nf1.format((fV*fy-1)*100)} %`:''}; multiplicado por los días de cada tipo que tiene el mes.</div>`:''}
     </div>`;
   }
-  h+=`<div class="hint">Cómo se calcula: ventas por día de la semana (un sábado no vende lo que un martes), gastos por total mensual; el mes en curso suma lo real hasta hoy más lo que falta. Ventana base: ${base.length?base.map(m=>MES3[m]).join(', '):'sin meses cerrados'}. Los porcentajes de ventas y gastos se aplican solo a lo proyectado.</div>`;
+  const baseTxt=base.length?(new Set(base.map(b=>b.y)).size>1?base.map(b=>`${MES3[b.m]} ${b.y}`).join(', '):base.map(b=>MES3[b.m]).join(', ')+' '+base[0].y):'sin meses cerrados';
+  h+=`<div class="hint">Cómo se calcula: ventas por día de la semana (un sábado no vende lo que un martes), gastos por total mensual; el mes en curso suma lo real hasta hoy más lo que falta. Ventana base: ${baseTxt}. Los porcentajes de ventas y gastos se aplican solo a lo proyectado${dos?`; el de ${year+1} se suma encima, a ventas y gastos de ese año`:''}.</div>`;
   const sc=cont.scrollTop; cont.innerHTML=h; cont.scrollTop=sc;
 }
 $('reportes').addEventListener('click',e=>{ if(vista!=='proyeccion') return; const b=e.target.closest('[data-pm]'); if(b){ proSel=proSel===+b.dataset.pm?null:+b.dataset.pm; renderProyeccion(); } });
