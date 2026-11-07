@@ -2,6 +2,8 @@
 
 Página de administración general de Terry's Burgers. Tiene cuatro solapas: **Compras** (ingresos, egresos y facturas a proveedores de Terrys Burgers S.L., mes a mes; reemplaza al Google Sheet), **Ventas** (las ventas diarias que llegan de Ágora), **Reportes** (en qué se va la plata) y **Proyección** (cómo va a cerrar el año). Es una sola página (`index.html`) que guarda todo en Supabase y pide email y contraseña para entrar.
 
+Publicada en **https://admin.terrysburgers.com/** (GitHub Pages con dominio propio: registro CNAME `admin` → `jetraverso.github.io` en los DNS de GoDaddy y archivo `CNAME` en el repo; la dirección vieja `jetraverso.github.io/terrys-administracion` redirige sola).
+
 Mismo diseño que [Terry's Horarios](https://github.com/jetraverso/terrys-horarios), siempre en modo noche.
 
 ## Qué hace
@@ -101,6 +103,8 @@ Tres caminos, los tres igual de seguros para los datos (el código no tiene ning
 La dirección de la página la puede abrir cualquiera que la conozca, pero sin email, contraseña y el código del celular solo se ve la pantalla de entrada.
 
 Después de publicar: Supabase → Authentication → URL Configuration → **Site URL** = la dirección de la página.
+
+**Dominio propio (admin.terrysburgers.com):** en los DNS del dominio (GoDaddy) un registro **CNAME** con nombre `admin` y valor `jetraverso.github.io`; en el repo, un archivo `CNAME` con `admin.terrysburgers.com` (GitHub Pages lo toma solo y, cuando el DNS responde, emite el certificado HTTPS en unos minutos; después tildar **Enforce HTTPS** en Settings → Pages). La dirección vieja redirige a la nueva.
 
 ## Cómo está protegido
 
