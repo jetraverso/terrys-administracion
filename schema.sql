@@ -590,3 +590,177 @@ end;
 $$;
 revoke all on function public.pedido_crear(text, text, text) from public;
 grant execute on function public.pedido_crear(text, text, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 9. Web pública (terrysburgers.com): reservas, consultas de eventos y agenda
+-- ---------------------------------------------------------------
+-- La web pública NO lee ni escribe estas tablas directo: solo llama a
+-- web_reservar() / web_consulta_evento() (que validan y guardan) y lee la
+-- agenda publicada. Todo lo demás lo ve y lo cambia solo un admin (es_admin()).
+
+create table if not exists public.reservas (
+  id          bigint generated always as identity primary key,
+  creada      timestamptz not null default now(),
+  fecha       date not null,
+  hora        time not null,
+  personas    int  not null check (personas between 1 and 12),
+  nombre      text not null check (char_length(nombre) between 2 and 80),
+  telefono    text not null check (char_length(telefono) between 6 and 30),
+  email       text check (email is null or char_length(email) <= 120),
+  comentario  text check (comentario is null or char_length(comentario) <= 500),
+  estado      text not null default 'pendiente'
+              check (estado in ('pendiente', 'confirmada', 'rechazada', 'cancelada')),
+  nota        text,
+  actualizada timestamptz not null default now()
+);
+create index if not exists reservas_fecha on public.reservas (fecha, hora);
+
+create table if not exists public.eventos_consultas (
+  id          bigint generated always as identity primary key,
+  creada      timestamptz not null default now(),
+  tipo        text not null check (tipo in ('privado', 'catering', 'otro')),
+  nombre      text not null check (char_length(nombre) between 2 and 80),
+  telefono    text not null check (char_length(telefono) between 6 and 30),
+  email       text check (email is null or char_length(email) <= 120),
+  fecha       date,
+  personas    int check (personas is null or personas between 1 and 1000),
+  mensaje     text check (mensaje is null or char_length(mensaje) <= 1500),
+  estado      text not null default 'nueva' check (estado in ('nueva', 'respondida', 'cerrada')),
+  nota        text,
+  actualizada timestamptz not null default now()
+);
+
+create table if not exists public.agenda (
+  id          bigint generated always as identity primary key,
+  fecha       date not null,
+  hora        text check (hora is null or char_length(hora) <= 40),
+  titulo      text not null check (char_length(titulo) between 2 and 120),
+  descripcion text check (descripcion is null or char_length(descripcion) <= 600),
+  imagen_url  text check (imagen_url is null or imagen_url ~ '^https://'),
+  publicado   boolean not null default true,
+  creado      timestamptz not null default now()
+);
+
+alter table public.reservas          enable row level security;
+alter table public.eventos_consultas enable row level security;
+alter table public.agenda            enable row level security;
+revoke all on public.reservas, public.eventos_consultas, public.agenda from anon, authenticated;
+grant select, update, delete on public.reservas, public.eventos_consultas to authenticated;
+grant select, insert, update, delete on public.agenda to authenticated;
+grant select on public.agenda to anon;
+
+drop policy if exists reservas_admin on public.reservas;
+create policy reservas_admin on public.reservas for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+drop policy if exists eventos_consultas_admin on public.eventos_consultas;
+create policy eventos_consultas_admin on public.eventos_consultas for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+drop policy if exists agenda_publica on public.agenda;
+create policy agenda_publica on public.agenda for select to anon, authenticated
+  using (publicado and fecha >= (now() at time zone 'Europe/Madrid')::date - 1);
+drop policy if exists agenda_admin on public.agenda;
+create policy agenda_admin on public.agenda for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+
+-- Texto vacío → null, recortado.
+create or replace function public._txt(t text, maxlen int)
+returns text language sql immutable as $$
+  select nullif(left(btrim(coalesce(t, '')), maxlen), '');
+$$;
+
+-- Reserva desde la web. Horarios con reserva: 13:00–15:00 y 20:00–22:30
+-- (cada 15 min), hasta 90 días adelante, de 1 a 12 personas (más → eventos).
+-- Freno anti-abuso: 3 por teléfono por día y 200 en total por día.
+create or replace function public.web_reservar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
+  v_fecha date;
+  v_hora  time;
+  v_pers  int;
+  v_tel   text := public._txt(p ->> 'telefono', 30);
+  v_id    bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then          -- campo trampa para bots
+    return jsonb_build_object('ok', true);
+  end if;
+  begin
+    v_fecha := (p ->> 'fecha')::date;
+    v_hora  := (p ->> 'hora')::time;
+    v_pers  := (p ->> 'personas')::int;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_fecha is null or v_fecha < v_hoy or v_fecha > v_hoy + 90 then
+    raise exception 'fecha fuera de rango' using errcode = '22023';
+  end if;
+  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
+     or not (v_hora between time '13:00' and time '15:00' or v_hora between time '20:00' and time '22:30') then
+    raise exception 'horario sin reserva' using errcode = '22023';
+  end if;
+  if v_fecha = v_hoy and v_hora <= v_ahora + interval '30 minutes' then
+    raise exception 'horario pasado' using errcode = '22023';
+  end if;
+  if v_pers is null or v_pers not between 1 and 12 then
+    raise exception 'personas fuera de rango' using errcode = '22023';
+  end if;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if (select count(*) from public.reservas where telefono = v_tel and creada > now() - interval '1 day') >= 3
+     or (select count(*) from public.reservas where creada > now() - interval '1 day') >= 200 then
+    raise exception 'demasiadas reservas, llamanos' using errcode = '54000';
+  end if;
+  insert into public.reservas (fecha, hora, personas, nombre, telefono, email, comentario)
+  values (v_fecha, v_hora, v_pers, public._txt(p ->> 'nombre', 80), v_tel,
+          public._txt(p ->> 'email', 120), public._txt(p ->> 'comentario', 500))
+  returning id into v_id;
+  return jsonb_build_object('ok', true, 'id', v_id);
+end;
+$$;
+revoke all on function public.web_reservar(jsonb) from public;
+grant execute on function public.web_reservar(jsonb) to anon, authenticated;
+
+-- Consulta de evento privado / catering desde la web.
+create or replace function public.web_consulta_evento(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_tel  text := public._txt(p ->> 'telefono', 30);
+  v_fecha date;
+  v_pers int;
+  v_id   bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then
+    return jsonb_build_object('ok', true);
+  end if;
+  begin
+    v_fecha := nullif(p ->> 'fecha', '')::date;
+    v_pers  := nullif(p ->> 'personas', '')::int;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if (select count(*) from public.eventos_consultas where telefono = v_tel and creada > now() - interval '1 day') >= 3
+     or (select count(*) from public.eventos_consultas where creada > now() - interval '1 day') >= 100 then
+    raise exception 'demasiadas consultas, llamanos' using errcode = '54000';
+  end if;
+  insert into public.eventos_consultas (tipo, nombre, telefono, email, fecha, personas, mensaje)
+  values (coalesce(nullif(p ->> 'tipo', ''), 'otro'), public._txt(p ->> 'nombre', 80), v_tel,
+          public._txt(p ->> 'email', 120), v_fecha, v_pers, public._txt(p ->> 'mensaje', 1500))
+  returning id into v_id;
+  return jsonb_build_object('ok', true, 'id', v_id);
+end;
+$$;
+revoke all on function public.web_consulta_evento(jsonb) from public;
+grant execute on function public.web_consulta_evento(jsonb) to anon, authenticated;

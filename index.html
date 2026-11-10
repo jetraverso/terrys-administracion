@@ -196,6 +196,37 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .ayuda summary{cursor:pointer;font-weight:600;width:fit-content}
 .ayuda ul{margin:8px 0 0;padding-left:18px;display:grid;gap:4px;max-width:900px}
 
+/* ---------- solapa web ---------- */
+.tab-n{display:inline-block;min-width:18px;padding:0 5px;margin-left:4px;border-radius:9px;background:var(--warn);color:#1a1400;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+.wcab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.wseg{display:flex;gap:6px}
+.wscroll{overflow-x:auto}
+.wtabla{width:100%;border-collapse:collapse;font-size:14px}
+.wtabla td{padding:8px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.wtabla tr.wdia td{background:var(--surface-2);font-weight:700;text-transform:capitalize;font-size:13px;letter-spacing:.02em}
+.wtabla tr.wdia span{float:right;font-weight:400;color:var(--muted);text-transform:none}
+.wtabla small,.wage small{display:block;color:var(--muted);font-size:12.5px;font-weight:400;margin-top:2px}
+.wtabla .wh{font-variant-numeric:tabular-nums;font-weight:700;width:56px}
+.wtabla .wp{white-space:nowrap;width:50px}
+.wtabla .wa{width:1%}
+.wtabla select,.wcon select{padding:5px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit}
+.wtabla tr.w-pendiente .wh{color:var(--warn)}
+.wtabla tr.w-rechazada,.wtabla tr.w-cancelada,.wcon.w-cerrada{opacity:.5}
+.wcon{border-top:1px solid var(--line);padding:10px 0}
+.wcon.w-nueva .wcon-h b{color:var(--warn)}
+.wcon-h{display:flex;gap:6px;align-items:baseline}.wcon-h span{margin-left:auto;color:var(--muted);font-size:12px}
+.wcon-d{font-size:13px;color:var(--ink-2);margin-top:3px}
+.wcon p{margin:6px 0 0;font-size:13.5px;white-space:pre-wrap}
+.wcon-a{display:flex;gap:6px;margin-top:8px}
+.wform{display:grid;grid-template-columns:150px 1fr;gap:6px;margin-bottom:12px}
+.wform input,.wform textarea{padding:7px 9px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;font:inherit;font-size:13.5px}
+.wform input[name=titulo],.wform textarea,.wform input[name=imagen_url],.wform button{grid-column:1/-1}
+.wage{display:grid;grid-template-columns:110px 1fr auto auto;gap:10px;align-items:center;border-top:1px solid var(--line);padding:8px 0;font-size:13.5px}
+.wage.pasada{opacity:.5}
+.wage-f{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.wage-p{font-size:12.5px;color:var(--muted);display:flex;gap:5px;align-items:center}
+@media (max-width:700px){.wage{grid-template-columns:1fr auto}.wage-f{grid-column:1/-1}}
+
 /* ---------- reportes ---------- */
 .tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
 .tools input[type=number]{padding:6px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;text-align:right}
@@ -525,7 +556,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.5';
+const VERSION='3.6';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -765,7 +796,7 @@ async function abrirApp(u){
   user=u; mfaUser=null;
   $('login').hidden=true; $('app').hidden=false;
   $('who').textContent=u.email; $('demoBar').hidden=SB; $('ver').textContent='v'+VERSION;
-  vista='planilla'; renderTabs(); aplicarVista(); pintarCopia(); await cargar(); vigilarPedido();
+  vista='planilla'; renderTabs(); aplicarVista(); pintarCopia(); await cargar(); vigilarPedido(); contarPendientesWeb();
 }
 
 /* ---------- verificación en dos pasos (TOTP) ----------
@@ -835,12 +866,13 @@ $('btnSalir').onclick=async()=>{
 let vista='planilla';   // 'planilla' | 'reportes'
 function renderTabs(){
   $('tabs').innerHTML=TABS.map(t=>`<button class="tab ${vista==='planilla'&&t.id===tab.id?'on':''}" data-tab="${esc(t.id)}">${esc(t.titulo)}</button>`).join('')
-    +`<button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button><button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button><button class="tab ${vista==='proyeccion'?'on':''}" data-vista="proyeccion">Proyección</button>`;
+    +`<button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button><button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button><button class="tab ${vista==='proyeccion'?'on':''}" data-vista="proyeccion">Proyección</button><button class="tab ${vista==='web'?'on':''}" data-vista="web">Web${webPend?` <span class="tab-n">${webPend}</span>`:''}</button>`;
 }
 function aplicarVista(){
   const rep=vista!=='planilla';
   $('reportes').hidden=!rep; $('repTools').hidden=vista!=='reportes'; $('venTools').hidden=vista!=='ventas'; $('proTools').hidden=vista!=='proyeccion';
   for(const el of [$('planTools'),$('cards'),$('sheetwrap'),document.querySelector('details.ayuda'),document.querySelector('p.hint')]) if(el) el.hidden=rep;
+  const web=vista==='web'; for(const el of [$('months'),$('period'),document.querySelector('.toolbar .nav')]) if(el) el.hidden=web;
   if(rep){ $('avisoDoble').hidden=true; $('avisoRev').hidden=true; $('avisoPedido').hidden=true; } else vigilarPedido();
   acCerrar(); ocultarTip();
 }
@@ -878,7 +910,132 @@ async function cargarMemoria(){
     if(tab.empresa===e&&user) recalc();
   }catch(_){ delete memoria[e]; }
 }
-function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); renderReportes(); } else if(vista==='ventas'){ recalc(); renderVentas(); } else if(vista==='proyeccion'){ recalc(); renderProyeccion(); } else { renderTabla(); recalc(); } }
+function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); renderReportes(); } else if(vista==='ventas'){ recalc(); renderVentas(); } else if(vista==='proyeccion'){ recalc(); renderProyeccion(); } else if(vista==='web'){ renderWeb(); } else { renderTabla(); recalc(); } }
+
+/* ---------- web pública (terrysburgers.com): reservas, consultas de eventos, agenda ---------- */
+let webVer='proximas', webPend=0;
+const W_EST_RES={pendiente:'Pendiente',confirmada:'Confirmada',rechazada:'Rechazada',cancelada:'Cancelada'};
+const W_EST_CON={nueva:'Nueva',respondida:'Respondida',cerrada:'Cerrada'};
+const W_TIPO={privado:'Evento privado',catering:'Catering',otro:'Otra consulta'};
+function waLink(tel,txt){
+  let d=String(tel||'').replace(/\D/g,''); if(d.startsWith('00')) d=d.slice(2); if(d.length===9) d='34'+d;
+  return `https://wa.me/${d}?text=${encodeURIComponent(txt)}`;
+}
+const fechaLargaW=iso=>new Date(iso+'T12:00:00').toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'}).replace(',','');
+async function contarPendientesWeb(){
+  if(!SB) return;
+  try{
+    const r=await sbc.from('reservas').select('id',{count:'exact',head:true}).eq('estado','pendiente').gte('fecha',hoyISO());
+    const c=await sbc.from('eventos_consultas').select('id',{count:'exact',head:true}).eq('estado','nueva');
+    const n=(r.count||0)+(c.count||0); if(n!==webPend){ webPend=n; renderTabs(); }
+  }catch(_){}
+}
+async function renderWeb(){
+  const tk=++repTk, cont=$('reportes');
+  if(!SB){ cont.innerHTML='<div class="aviso">La solapa Web necesita Supabase: en modo demo no hay reservas.</div>'; return; }
+  if(!cont.querySelector('.wweb')) cont.innerHTML='<div class="panel"><div class="vacio">Cargando…</div></div>';
+  const hoy=hoyISO();
+  let res,con,age;
+  try{
+    const q=sbc.from('reservas').select('*');
+    const [a,b,c]=await Promise.all([
+      (webVer==='proximas'?q.gte('fecha',hoy).order('fecha').order('hora'):q.lt('fecha',hoy).order('fecha',{ascending:false}).order('hora')).limit(300),
+      sbc.from('eventos_consultas').select('*').order('creada',{ascending:false}).limit(100),
+      sbc.from('agenda').select('*').order('fecha',{ascending:false}).limit(100)]);
+    for(const r of [a,b,c]) if(r.error) throw r.error;
+    res=a.data; con=b.data; age=c.data;
+  }catch(e){
+    if(tk!==repTk) return;
+    const m=errMsg(e);
+    cont.innerHTML=`<div class="aviso">No se pudieron cargar los datos de la web: ${esc(m)}${/does not exist|reservas|agenda|eventos_consultas|schema cache/i.test(m)?' (falta correr la parte 9 del schema.sql en Supabase)':''}</div>`; return;
+  }
+  if(tk!==repTk||vista!=='web') return;
+  const pendR=res.filter(r=>r.estado==='pendiente').length, pendC=con.filter(c=>c.estado==='nueva').length;
+  const optEst=(map,v)=>Object.entries(map).map(([k,t])=>`<option value="${k}"${k===v?' selected':''}>${t}</option>`).join('');
+  // reservas agrupadas por día
+  const dias=new Map(); for(const r of res){ if(!dias.has(r.fecha)) dias.set(r.fecha,[]); dias.get(r.fecha).push(r); }
+  const filasRes=[...dias].map(([d,l])=>{
+    const pers=l.filter(r=>r.estado!=='rechazada'&&r.estado!=='cancelada').reduce((a,r)=>a+r.personas,0);
+    return `<tr class="wdia"><td colspan="6">${esc(fechaLargaW(d))}${d===hoy?' · <b>hoy</b>':''}<span>${l.length} reserva${l.length>1?'s':''} · ${pers} personas</span></td></tr>`+l.map(r=>{
+      const hora=String(r.hora).slice(0,5);
+      const txt=`¡Hola ${r.nombre}! Te confirmamos la reserva en Terry's Burgers para el ${fechaLargaW(r.fecha)} a las ${hora}, ${r.personas} ${r.personas>1?'personas':'persona'}. ¡Te esperamos! 🍔`;
+      return `<tr class="w-${r.estado}">
+        <td class="wh">${esc(hora)}</td>
+        <td class="wn"><b>${esc(r.nombre)}</b>${r.comentario?`<small>${esc(r.comentario)}</small>`:''}</td>
+        <td class="wp">${r.personas} p.</td>
+        <td class="wt"><a href="tel:${esc(r.telefono)}">${esc(r.telefono)}</a>${r.email?`<small>${esc(r.email)}</small>`:''}</td>
+        <td><select data-w-res="${r.id}" aria-label="Estado de la reserva">${optEst(W_EST_RES,r.estado)}</select></td>
+        <td class="wa"><a class="btn" href="${esc(waLink(r.telefono,txt))}" target="_blank" rel="noopener" title="Abre WhatsApp con el mensaje de confirmación">WhatsApp</a></td>
+      </tr>`;}).join('');
+  }).join('');
+  const filasCon=con.map(c=>`<div class="wcon w-${c.estado}">
+      <div class="wcon-h"><b>${esc(W_TIPO[c.tipo]||c.tipo)}</b> · ${esc(c.nombre)}<span>${esc(new Date(c.creada).toLocaleDateString('es-ES',{day:'numeric',month:'short'}))}</span></div>
+      <div class="wcon-d">${c.fecha?`📅 ${esc(fechaLargaW(c.fecha))}`:''}${c.personas?` · 👥 ${c.personas}`:''} · <a href="tel:${esc(c.telefono)}">${esc(c.telefono)}</a>${c.email?` · <a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`:''}</div>
+      ${c.mensaje?`<p>${esc(c.mensaje)}</p>`:''}
+      <div class="wcon-a"><select data-w-con="${c.id}" aria-label="Estado de la consulta">${optEst(W_EST_CON,c.estado)}</select>
+        <a class="btn" href="${esc(waLink(c.telefono,`¡Hola ${c.nombre}! Te escribimos de Terry's Burgers por tu consulta de ${(W_TIPO[c.tipo]||'evento').toLowerCase()}.`))}" target="_blank" rel="noopener">WhatsApp</a></div>
+    </div>`).join('');
+  const filasAge=age.map(a=>`<div class="wage${a.fecha<hoy?' pasada':''}">
+      <span class="wage-f">${esc(fmtFecha(a.fecha))}${a.hora?` · ${esc(a.hora)}`:''}</span>
+      <span class="wage-t"><b>${esc(a.titulo)}</b>${a.descripcion?`<small>${esc(a.descripcion)}</small>`:''}</span>
+      <label class="wage-p"><input type="checkbox" data-w-pub="${a.id}"${a.publicado?' checked':''}> publicada</label>
+      <button class="btn" data-w-del="${a.id}" title="Borrar esta fecha">Borrar</button>
+    </div>`).join('');
+  cont.innerHTML=`<div class="wweb">
+    <div class="panel">
+      <div class="wcab"><h2>Reservas</h2>
+        <div class="wseg"><button class="btn${webVer==='proximas'?' primary':''}" data-w-ver="proximas">Próximas</button><button class="btn${webVer==='anteriores'?' primary':''}" data-w-ver="anteriores">Anteriores</button><button class="btn" data-w-recargar>Actualizar</button></div></div>
+      <div class="sub">${webVer==='proximas'?`${res.length} reservas desde hoy${pendR?` · <b>${pendR} por confirmar</b>`:''}. Confirmá con WhatsApp y cambiá el estado.`:'Últimas 300 reservas pasadas.'}</div>
+      ${res.length?`<div class="wscroll"><table class="wtabla"><tbody>${filasRes}</tbody></table></div>`:'<div class="vacio">No hay reservas.</div>'}
+    </div>
+    <div class="rep-grid">
+      <div class="panel"><h2>Consultas de eventos</h2><div class="sub">Eventos privados y catering pedidos desde la web${pendC?` · <b>${pendC} nuevas</b>`:''}.</div>
+        ${filasCon||'<div class="vacio">Todavía no llegó ninguna consulta.</div>'}</div>
+      <div class="panel"><h2>Agenda</h2><div class="sub">Lo publicado aparece en la sección Eventos de la web (solo fechas de hoy en adelante).</div>
+        <form class="wform" id="wAgForm">
+          <input type="date" name="fecha" required aria-label="Fecha">
+          <input type="text" name="hora" placeholder="Hora (ej. 21:00)" maxlength="40" aria-label="Hora">
+          <input type="text" name="titulo" placeholder="Título (ej. Final de la Libertadores en pantalla)" maxlength="120" required aria-label="Título">
+          <textarea name="descripcion" placeholder="Descripción (opcional)" maxlength="600" rows="2" aria-label="Descripción"></textarea>
+          <input type="url" name="imagen_url" placeholder="Link a una imagen https://… (opcional)" aria-label="Imagen">
+          <button class="btn primary" type="submit">Agregar fecha</button>
+        </form>
+        ${filasAge||'<div class="vacio">Sin fechas cargadas.</div>'}</div>
+    </div></div>`;
+  contarPendientesWeb();
+}
+async function webCambiar(tabla,id,patch,msg){
+  const {error}=await sbc.from(tabla).update(patch).eq('id',id);
+  if(error){ toast('No se pudo guardar: '+errMsg(error)); renderWeb(); return; }
+  if(msg) toast(msg); renderWeb();
+}
+$('reportes').addEventListener('change',e=>{
+  if(vista!=='web') return;
+  const t=e.target;
+  if(t.dataset.wRes) webCambiar('reservas',+t.dataset.wRes,{estado:t.value,actualizada:new Date().toISOString()},'Reserva: '+W_EST_RES[t.value].toLowerCase());
+  else if(t.dataset.wCon) webCambiar('eventos_consultas',+t.dataset.wCon,{estado:t.value,actualizada:new Date().toISOString()});
+  else if(t.dataset.wPub) webCambiar('agenda',+t.dataset.wPub,{publicado:t.checked},t.checked?'Publicada en la web':'Oculta en la web');
+});
+$('reportes').addEventListener('click',async e=>{
+  if(vista!=='web') return;
+  const v=e.target.closest('[data-w-ver]'); if(v){ webVer=v.dataset.wVer; renderWeb(); return; }
+  if(e.target.closest('[data-w-recargar]')){ renderWeb(); return; }
+  const d=e.target.closest('[data-w-del]');
+  if(d&&confirm('¿Borrar esta fecha de la agenda?')){
+    const {error}=await sbc.from('agenda').delete().eq('id',+d.dataset.wDel);
+    if(error) toast('No se pudo borrar: '+errMsg(error)); renderWeb();
+  }
+});
+$('reportes').addEventListener('submit',async e=>{
+  if(vista!=='web'||e.target.id!=='wAgForm') return;
+  e.preventDefault();
+  const f=new FormData(e.target), o={};
+  for(const [k,v] of f){ const t=String(v).trim(); if(t) o[k]=t; }
+  if(o.imagen_url&&!/^https:\/\//.test(o.imagen_url)){ toast('La imagen tiene que ser un link https://'); return; }
+  const {error}=await sbc.from('agenda').insert(o);
+  if(error){ toast('No se pudo agregar: '+errMsg(error)); return; }
+  toast('Fecha agregada a la agenda'); renderWeb();
+});
 
 /* ---------- período ---------- */
 function renderPeriodo(){
