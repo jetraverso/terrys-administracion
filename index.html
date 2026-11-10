@@ -226,6 +226,11 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .wage-f{font-variant-numeric:tabular-nums;color:var(--ink-2)}
 .wage-p{font-size:12.5px;color:var(--muted);display:flex;gap:5px;align-items:center}
 @media (max-width:700px){.wage{grid-template-columns:1fr auto}.wage-f{grid-column:1/-1}}
+.wav ol{margin:8px 0 10px;padding-left:20px;font-size:13.5px;line-height:1.6}
+.wav code{background:var(--surface-2);border:1px solid var(--line-2);border-radius:6px;padding:2px 7px;font-size:13px;user-select:all;word-break:break-all}
+.wav-a{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.wav-c{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2);margin:4px 0 10px}
+.wav-c label{display:flex;gap:5px;align-items:center}
 
 /* ---------- reportes ---------- */
 .tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -556,7 +561,7 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.6';
+const VERSION='3.7';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -935,7 +940,7 @@ async function renderWeb(){
   if(!SB){ cont.innerHTML='<div class="aviso">La solapa Web necesita Supabase: en modo demo no hay reservas.</div>'; return; }
   if(!cont.querySelector('.wweb')) cont.innerHTML='<div class="panel"><div class="vacio">Cargando…</div></div>';
   const hoy=hoyISO();
-  let res,con,age;
+  let res,con,age,avisos;
   try{
     const q=sbc.from('reservas').select('*');
     const [a,b,c]=await Promise.all([
@@ -944,6 +949,8 @@ async function renderWeb(){
       sbc.from('agenda').select('*').order('fecha',{ascending:false}).limit(100)]);
     for(const r of [a,b,c]) if(r.error) throw r.error;
     res=a.data; con=b.data; age=c.data;
+    const v=await sbc.from('web_avisos').select('*').eq('id',1).maybeSingle();
+    avisos=v.error?{error:errMsg(v.error)}:(v.data||{error:'sin fila'});
   }catch(e){
     if(tk!==repTk) return;
     const m=errMsg(e);
@@ -1001,8 +1008,39 @@ async function renderWeb(){
           <button class="btn primary" type="submit">Agregar fecha</button>
         </form>
         ${filasAge||'<div class="vacio">Sin fechas cargadas.</div>'}</div>
-    </div></div>`;
+    </div>
+    ${panelAvisos(avisos)}</div>`;
   contarPendientesWeb();
+}
+function panelAvisos(a){
+  const cab='<h2>Avisos al celular</h2><div class="sub">Una notificación en el celular cada vez que entra una reserva o una consulta de evento (con la app gratis <b>ntfy</b>). No lleva nombre ni teléfono del cliente: solo día, hora y personas; al tocarla abre este admin.</div>';
+  if(a.error) return `<div class="panel wav">${cab}<div class="aviso">Falta correr la parte 10 del schema.sql en Supabase (${esc(a.error)}).</div></div>`;
+  if(!a.ntfy_tema) return `<div class="panel wav">${cab}<div class="wav-a"><button class="btn primary" data-w-av="activar">Activar avisos</button></div></div>`;
+  const url='https://ntfy.sh/'+a.ntfy_tema;
+  return `<div class="panel wav">${cab}
+    <ol>
+      <li>Instalá <b>ntfy</b> en el celular (<a href="https://apps.apple.com/app/ntfy/id1625396347" target="_blank" rel="noopener">iPhone</a> · <a href="https://play.google.com/store/apps/details?id=io.heckel.ntfy" target="_blank" rel="noopener">Android</a>) y aceptá las notificaciones.</li>
+      <li>En la app tocá <b>+</b> y suscribite a este tema (servidor ntfy.sh, el que viene): <code>${esc(a.ntfy_tema)}</code> <button class="btn" data-w-av="copiar">Copiar</button></li>
+      <li>Tocá <b>Probar aviso</b>: tiene que llegarte una notificación.</li>
+    </ol>
+    <div class="wav-c"><label><input type="checkbox" data-w-avc="reservas"${a.reservas?' checked':''}> Reservas</label><label><input type="checkbox" data-w-avc="consultas"${a.consultas?' checked':''}> Consultas de eventos</label></div>
+    <div class="wav-a"><button class="btn primary" data-w-av="probar">Probar aviso</button><button class="btn" data-w-av="cambiar" title="Crea un tema nuevo: el viejo deja de recibir avisos">Cambiar tema</button><button class="btn" data-w-av="apagar">Apagar avisos</button></div>
+    <div class="sub" style="margin-top:8px">El tema funciona como una contraseña: no lo compartas fuera del equipo. Si se filtra, tocá Cambiar tema y suscribite al nuevo. También se puede ver en la compu: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>
+  </div>`;
+}
+function temaNuevo(){
+  const abc='abcdefghijkmnopqrstuvwxyz23456789', b=crypto.getRandomValues(new Uint8Array(22));
+  return 'terrys-'+[...b].map(x=>abc[x%abc.length]).join('');
+}
+async function webAviso(acc){
+  if(acc==='copiar'){ const t=document.querySelector('.wav code')?.textContent||''; try{ await navigator.clipboard.writeText(t); toast('Tema copiado'); }catch(_){ toast('No se pudo copiar: seleccionalo a mano'); } return; }
+  if(acc==='probar'){
+    const {error}=await sbc.rpc('web_probar_aviso');
+    toast(error?'No se pudo mandar: '+errMsg(error):'Aviso de prueba enviado: fijate en el celular'); return;
+  }
+  if(acc==='cambiar'&&!confirm('¿Crear un tema nuevo? El celular que esté suscripto al viejo deja de recibir avisos hasta que se suscriba al nuevo.')) return;
+  if(acc==='apagar'&&!confirm('¿Apagar los avisos de reservas?')) return;
+  webCambiar('web_avisos',1,{ntfy_tema:acc==='apagar'?null:temaNuevo(),actualizado:new Date().toISOString()},acc==='apagar'?'Avisos apagados':'Avisos activados: seguí los pasos');
 }
 async function webCambiar(tabla,id,patch,msg){
   const {error}=await sbc.from(tabla).update(patch).eq('id',id);
@@ -1014,12 +1052,14 @@ $('reportes').addEventListener('change',e=>{
   const t=e.target;
   if(t.dataset.wRes) webCambiar('reservas',+t.dataset.wRes,{estado:t.value,actualizada:new Date().toISOString()},'Reserva: '+W_EST_RES[t.value].toLowerCase());
   else if(t.dataset.wCon) webCambiar('eventos_consultas',+t.dataset.wCon,{estado:t.value,actualizada:new Date().toISOString()});
+  else if(t.dataset.wAvc) webCambiar('web_avisos',1,{[t.dataset.wAvc]:t.checked,actualizado:new Date().toISOString()});
   else if(t.dataset.wPub) webCambiar('agenda',+t.dataset.wPub,{publicado:t.checked},t.checked?'Publicada en la web':'Oculta en la web');
 });
 $('reportes').addEventListener('click',async e=>{
   if(vista!=='web') return;
   const v=e.target.closest('[data-w-ver]'); if(v){ webVer=v.dataset.wVer; renderWeb(); return; }
   if(e.target.closest('[data-w-recargar]')){ renderWeb(); return; }
+  const av=e.target.closest('[data-w-av]'); if(av){ webAviso(av.dataset.wAv); return; }
   const d=e.target.closest('[data-w-del]');
   if(d&&confirm('¿Borrar esta fecha de la agenda?')){
     const {error}=await sbc.from('agenda').delete().eq('id',+d.dataset.wDel);

@@ -764,3 +764,115 @@ end;
 $$;
 revoke all on function public.web_consulta_evento(jsonb) from public;
 grant execute on function public.web_consulta_evento(jsonb) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 10. Aviso al celular cuando entra una reserva o una consulta de la web
+-- ---------------------------------------------------------------
+-- Manda una notificación push con ntfy (app gratis para iPhone/Android, sin
+-- cuenta). El "tema" es como una contraseña: se genera y se guarda desde la
+-- solapa Web del admin (nunca en este archivo, que es público). El aviso NO
+-- lleva nombre ni teléfono del cliente: solo día, hora, personas y un link al admin.
+-- Si el aviso falla, la reserva se guarda igual.
+
+create extension if not exists pg_net with schema extensions;
+
+create table if not exists public.web_avisos (
+  id          int primary key default 1 check (id = 1),
+  ntfy_tema   text check (ntfy_tema is null or ntfy_tema ~ '^[A-Za-z0-9_-]{12,64}$'),
+  reservas    boolean not null default true,
+  consultas   boolean not null default true,
+  actualizado timestamptz not null default now()
+);
+insert into public.web_avisos (id) values (1) on conflict (id) do nothing;
+
+alter table public.web_avisos enable row level security;
+revoke all on public.web_avisos from anon, authenticated;
+grant select, update on public.web_avisos to authenticated;
+drop policy if exists web_avisos_admin on public.web_avisos;
+create policy web_avisos_admin on public.web_avisos for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+
+-- "mié 11 nov" sin depender del idioma del servidor.
+create or replace function public._dia_corto(d date)
+returns text language sql immutable as $$
+  select (array['dom','lun','mar','mié','jue','vie','sáb'])[extract(dow from d)::int + 1] || ' ' ||
+         extract(day from d)::int || ' ' ||
+         (array['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'])[extract(month from d)::int];
+$$;
+
+create or replace function public._aviso_ntfy(p_tema text, p_titulo text, p_mensaje text, p_tag text, p_prioridad int default 3)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_tema is null then return; end if;
+  perform net.http_post(
+    url  := 'https://ntfy.sh/',
+    body := jsonb_build_object(
+      'topic', p_tema, 'title', p_titulo, 'message', p_mensaje,
+      'tags', jsonb_build_array(p_tag), 'priority', p_prioridad,
+      'click', 'https://admin.terrysburgers.com/'));
+exception when others then
+  raise warning 'aviso ntfy no enviado: %', sqlerrm;   -- nunca frena la reserva
+end;
+$$;
+revoke all on function public._aviso_ntfy(text, text, text, text, int) from public, anon, authenticated;
+
+create or replace function public.web_avisar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a public.web_avisos;
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+begin
+  select * into a from public.web_avisos where id = 1;
+  if a.ntfy_tema is null then return new; end if;
+  if tg_table_name = 'reservas' and a.reservas then
+    perform public._aviso_ntfy(a.ntfy_tema,
+      case when new.fecha = v_hoy then 'Reserva nueva para HOY' else 'Reserva nueva' end,
+      public._dia_corto(new.fecha) || ' · ' || to_char(new.hora, 'HH24:MI') || ' · ' ||
+        new.personas || case when new.personas = 1 then ' persona' else ' personas' end,
+      'hamburger', case when new.fecha = v_hoy then 5 else 4 end);
+  elsif tg_table_name = 'eventos_consultas' and a.consultas then
+    perform public._aviso_ntfy(a.ntfy_tema, 'Consulta de evento',
+      case new.tipo when 'privado' then 'Evento privado' when 'catering' then 'Catering' else 'Otra consulta' end ||
+        coalesce(' · ' || public._dia_corto(new.fecha), '') ||
+        coalesce(' · ' || new.personas || ' personas', ''),
+      'tada', 4);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.web_avisar() from public, anon, authenticated;
+
+drop trigger if exists reservas_avisar on public.reservas;
+create trigger reservas_avisar after insert on public.reservas
+  for each row execute function public.web_avisar();
+drop trigger if exists eventos_consultas_avisar on public.eventos_consultas;
+create trigger eventos_consultas_avisar after insert on public.eventos_consultas
+  for each row execute function public.web_avisar();
+
+-- Botón "Probar aviso" del admin.
+create or replace function public.web_probar_aviso()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_tema text;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  select ntfy_tema into v_tema from public.web_avisos where id = 1;
+  if v_tema is null then raise exception 'falta el tema de ntfy' using errcode = '22023'; end if;
+  perform public._aviso_ntfy(v_tema, 'Prueba de Terry''s',
+    'Si ves esto, los avisos de reservas funcionan 🍔', 'white_check_mark', 3);
+  return jsonb_build_object('ok', true);
+end;
+$$;
+revoke all on function public.web_probar_aviso() from public, anon;
+grant execute on function public.web_probar_aviso() to authenticated;
