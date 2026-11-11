@@ -603,7 +603,7 @@ create table if not exists public.reservas (
   creada      timestamptz not null default now(),
   fecha       date not null,
   hora        time not null,
-  personas    int  not null check (personas between 1 and 12),
+  personas    int  not null check (personas between 1 and 30),
   nombre      text not null check (char_length(nombre) between 2 and 80),
   telefono    text not null check (char_length(telefono) between 6 and 30),
   email       text check (email is null or char_length(email) <= 120),
@@ -669,7 +669,7 @@ returns text language sql immutable as $$
 $$;
 
 -- Reserva desde la web. Horarios con reserva: 13:00–15:00 y 20:00–22:30
--- (cada 15 min), hasta 90 días adelante, de 1 a 12 personas (más → eventos).
+-- (cada 15 min), hasta 90 días adelante, de 1 a 30 personas (más → eventos).
 -- Freno anti-abuso: 3 por teléfono por día y 200 en total por día.
 create or replace function public.web_reservar(p jsonb)
 returns jsonb
@@ -706,7 +706,7 @@ begin
   if v_fecha = v_hoy and v_hora <= v_ahora + interval '30 minutes' then
     raise exception 'horario pasado' using errcode = '22023';
   end if;
-  if v_pers is null or v_pers not between 1 and 12 then
+  if v_pers is null or v_pers not between 1 and 30 then
     raise exception 'personas fuera de rango' using errcode = '22023';
   end if;
   if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
@@ -876,3 +876,11 @@ end;
 $$;
 revoke all on function public.web_probar_aviso() from public, anon;
 grant execute on function public.web_probar_aviso() to authenticated;
+
+-- ---------------------------------------------------------------
+-- 11. Reservas online de hasta 30 personas
+-- ---------------------------------------------------------------
+-- Para bases creadas antes: cambia el límite de la tabla. La función
+-- web_reservar() de la parte 9 ya acepta hasta 30.
+alter table public.reservas drop constraint if exists reservas_personas_check;
+alter table public.reservas add constraint reservas_personas_check check (personas between 1 and 30);
