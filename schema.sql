@@ -888,10 +888,9 @@ alter table public.reservas add constraint reservas_personas_check check (person
 -- ---------------------------------------------------------------
 -- 12. Pedidos take away desde la web (terrysburgers.com/pedido/)
 -- ---------------------------------------------------------------
--- Igual que las reservas: la web solo llama a web_pedir(), que valida el
--- horario, arma las líneas y calcula el total con LOS PRECIOS DE ACÁ (no
--- confía en lo que manda el navegador). Si cambian los precios de la carta,
--- cambiarlos también en web_pedir() y en web/pedido/pedido.js.
+-- Igual que las reservas: la web solo llama a web_pedir() (parte 13), que valida
+-- el horario, arma las líneas y calcula el total con los precios de la tabla
+-- productos (no confía en lo que manda el navegador).
 -- Por ahora se paga en el local al retirar.
 
 create table if not exists public.pedidos_take (
@@ -919,111 +918,7 @@ drop policy if exists pedidos_take_admin on public.pedidos_take;
 create policy pedidos_take_admin on public.pedidos_take for all to authenticated
   using (public.es_admin()) with check (public.es_admin());
 
-create or replace function public.web_pedir(p jsonb)
-returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  -- id → [nombre, detalle, precio]  (mismos ids que web/pedido/pedido.js)
-  v_carta jsonb := '{
-    "terry-simple":["Terry","Simple",7.90],   "terry-doble":["Terry","Doble",9.90],
-    "torch-simple":["Torch","Simple",9.50],   "torch-doble":["Torch","Doble",11.50],
-    "russel-simple":["Russel","Simple",9.00], "russel-doble":["Russel","Doble",11.00],
-    "zulma-simple":["Zulma","Simple",9.00],   "zulma-doble":["Zulma","Doble",11.00],
-    "rumpi-simple":["Rumpi","Simple",9.00],   "rumpi-doble":["Rumpi","Doble",11.00],
-    "buba-simple":["Buba","Simple",9.50],     "buba-doble":["Buba","Doble",11.50],
-    "patatas":["Patatas fritas",null,4.00], "patatas-russel":["Patatas Russel",null,6.00],
-    "patatas-torch":["Patatas Torch",null,6.00], "boniatos":["Boniatos",null,6.00],
-    "muzzarellitas":["Muzzarellitas",null,8.50], "nuggets":["Nuggets",null,8.50], "aros":["Aros de cebolla",null,8.50],
-    "agua":["Agua mineral",null,2.20], "aquarius":["Aquarius",null,2.50], "cocacola":["Bebidas Coca-Cola",null,2.50],
-    "estrella":["Estrella Damm",null,2.90], "estrella00":["Estrella Damm 0,0",null,2.90], "turia":["Turia",null,3.50],
-    "damm-lemon":["Damm Lemon",null,3.20], "quilmes":["Quilmes Argentina",null,3.70], "vino":["Copa de vino",null,3.20],
-    "franui":["Franui",null,5.50]
-  }';
-  v_salsas  text[] := array['Barbacoa', 'Cheddar', 'Alioli'];
-  v_con_salsa text[] := array['muzzarellitas', 'nuggets', 'aros'];
-  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
-  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
-  v_dia   date;
-  v_hora  time;
-  v_tel   text := public._txt(p ->> 'telefono', 30);
-  v_it    jsonb;
-  v_id    text;
-  v_base  text;
-  v_salsa text;
-  v_cant  int;
-  v_prod  jsonb;
-  v_lineas jsonb := '[]';
-  v_unid  int := 0;
-  v_total numeric(8,2) := 0;
-  v_pid   bigint;
-begin
-  if public._txt(p ->> 'web', 200) is not null then          -- campo trampa para bots
-    return jsonb_build_object('ok', true);
-  end if;
-  begin
-    v_dia  := (p ->> 'dia')::date;
-    v_hora := (p ->> 'hora')::time;
-  exception when others then
-    raise exception 'datos inválidos' using errcode = '22023';
-  end;
-  if v_dia is null or v_dia < v_hoy or v_dia > v_hoy + 1 then
-    raise exception 'día fuera de rango' using errcode = '22023';
-  end if;
-  -- se recoge desde 15 min después de abrir hasta el cierre, cada 15 min
-  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
-     or not (v_hora between time '13:15' and time '15:30' or v_hora between time '20:15' and time '23:00') then
-    raise exception 'horario sin pedidos' using errcode = '22023';
-  end if;
-  if v_dia = v_hoy and v_hora < v_ahora + interval '30 minutes' then
-    raise exception 'horario pasado' using errcode = '22023';
-  end if;
-  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
-    raise exception 'teléfono inválido' using errcode = '22023';
-  end if;
-  if public._txt(p ->> 'nombre', 80) is null or char_length(public._txt(p ->> 'nombre', 80)) < 2 then
-    raise exception 'falta el nombre' using errcode = '22023';
-  end if;
-  if jsonb_typeof(p -> 'items') <> 'array' or jsonb_array_length(p -> 'items') not between 1 and 60 then
-    raise exception 'pedido vacío' using errcode = '22023';
-  end if;
-
-  for v_it in select * from jsonb_array_elements(p -> 'items') loop
-    v_id   := left(coalesce(v_it ->> 'id', ''), 60);
-    v_base := split_part(v_id, '|', 1);
-    v_salsa := nullif(split_part(v_id, '|', 2), '');
-    v_prod := v_carta -> v_base;
-    begin v_cant := (v_it ->> 'cant')::int; exception when others then v_cant := null; end;
-    if v_prod is null or v_cant is null or v_cant not between 1 and 50
-       or (v_base = any(v_con_salsa)) <> (v_salsa is not null)
-       or (v_salsa is not null and not v_salsa = any(v_salsas)) then
-      raise exception 'producto inválido' using errcode = '22023';
-    end if;
-    v_lineas := v_lineas || jsonb_build_object(
-      'id', v_id, 'nombre', v_prod ->> 0,
-      'extra', coalesce(v_prod ->> 1, 'Salsa ' || lower(v_salsa)),
-      'cant', v_cant, 'precio', (v_prod ->> 2)::numeric);
-    v_unid  := v_unid + v_cant;
-    v_total := v_total + v_cant * (v_prod ->> 2)::numeric;
-  end loop;
-  if v_unid > 200 then raise exception 'pedido demasiado grande' using errcode = '22023'; end if;
-
-  if (select count(*) from public.pedidos_take where telefono = v_tel and creado > now() - interval '1 day') >= 5
-     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
-    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
-  end if;
-
-  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total)
-  values (v_dia, v_hora, public._txt(p ->> 'nombre', 80), v_tel, public._txt(p ->> 'comentario', 500),
-          v_lineas, v_unid, v_total)
-  returning id into v_pid;
-  return jsonb_build_object('ok', true, 'id', v_pid, 'total', v_total);
-end;
-$$;
-revoke all on function public.web_pedir(jsonb) from public;
-grant execute on function public.web_pedir(jsonb) to anon, authenticated;
+-- web_pedir(): está en la parte 13 (cobra con los precios de la tabla productos).
 
 -- Aviso al celular también para los pedidos (reemplaza la web_avisar() de la parte 10).
 alter table public.web_avisos add column if not exists pedidos boolean not null default true;
@@ -1068,3 +963,180 @@ revoke all on function public.web_avisar() from public, anon, authenticated;
 drop trigger if exists pedidos_take_avisar on public.pedidos_take;
 create trigger pedidos_take_avisar after insert on public.pedidos_take
   for each row execute function public.web_avisar();
+
+-- ---------------------------------------------------------------
+-- 13. Productos (carta de la página de pedidos) editables desde el admin
+-- ---------------------------------------------------------------
+-- La solapa Pedidos del admin carga, edita y saca productos; la página
+-- terrysburgers.com/pedido/ los lee de acá (solo los activos y marcados para
+-- take away) y web_pedir() cobra con estos precios. "terraza" queda marcado
+-- para cuando se pueda pedir desde la mesa.
+-- Las fotos se suben al bucket público "productos" de Supabase Storage.
+
+create table if not exists public.productos (
+  id           text primary key check (id ~ '^[a-z0-9-]{2,40}$'),
+  categoria    text not null check (categoria in ('burgers', 'picar', 'bebidas', 'postres')),
+  nombre       text not null check (char_length(nombre) between 2 and 60),
+  descripcion  text check (descripcion is null or char_length(descripcion) <= 200),
+  precio       numeric(6,2) not null check (precio >= 0),          -- simple / único
+  precio_doble numeric(6,2) check (precio_doble is null or precio_doble >= 0),
+  salsas       text[],                                             -- si tiene, hay que elegir una
+  foto_url     text check (foto_url is null or foto_url ~ '^https://'),
+  take_away    boolean not null default true,
+  terraza      boolean not null default true,
+  activo       boolean not null default true,
+  orden        int not null default 100,
+  actualizado  timestamptz not null default now()
+);
+
+alter table public.productos enable row level security;
+revoke all on public.productos from anon, authenticated;
+grant select on public.productos to anon;
+grant select, insert, update, delete on public.productos to authenticated;
+drop policy if exists productos_publicos on public.productos;
+create policy productos_publicos on public.productos for select to anon, authenticated
+  using (activo);
+drop policy if exists productos_admin on public.productos;
+create policy productos_admin on public.productos for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+
+-- Carta 2026 de arranque (si ya existen, no se pisan).
+insert into public.productos (id, categoria, nombre, descripcion, precio, precio_doble, salsas, foto_url, orden) values
+  ('terry',  'burgers', 'Terry',  'Con doble cheddar',                              7.90,  9.90, null, 'https://terrysburgers.com/assets/img/burgers/terry.jpg',  10),
+  ('torch',  'burgers', 'Torch',  'Con doble cheddar y bacon',                      9.50, 11.50, null, 'https://terrysburgers.com/assets/img/burgers/torch.jpg',  20),
+  ('russel', 'burgers', 'Russel', 'Con cheddar, lechuga, tomate y salsa mil islas', 9.00, 11.00, null, 'https://terrysburgers.com/assets/img/burgers/russel.jpg', 30),
+  ('zulma',  'burgers', 'Zulma',  'Con cheddar, ketchup, mostaza y cebolla picada', 9.00, 11.00, null, 'https://terrysburgers.com/assets/img/burgers/zulma.jpg',  40),
+  ('rumpi',  'burgers', 'Rumpi',  'Con cheddar y cebolla smasheada',                9.00, 11.00, null, 'https://terrysburgers.com/assets/img/burgers/rumpy.jpg',  50),
+  ('buba',   'burgers', 'Buba',   'Con muzzarellitas, cheddar y barbacoa',          9.50, 11.50, null, 'https://terrysburgers.com/assets/img/burgers/buba.jpg',   60),
+  ('patatas',        'picar', 'Patatas fritas',  null,                                   4.00, null, null, null, 10),
+  ('patatas-russel', 'picar', 'Patatas Russel',  'Con salsa mil islas y bacon crocante', 6.00, null, null, null, 20),
+  ('patatas-torch',  'picar', 'Patatas Torch',   'Con cheddar y bacon crocante',         6.00, null, null, null, 30),
+  ('boniatos',       'picar', 'Boniatos',        null,                                   6.00, null, null, null, 40),
+  ('muzzarellitas',  'picar', 'Muzzarellitas',   '8 unidades · elegí la salsa', 8.50, null, array['Barbacoa','Cheddar','Alioli'], null, 50),
+  ('nuggets',        'picar', 'Nuggets',         '8 unidades · elegí la salsa', 8.50, null, array['Barbacoa','Cheddar','Alioli'], null, 60),
+  ('aros',           'picar', 'Aros de cebolla', '8 unidades · elegí la salsa', 8.50, null, array['Barbacoa','Cheddar','Alioli'], null, 70),
+  ('agua',       'bebidas', 'Agua mineral',      null, 2.20, null, null, null, 10),
+  ('aquarius',   'bebidas', 'Aquarius',          null, 2.50, null, null, null, 20),
+  ('cocacola',   'bebidas', 'Bebidas Coca-Cola', null, 2.50, null, null, null, 30),
+  ('estrella',   'bebidas', 'Estrella Damm',     null, 2.90, null, null, null, 40),
+  ('estrella00', 'bebidas', 'Estrella Damm 0,0', null, 2.90, null, null, null, 50),
+  ('turia',      'bebidas', 'Turia',             null, 3.50, null, null, null, 60),
+  ('damm-lemon', 'bebidas', 'Damm Lemon',        null, 3.20, null, null, null, 70),
+  ('quilmes',    'bebidas', 'Quilmes Argentina', null, 3.70, null, null, null, 80),
+  ('vino',       'bebidas', 'Copa de vino',      null, 3.20, null, null, null, 90),
+  ('franui',     'postres', 'Franui', 'Frambuesas frescas bañadas en doble chocolate', 5.50, null, null, null, 10)
+on conflict (id) do nothing;
+
+-- Fotos: bucket público (cualquiera puede ver la foto), solo un admin sube o borra.
+insert into storage.buckets (id, name, public) values ('productos', 'productos', true)
+on conflict (id) do nothing;
+drop policy if exists productos_fotos_admin_ins on storage.objects;
+create policy productos_fotos_admin_ins on storage.objects for insert to authenticated
+  with check (bucket_id = 'productos' and public.es_admin());
+drop policy if exists productos_fotos_admin_upd on storage.objects;
+create policy productos_fotos_admin_upd on storage.objects for update to authenticated
+  using (bucket_id = 'productos' and public.es_admin());
+drop policy if exists productos_fotos_admin_del on storage.objects;
+create policy productos_fotos_admin_del on storage.objects for delete to authenticated
+  using (bucket_id = 'productos' and public.es_admin());
+
+-- Pedido take away: cobra con los precios de la tabla productos.
+-- items: [{id, variante: 'simple'|'doble'|null, salsa: text|null, cant}]
+create or replace function public.web_pedir(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
+  v_dia   date;
+  v_hora  time;
+  v_tel   text := public._txt(p ->> 'telefono', 30);
+  v_it    jsonb;
+  v_pr    public.productos;
+  v_var   text;
+  v_salsa text;
+  v_cant  int;
+  v_precio numeric(6,2);
+  v_lineas jsonb := '[]';
+  v_unid  int := 0;
+  v_total numeric(8,2) := 0;
+  v_pid   bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then          -- campo trampa para bots
+    return jsonb_build_object('ok', true);
+  end if;
+  begin
+    v_dia  := (p ->> 'dia')::date;
+    v_hora := (p ->> 'hora')::time;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_dia is null or v_dia < v_hoy or v_dia > v_hoy + 1 then
+    raise exception 'día fuera de rango' using errcode = '22023';
+  end if;
+  -- se recoge desde 15 min después de abrir hasta el cierre, cada 15 min
+  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
+     or not (v_hora between time '13:15' and time '15:30' or v_hora between time '20:15' and time '23:00') then
+    raise exception 'horario sin pedidos' using errcode = '22023';
+  end if;
+  if v_dia = v_hoy and v_hora < v_ahora + interval '30 minutes' then
+    raise exception 'horario pasado' using errcode = '22023';
+  end if;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if public._txt(p ->> 'nombre', 80) is null or char_length(public._txt(p ->> 'nombre', 80)) < 2 then
+    raise exception 'falta el nombre' using errcode = '22023';
+  end if;
+  if jsonb_typeof(p -> 'items') <> 'array' or jsonb_array_length(p -> 'items') not between 1 and 60 then
+    raise exception 'pedido vacío' using errcode = '22023';
+  end if;
+
+  for v_it in select * from jsonb_array_elements(p -> 'items') loop
+    select * into v_pr from public.productos
+      where id = left(coalesce(v_it ->> 'id', ''), 40) and activo and take_away;
+    v_var   := nullif(v_it ->> 'variante', '');
+    v_salsa := nullif(v_it ->> 'salsa', '');
+    begin v_cant := (v_it ->> 'cant')::int; exception when others then v_cant := null; end;
+    if v_pr.id is null or v_cant is null or v_cant not between 1 and 50 then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    -- con precio doble hay que elegir simple o doble; sin precio doble, nada
+    if v_pr.precio_doble is not null then
+      if v_var is null or v_var not in ('simple', 'doble') then raise exception 'producto inválido' using errcode = '22023'; end if;
+    elsif v_var is not null then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    -- con salsas hay que elegir una de la lista; sin salsas, ninguna
+    if coalesce(cardinality(v_pr.salsas), 0) > 0 then
+      if v_salsa is null or not (v_salsa = any(v_pr.salsas)) then raise exception 'producto inválido' using errcode = '22023'; end if;
+    elsif v_salsa is not null then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    v_precio := case when v_var = 'doble' then v_pr.precio_doble else v_pr.precio end;
+    v_lineas := v_lineas || jsonb_build_object(
+      'id', v_pr.id, 'nombre', v_pr.nombre,
+      'extra', case when v_var is not null then initcap(v_var) when v_salsa is not null then 'Salsa ' || lower(v_salsa) end,
+      'cant', v_cant, 'precio', v_precio);
+    v_unid  := v_unid + v_cant;
+    v_total := v_total + v_cant * v_precio;
+  end loop;
+  if v_unid > 200 then raise exception 'pedido demasiado grande' using errcode = '22023'; end if;
+
+  if (select count(*) from public.pedidos_take where telefono = v_tel and creado > now() - interval '1 day') >= 5
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
+  end if;
+
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total)
+  values (v_dia, v_hora, public._txt(p ->> 'nombre', 80), v_tel, public._txt(p ->> 'comentario', 500),
+          v_lineas, v_unid, v_total)
+  returning id into v_pid;
+  return jsonb_build_object('ok', true, 'id', v_pid, 'total', v_total);
+end;
+$$;
+revoke all on function public.web_pedir(jsonb) from public;
+grant execute on function public.web_pedir(jsonb) to anon, authenticated;
