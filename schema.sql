@@ -884,3 +884,187 @@ grant execute on function public.web_probar_aviso() to authenticated;
 -- web_reservar() de la parte 9 ya acepta hasta 30.
 alter table public.reservas drop constraint if exists reservas_personas_check;
 alter table public.reservas add constraint reservas_personas_check check (personas between 1 and 30);
+
+-- ---------------------------------------------------------------
+-- 12. Pedidos take away desde la web (terrysburgers.com/pedido/)
+-- ---------------------------------------------------------------
+-- Igual que las reservas: la web solo llama a web_pedir(), que valida el
+-- horario, arma las líneas y calcula el total con LOS PRECIOS DE ACÁ (no
+-- confía en lo que manda el navegador). Si cambian los precios de la carta,
+-- cambiarlos también en web_pedir() y en web/pedido/pedido.js.
+-- Por ahora se paga en el local al retirar.
+
+create table if not exists public.pedidos_take (
+  id          bigint generated always as identity primary key,
+  creado      timestamptz not null default now(),
+  dia         date not null,
+  hora        time not null,
+  nombre      text not null check (char_length(nombre) between 2 and 80),
+  telefono    text not null check (char_length(telefono) between 6 and 30),
+  comentario  text check (comentario is null or char_length(comentario) <= 500),
+  items       jsonb not null,           -- [{id, nombre, extra, cant, precio}]
+  unidades    int not null check (unidades between 1 and 200),
+  total       numeric(8,2) not null check (total >= 0),
+  estado      text not null default 'nuevo'
+              check (estado in ('nuevo', 'preparando', 'listo', 'entregado', 'cancelado')),
+  nota        text,
+  actualizado timestamptz not null default now()
+);
+create index if not exists pedidos_take_dia on public.pedidos_take (dia, hora);
+
+alter table public.pedidos_take enable row level security;
+revoke all on public.pedidos_take from anon, authenticated;
+grant select, update, delete on public.pedidos_take to authenticated;
+drop policy if exists pedidos_take_admin on public.pedidos_take;
+create policy pedidos_take_admin on public.pedidos_take for all to authenticated
+  using (public.es_admin()) with check (public.es_admin());
+
+create or replace function public.web_pedir(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  -- id → [nombre, detalle, precio]  (mismos ids que web/pedido/pedido.js)
+  v_carta jsonb := '{
+    "terry-simple":["Terry","Simple",7.90],   "terry-doble":["Terry","Doble",9.90],
+    "torch-simple":["Torch","Simple",9.50],   "torch-doble":["Torch","Doble",11.50],
+    "russel-simple":["Russel","Simple",9.00], "russel-doble":["Russel","Doble",11.00],
+    "zulma-simple":["Zulma","Simple",9.00],   "zulma-doble":["Zulma","Doble",11.00],
+    "rumpi-simple":["Rumpi","Simple",9.00],   "rumpi-doble":["Rumpi","Doble",11.00],
+    "buba-simple":["Buba","Simple",9.50],     "buba-doble":["Buba","Doble",11.50],
+    "patatas":["Patatas fritas",null,4.00], "patatas-russel":["Patatas Russel",null,6.00],
+    "patatas-torch":["Patatas Torch",null,6.00], "boniatos":["Boniatos",null,6.00],
+    "muzzarellitas":["Muzzarellitas",null,8.50], "nuggets":["Nuggets",null,8.50], "aros":["Aros de cebolla",null,8.50],
+    "agua":["Agua mineral",null,2.20], "aquarius":["Aquarius",null,2.50], "cocacola":["Bebidas Coca-Cola",null,2.50],
+    "estrella":["Estrella Damm",null,2.90], "estrella00":["Estrella Damm 0,0",null,2.90], "turia":["Turia",null,3.50],
+    "damm-lemon":["Damm Lemon",null,3.20], "quilmes":["Quilmes Argentina",null,3.70], "vino":["Copa de vino",null,3.20],
+    "franui":["Franui",null,5.50]
+  }';
+  v_salsas  text[] := array['Barbacoa', 'Cheddar', 'Alioli'];
+  v_con_salsa text[] := array['muzzarellitas', 'nuggets', 'aros'];
+  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
+  v_dia   date;
+  v_hora  time;
+  v_tel   text := public._txt(p ->> 'telefono', 30);
+  v_it    jsonb;
+  v_id    text;
+  v_base  text;
+  v_salsa text;
+  v_cant  int;
+  v_prod  jsonb;
+  v_lineas jsonb := '[]';
+  v_unid  int := 0;
+  v_total numeric(8,2) := 0;
+  v_pid   bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then          -- campo trampa para bots
+    return jsonb_build_object('ok', true);
+  end if;
+  begin
+    v_dia  := (p ->> 'dia')::date;
+    v_hora := (p ->> 'hora')::time;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_dia is null or v_dia < v_hoy or v_dia > v_hoy + 1 then
+    raise exception 'día fuera de rango' using errcode = '22023';
+  end if;
+  -- se recoge desde 15 min después de abrir hasta el cierre, cada 15 min
+  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
+     or not (v_hora between time '13:15' and time '15:30' or v_hora between time '20:15' and time '23:00') then
+    raise exception 'horario sin pedidos' using errcode = '22023';
+  end if;
+  if v_dia = v_hoy and v_hora < v_ahora + interval '30 minutes' then
+    raise exception 'horario pasado' using errcode = '22023';
+  end if;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if public._txt(p ->> 'nombre', 80) is null or char_length(public._txt(p ->> 'nombre', 80)) < 2 then
+    raise exception 'falta el nombre' using errcode = '22023';
+  end if;
+  if jsonb_typeof(p -> 'items') <> 'array' or jsonb_array_length(p -> 'items') not between 1 and 60 then
+    raise exception 'pedido vacío' using errcode = '22023';
+  end if;
+
+  for v_it in select * from jsonb_array_elements(p -> 'items') loop
+    v_id   := left(coalesce(v_it ->> 'id', ''), 60);
+    v_base := split_part(v_id, '|', 1);
+    v_salsa := nullif(split_part(v_id, '|', 2), '');
+    v_prod := v_carta -> v_base;
+    begin v_cant := (v_it ->> 'cant')::int; exception when others then v_cant := null; end;
+    if v_prod is null or v_cant is null or v_cant not between 1 and 50
+       or (v_base = any(v_con_salsa)) <> (v_salsa is not null)
+       or (v_salsa is not null and not v_salsa = any(v_salsas)) then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    v_lineas := v_lineas || jsonb_build_object(
+      'id', v_id, 'nombre', v_prod ->> 0,
+      'extra', coalesce(v_prod ->> 1, 'Salsa ' || lower(v_salsa)),
+      'cant', v_cant, 'precio', (v_prod ->> 2)::numeric);
+    v_unid  := v_unid + v_cant;
+    v_total := v_total + v_cant * (v_prod ->> 2)::numeric;
+  end loop;
+  if v_unid > 200 then raise exception 'pedido demasiado grande' using errcode = '22023'; end if;
+
+  if (select count(*) from public.pedidos_take where telefono = v_tel and creado > now() - interval '1 day') >= 5
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
+  end if;
+
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total)
+  values (v_dia, v_hora, public._txt(p ->> 'nombre', 80), v_tel, public._txt(p ->> 'comentario', 500),
+          v_lineas, v_unid, v_total)
+  returning id into v_pid;
+  return jsonb_build_object('ok', true, 'id', v_pid, 'total', v_total);
+end;
+$$;
+revoke all on function public.web_pedir(jsonb) from public;
+grant execute on function public.web_pedir(jsonb) to anon, authenticated;
+
+-- Aviso al celular también para los pedidos (reemplaza la web_avisar() de la parte 10).
+alter table public.web_avisos add column if not exists pedidos boolean not null default true;
+
+create or replace function public.web_avisar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a public.web_avisos;
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+begin
+  select * into a from public.web_avisos where id = 1;
+  if a.ntfy_tema is null then return new; end if;
+  if tg_table_name = 'reservas' and a.reservas then
+    perform public._aviso_ntfy(a.ntfy_tema,
+      case when new.fecha = v_hoy then 'Reserva nueva para HOY' else 'Reserva nueva' end,
+      public._dia_corto(new.fecha) || ' · ' || to_char(new.hora, 'HH24:MI') || ' · ' ||
+        new.personas || case when new.personas = 1 then ' persona' else ' personas' end,
+      'hamburger', case when new.fecha = v_hoy then 5 else 4 end);
+  elsif tg_table_name = 'eventos_consultas' and a.consultas then
+    perform public._aviso_ntfy(a.ntfy_tema, 'Consulta de evento',
+      case new.tipo when 'privado' then 'Evento privado' when 'catering' then 'Catering' else 'Otra consulta' end ||
+        coalesce(' · ' || public._dia_corto(new.fecha), '') ||
+        coalesce(' · ' || new.personas || ' personas', ''),
+      'tada', 4);
+  elsif tg_table_name = 'pedidos_take' and a.pedidos then
+    perform public._aviso_ntfy(a.ntfy_tema,
+      case when new.dia = v_hoy then 'Pedido take away para HOY' else 'Pedido take away' end,
+      public._dia_corto(new.dia) || ' · retira ' || to_char(new.hora, 'HH24:MI') || ' · ' ||
+        new.unidades || case when new.unidades = 1 then ' producto' else ' productos' end || ' · ' ||
+        replace(to_char(new.total, 'FM9990.00'), '.', ',') || ' €',
+      'takeout_box', 5);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.web_avisar() from public, anon, authenticated;
+
+drop trigger if exists pedidos_take_avisar on public.pedidos_take;
+create trigger pedidos_take_avisar after insert on public.pedidos_take
+  for each row execute function public.web_avisar();
