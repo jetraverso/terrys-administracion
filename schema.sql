@@ -1754,3 +1754,94 @@ on conflict (id) do nothing;
 -- "Bebidas Coca-Cola" pasa a ser la Coca-Cola común (Zero y Fanta van aparte).
 update public.productos set nombre = 'Coca-Cola' where id = 'cocacola' and nombre = 'Bebidas Coca-Cola';
 -- Las salsas de muzzarellitas, nuggets y aros ahora salen de Ágora.
+
+-- ---------------------------------------------------------------
+-- 19. Opciones de cada producto editables desde el admin
+-- ---------------------------------------------------------------
+-- productos.opciones = null → la web usa los grupos de Ágora tal cual (parte 18).
+-- Si tiene algo, esos grupos reemplazan a los de Ágora para ese producto (simple y doble):
+--   [{nombre, min, max, opciones: [{id, nombre?, precio?}]}]
+-- id = producto de Ágora de la opción (va como addin al pedido). nombre y precio vacíos =
+-- los de Ágora (el precio sigue a Ágora; si se escribe uno, manda ese).
+
+alter table public.productos add column if not exists opciones jsonb;
+alter table public.productos drop constraint if exists productos_opciones_check;
+alter table public.productos add constraint productos_opciones_check
+  check (opciones is null or (jsonb_typeof(opciones) = 'array' and jsonb_array_length(opciones) <= 12));
+
+-- Nombre y precio de una opción de Ágora: primero en los grupos de esta variante,
+-- después en cualquier grupo del catálogo, y si no, el producto mismo del catálogo.
+create or replace function public._agora_opcion(p_id int, p_roles jsonb)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(
+    (select o from jsonb_array_elements(coalesce(p_roles, '[]'::jsonb)) r, jsonb_array_elements(r -> 'opciones') o
+      where (o ->> 'id')::int = p_id limit 1),
+    (select o from public.agora_catalogo c, jsonb_array_elements(c.roles) r, jsonb_array_elements(r -> 'opciones') o
+      where c.activo and (o ->> 'id')::int = p_id limit 1),
+    (select jsonb_build_object('id', c.id, 'nombre', c.nombre, 'precio', c.precio) from public.agora_catalogo c where c.id = p_id),
+    jsonb_build_object('id', p_id, 'nombre', null, 'precio', 0));
+$$;
+revoke all on function public._agora_opcion(int, jsonb) from public, anon, authenticated;
+
+create or replace function public._carta_variante(pr public.productos, p_var text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_aid int := case when p_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+  c public.agora_catalogo;
+  v_roles jsonb := '[]';
+begin
+  select * into c from public.agora_catalogo where id = v_aid and activo;
+  if pr.opciones is not null and jsonb_typeof(pr.opciones) = 'array' then
+    -- grupos armados en el admin
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'nombre', g.nom,
+             'min', least(g.mn, jsonb_array_length(g.ops)), 'max', least(greatest(g.mx, 1), jsonb_array_length(g.ops)),
+             'opciones', g.ops) order by g.gi), '[]'::jsonb)
+      into v_roles
+      from (select gi, coalesce(nullif(btrim(x ->> 'nombre'), ''), 'Opciones') as nom,
+                   greatest(coalesce((x ->> 'min')::int, 0), 0) as mn, coalesce((x ->> 'max')::int, 1) as mx,
+                   (select coalesce(jsonb_agg(jsonb_build_object(
+                             'id', s.id,
+                             'nombre', coalesce(nullif(btrim(s.o ->> 'nombre'), ''), public._nombre_lindo(s.a ->> 'nombre'), 'Opción ' || s.id),
+                             'precio', coalesce(nullif(s.o ->> 'precio', '')::numeric, nullif(s.a ->> 'precio', '')::numeric, 0))
+                           order by s.oi), '[]'::jsonb)
+                      from (select o, oi, (o ->> 'id')::int as id, public._agora_opcion((o ->> 'id')::int, c.roles) as a
+                              from jsonb_array_elements(coalesce(x -> 'opciones', '[]'::jsonb)) with ordinality y(o, oi)
+                             where (o ->> 'id') ~ '^[0-9]{1,9}$') s) as ops
+              from jsonb_array_elements(pr.opciones) with ordinality z(x, gi)) g
+     where jsonb_array_length(g.ops) > 0;
+  elsif c.id is not null then
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'nombre', public._nombre_lindo(r ->> 'nombre'),
+             'min', coalesce((r ->> 'min')::int, 0), 'max', greatest(coalesce((r ->> 'max')::int, 1), 1),
+             'opciones', (select coalesce(jsonb_agg(jsonb_build_object(
+                                 'id', (o ->> 'id')::int, 'nombre', public._nombre_lindo(o ->> 'nombre'),
+                                 'precio', coalesce(nullif(o ->> 'precio', '')::numeric, 0))), '[]'::jsonb)
+                            from jsonb_array_elements(r -> 'opciones') o))), '[]'::jsonb)
+      into v_roles
+      from jsonb_array_elements(c.roles) r
+     where jsonb_array_length(coalesce(r -> 'opciones', '[]'::jsonb)) > 0;
+  elsif coalesce(cardinality(pr.salsas), 0) > 0 then
+    v_roles := jsonb_build_array(jsonb_build_object('nombre', 'Salsa', 'min', 1, 'max', 1,
+      'opciones', (select jsonb_agg(jsonb_build_object(
+                      'id', coalesce((select value::int from jsonb_each_text(coalesce(pr.agora_salsas, '{}')) where lower(key) = lower(s) limit 1), -n::int),
+                      'nombre', s, 'precio', 0) order by n)
+                     from unnest(pr.salsas) with ordinality as u(s, n))));
+  end if;
+  return jsonb_build_object(
+    'v', coalesce(p_var, ''), 'agora_id', v_aid,
+    'precio', coalesce(c.precio, case when p_var = 'doble' then pr.precio_doble else pr.precio end),
+    'roles', v_roles);
+end;
+$$;
+revoke all on function public._carta_variante(public.productos, text) from public, anon, authenticated;

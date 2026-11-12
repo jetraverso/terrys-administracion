@@ -230,6 +230,28 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .ptabla .pchk{white-space:nowrap;text-align:center;width:1%}
 .ptabla .pchk label{display:inline-flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted)}
 .ptabla tr.p-off{opacity:.45}
+/* editor de opciones (parte 19) */
+.popc{border-top:1px solid var(--line);padding-top:14px;display:grid;gap:10px}
+.popc h3{margin:0;font-size:15px}
+.popc .sub{margin:0}
+.opc-res{margin:0;padding:0;list-style:none;display:grid;gap:6px;font-size:13.5px}
+.opc-res li{background:var(--surface-2);border-radius:8px;padding:8px 10px;color:var(--ink-2)}
+.opc-res li b{color:var(--ink)}
+.opc-res li span,.ogrupo .oregla{color:var(--muted);font-size:12px;margin:0 6px}
+.opc-acc{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.opc-acc select{padding:7px 10px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;max-width:100%}
+.ogrupo{border:1px solid var(--line-2);border-radius:10px;padding:10px;display:grid;gap:8px;background:var(--surface)}
+.ogcab{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.ogcab input[data-of=nombre]{flex:1 1 180px;font-weight:700}
+.ogcab label{display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);margin:0}
+.ogcab input[type=number]{width:58px}
+.popc input{padding:6px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;font:inherit;min-width:0}
+.ogrupo ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.ogrupo li{display:grid;grid-template-columns:minmax(0,1fr) 92px 34px;gap:6px;align-items:center}
+.ogrupo li small{grid-column:1/-1;margin-top:-4px;color:var(--muted);font-size:11.5px}
+.ogrupo .oadd{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px}
+.popc .bx{width:34px;height:34px;padding:0;display:grid;place-items:center}
+.popc .vacio{padding:6px 0}
 .pchead td{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line)}
 .pform{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 12px;margin-top:10px}
 .pform label{display:grid;gap:4px;font-size:12px;color:var(--muted);font-weight:600}
@@ -1149,7 +1171,8 @@ function agoraFila(p){
   const a=agoraCat[p.agora_id];
   if(!a||!a.activo) return `<small class="pag">${cod} · <b style="color:var(--danger)">no está en el catálogo de Ágora</b></small>`;
   const grupos=(a.roles||[]).filter(g=>(g.opciones||[]).length).map(g=>{ const t=String(g.nombre).toLowerCase(); return t[0].toUpperCase()+t.slice(1); });
-  return `<small class="pag">${cod} · ${esc(a.nombre)}${grupos.length?` · opciones: ${esc(grupos.join(', '))}`:''}</small>`;
+  const opc=Array.isArray(p.opciones)?(p.opciones.length?` · opciones propias: ${esc(p.opciones.map(g=>g.nombre).join(', '))}`:' · sin opciones'):(grupos.length?` · opciones: ${esc(grupos.join(', '))}`:'');
+  return `<small class="pag">${cod} · ${esc(a.nombre)}${opc}</small>`;
 }
 function panelProductos(lista){
   const cats=Object.keys(P_CAT);
@@ -1169,7 +1192,7 @@ function panelProductos(lista){
   }).join('');
   return `<div class="panel">
     <div class="wcab"><h2>Productos</h2><div class="wseg"><button class="btn primary" data-p-nuevo>+ Nuevo producto</button></div></div>
-    <div class="sub">Lo que se ve en terrysburgers.com/pedido/. El <b>precio y las opciones</b> (extras, quitar, salsas, partes del menú) salen de <b>Ágora</b> por el código de cada producto: se cambian en Ágora y la web se actualiza sola (el TPV sube el catálogo cada hora)${agoraCat?(()=>{ const f=Object.values(agoraCat).map(x=>x.actualizado).sort().pop(); return f?` · último catálogo: ${new Date(f).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`:' · todavía no llegó el catálogo del TPV'; })():''}. Acá elegís qué se muestra, el nombre, la foto y la descripción, y con las rayitas <b>≡</b> arrastrás para cambiar el orden. <b>Take away</b>: aparece en la página de pedidos. <b>Terraza</b>: para cuando se pueda pedir desde la mesa. <b>Activo</b>: sacalo para esconderlo sin borrarlo.</div>
+    <div class="sub">Lo que se ve en terrysburgers.com/pedido/. El <b>precio y las opciones</b> (extras, quitar, salsas, partes del menú) salen de <b>Ágora</b> por el código de cada producto: se cambian en Ágora y la web se actualiza sola. Las opciones también se pueden <b>personalizar</b> por producto desde Editar (sumar salsas a un frito, sacar un extra…) (el TPV sube el catálogo cada hora)${agoraCat?(()=>{ const f=Object.values(agoraCat).map(x=>x.actualizado).sort().pop(); return f?` · último catálogo: ${new Date(f).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`:' · todavía no llegó el catálogo del TPV'; })():''}. Acá elegís qué se muestra, el nombre, la foto y la descripción, y con las rayitas <b>≡</b> arrastrás para cambiar el orden. <b>Take away</b>: aparece en la página de pedidos. <b>Terraza</b>: para cuando se pueda pedir desde la mesa. <b>Activo</b>: sacalo para esconderlo sin borrarlo.</div>
     ${agoraCat?`<datalist id="agoraLista">${Object.values(agoraCat).filter(x=>x.activo).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(x=>`<option value="${x.id}">${esc(x.nombre)} · ${precioTxt(x.precio)} €</option>`).join('')}</datalist>`:''}
     ${lista.length?`<div class="wscroll"><table class="wtabla ptabla"><tbody>${filas}</tbody></table></div>`:'<div class="vacio">Todavía no hay productos.</div>'}
   </div>`;
@@ -1187,11 +1210,12 @@ function panelProdEditor(){
       <label class="todo">Descripción<input name="descripcion" maxlength="200" value="${esc(p.descripcion||'')}" placeholder="Ej. Con doble cheddar"></label>
       <label>Precio${p.categoria==='burgers'?' simple':''} (€)${p.agora_id&&agoraPrecio(p.agora_id)!=null?` <span style="font-weight:400">· Ágora: ${precioTxt(agoraPrecio(p.agora_id))} €</span>`:''}<input name="precio" inputmode="decimal" required value="${esc(precioTxt(p.precio))}" placeholder="7,90"></label>
       <label>Precio doble (€)<input name="precio_doble" inputmode="decimal" value="${esc(precioTxt(p.precio_doble))}" placeholder="Solo si tiene versión doble"></label>
-      <label class="ancho">Salsas a elegir<input name="salsas" maxlength="200" value="${esc((p.salsas||[]).join(', '))}" placeholder="Ej. Barbacoa, Cheddar, Alioli (vacío = sin salsa)"></label>
+      ${conAgora()?`<input type="hidden" name="salsas" value="${esc((p.salsas||[]).join(', '))}">`:`<label class="ancho">Salsas a elegir<input name="salsas" maxlength="200" value="${esc((p.salsas||[]).join(', '))}" placeholder="Ej. Barbacoa, Cheddar, Alioli (vacío = sin salsa)"></label>`}
       ${conAgora()?`<label>Código Ágora${p.categoria==='burgers'||p.categoria==='menus'?' simple':''}<input name="agora_id" list="agoraLista" value="${esc(p.agora_id??'')}" placeholder="Escribí el nombre o el código"></label>
       <label>Código Ágora doble<input name="agora_id_doble" list="agoraLista" value="${esc(p.agora_id_doble??'')}" placeholder="Solo si tiene doble"></label>
-      <label class="ancho">Salsas en Ágora<input name="agora_salsas" maxlength="300" value="${esc(salsasTxt(p.agora_salsas))}" placeholder="Ej. Barbacoa=2167, Cheddar=2166"></label>
-      <div class="sub todo" style="margin:0">Con estos códigos la web toma de Ágora el precio y las opciones, y el pedido entra con el producto correcto (versión TAKE AWAY). Escribí parte del nombre y elegí de la lista. «Salsas en Ágora» y los precios de acá solo se usan si el producto no está en el catálogo de Ágora.</div>`:''}
+      <input type="hidden" name="agora_salsas" value="${esc(salsasTxt(p.agora_salsas))}">
+      <div class="sub todo" style="margin:0">Con estos códigos la web toma de Ágora el precio y las opciones, y el pedido entra con el producto correcto (versión TAKE AWAY). Escribí parte del nombre y elegí de la lista. Los precios de acá solo se usan si el producto no está en el catálogo de Ágora.</div>
+      <div class="popc todo" id="pOpc">${conOpciones()?htmlOpciones():'<h3>Opciones en la página de pedidos</h3><div class="aviso">Para editar las opciones de cada producto falta correr la parte 19 del schema.sql en Supabase.</div>'}</div>`:''}
       <div class="pfotobox">${foto?`<img src="${esc(foto)}" alt="">`:'<i></i>'}
         <label class="btn" style="cursor:pointer">${foto?'Cambiar foto':'Subir foto'}<input type="file" accept="image/*" data-p-foto hidden></label>
         ${foto?'<button type="button" class="btn" data-p-sinfoto>Quitar foto</button>':''}
@@ -1221,6 +1245,7 @@ function achicarFoto(file){
   });
 }
 const conAgora=()=>prodLista.length?('agora_id' in prodLista[0]):false;
+const conOpciones=()=>prodLista.length?('opciones' in prodLista[0]):false;   // parte 19 corrida
 const salsasTxt=o=>o?Object.entries(o).map(([k,v])=>`${k}=${v}`).join(', '):'';
 const aCodigo=t=>{ const v=String(t||'').trim(); if(!v) return null; return /^\d{1,9}$/.test(v)?+v:NaN; };
 function aSalsas(t){
@@ -1252,6 +1277,7 @@ function leerProdForm(f){
 async function guardarProducto(f){
   const o=leerProdForm(f);
   if(typeof o==='string'){ toast(o); return; }
+  if(conOpciones()){ try{ o.opciones=limpiarOpciones(prodEdit.opciones,prodEdit); }catch(err){ toast(String(err)); return; } }
   const btn=f.querySelector('[type=submit]'); btn.disabled=true; btn.textContent='Guardando…';
   try{
     let id=prodEdit.id;
@@ -1270,6 +1296,143 @@ async function guardarProducto(f){
     prodEdit=null; prodFoto=null; renderPedidosVista();
   }catch(e){ toast('No se pudo guardar: '+errMsg(e)); btn.disabled=false; btn.textContent='Guardar'; }
 }
+/* ---------- Opciones de cada producto (parte 19) ----------
+   prodEdit.opciones = null → usa los grupos de Ágora tal cual.
+   Si es una lista, reemplaza a los de Ágora: [{nombre, min, max, opciones:[{id, nombre?, precio?}]}].
+   Nombre o precio vacíos = los de Ágora (el precio sigue a Ágora). */
+const nombreLindo=t=>{ const x=String(t||'').replace(/\s+TAKE\s+AWAY\s*$/i,'').replace(/^POTE\s+/i,'').trim(); return x?x[0].toUpperCase()+x.slice(1).toLowerCase():x; };
+let poolCache=null, poolDe=null;
+function opcPool(){   // todas las opciones que existen en Ágora: id → {nombre, precio}
+  if(poolDe===agoraCat&&poolCache) return poolCache;
+  const m={};
+  if(agoraCat){
+    for(const c of Object.values(agoraCat)) if(c.activo) for(const r of c.roles||[]) for(const o of r.opciones||[]) if(!m[o.id]) m[o.id]={nombre:nombreLindo(o.nombre),precio:+o.precio||0};
+    for(const c of Object.values(agoraCat)) if(c.activo&&!m[c.id]) m[c.id]={nombre:nombreLindo(c.nombre),precio:+c.precio||0};
+  }
+  poolCache=m; poolDe=agoraCat; return m;
+}
+function gruposAgora(p){
+  const c=agoraCat&&agoraCat[p.agora_id]; if(!c||!c.activo) return [];
+  return (c.roles||[]).filter(r=>(r.opciones||[]).length).map(r=>({nombre:nombreLindo(r.nombre),min:+r.min||0,max:Math.max(1,+r.max||1),opciones:r.opciones.map(o=>({id:+o.id}))}));
+}
+const gruposDe=p=>Array.isArray(p.opciones)?p.opciones:gruposAgora(p);
+function precioAgoraOpc(p,id){
+  const c=agoraCat&&agoraCat[p.agora_id];
+  for(const r of (c&&c.roles)||[]) for(const o of r.opciones||[]) if(+o.id===+id) return +o.precio||0;
+  return opcPool()[id]?.precio??0;
+}
+function reglaOpc(g){
+  const min=+g.min||0, max=Math.max(1,+g.max||1);
+  if(min>0) return min===max?`hay que elegir ${min}`:`hay que elegir entre ${min} y ${max}`;
+  return max===1?'opcional, 1 como máximo':`opcional, hasta ${max}`;
+}
+function htmlOpciones(){
+  const p=prodEdit, pool=opcPool();
+  const copiables=prodLista.filter(x=>x.id!==p.id&&gruposDe(x).length);
+  const copiar=copiables.length?`<select data-o-copiar><option value="">Copiar grupos de otro producto…</option>${copiables.map(x=>`<option value="${esc(x.id)}">${esc(x.nombre)} — ${esc(gruposDe(x).map(g=>g.nombre).join(', '))}</option>`).join('')}</select>`:'';
+  const cab=`<h3>Opciones en la página de pedidos</h3>`;
+  if(!Array.isArray(p.opciones)){
+    const gs=gruposAgora(p);
+    return `${cab}<div class="sub">${gs.length?'Ahora usa las opciones de <b>Ágora</b> tal cual. Si querés sumar, sacar o cambiar algo solo para la web, personalizalas.':'Este producto no tiene opciones. Podés agregarle grupos (por ejemplo, salsas a elegir).'}</div>
+      ${gs.length?`<ul class="opc-res">${gs.map(g=>`<li><b>${esc(g.nombre)}</b><span>${reglaOpc(g)}</span>${esc(g.opciones.map(o=>{ const x=pool[o.id]; return x?x.nombre+(precioAgoraOpc(p,o.id)?` +${precioTxt(precioAgoraOpc(p,o.id))} €`:''):o.id; }).join(' · '))}</li>`).join('')}</ul>`:''}
+      <div class="opc-acc"><button type="button" class="btn" data-o="personalizar">${gs.length?'Personalizar opciones':'+ Agregar un grupo'}</button>${copiar}</div>`;
+  }
+  const grupos=p.opciones.map((g,i)=>`<div class="ogrupo" data-g="${i}">
+      <div class="ogcab">
+        <input data-of="nombre" maxlength="40" value="${esc(g.nombre||'')}" placeholder="Nombre del grupo (ej. Salsa)" aria-label="Nombre del grupo">
+        <label>Mín.<input type="number" data-of="min" min="0" max="10" value="${+g.min||0}"></label>
+        <label>Máx.<input type="number" data-of="max" min="1" max="10" value="${Math.max(1,+g.max||1)}"></label>
+        <button type="button" class="btn bx" data-o="subir" title="Subir"${i?'':' disabled'}>↑</button>
+        <button type="button" class="btn bx" data-o="bajar" title="Bajar"${i<p.opciones.length-1?'':' disabled'}>↓</button>
+        <button type="button" class="btn borrar" data-o="quitar-grupo">Quitar grupo</button>
+      </div>
+      <div class="oregla" style="margin:0">En la página: ${reglaOpc(g)}. Mín. 1 = obligatorio.</div>
+      ${g.opciones.length?`<ul>${g.opciones.map((o,j)=>{ const x=pool[o.id]; const pa=precioAgoraOpc(p,o.id);
+        return `<li data-i="${j}"><input data-of="o-nombre" maxlength="60" value="${esc(o.nombre||(x?x.nombre:''))}" placeholder="${esc(x?x.nombre:'Código '+o.id)}" aria-label="Nombre de la opción">
+          <input data-of="o-precio" inputmode="decimal" value="${esc(o.precio==null||o.precio===''?precioTxt(pa):(typeof o.precio==='number'?precioTxt(o.precio):o.precio))}" placeholder="${precioTxt(pa)} €" aria-label="Precio extra">
+          <button type="button" class="btn bx" data-o="quitar-opc" title="Quitar opción" aria-label="Quitar opción">×</button>
+          ${x?'':`<small style="color:var(--danger)">El código ${esc(o.id)} no está en el catálogo de Ágora: no va a llegar bien al pedido.</small>`}</li>`; }).join('')}</ul>`:'<div class="vacio">Sin opciones todavía: agregá al menos una (si no, el grupo no aparece).</div>'}
+      <div class="oadd"><input list="opcLista" data-o-add placeholder="Agregar opción: escribí el nombre (ej. alioli, bacon)…" aria-label="Agregar opción"><button type="button" class="btn" data-o="agregar-opc">Agregar</button></div>
+    </div>`).join('');
+  const lista=`<datalist id="opcLista">${Object.entries(pool).sort((a,b)=>a[1].nombre.localeCompare(b[1].nombre)).map(([id,x])=>`<option value="${id}">${esc(x.nombre)}${x.precio?` · +${precioTxt(x.precio)} €`:''}</option>`).join('')}</datalist>`;
+  return `${cab}<div class="sub">Opciones <b>propias</b> de este producto (reemplazan a las de Ágora en la web, en simple y doble). Nombre y precio vienen de Ágora (y siguen a Ágora si cambian allá); si los cambiás acá, manda lo de acá. Cada opción es un producto de Ágora, así llega bien al ticket.</div>
+    ${grupos||'<div class="vacio">Sin grupos: el producto se agrega directo, sin ventanita de opciones.</div>'}
+    <div class="opc-acc"><button type="button" class="btn" data-o="nuevo-grupo">+ Agregar un grupo</button>${copiar}<button type="button" class="btn" data-o="agora">Volver a las de Ágora</button></div>${lista}`;
+}
+function pintarOpc(){ const b=$('pOpc'); if(b) b.innerHTML=htmlOpciones(); }
+function agregarOpc(gi,input){
+  const v=String(input.value||'').trim(); if(!v) return;
+  const pool=opcPool(); let id=/^\d+$/.test(v)?+v:null;
+  if(id==null){ const t=v.toLowerCase(); const e=Object.entries(pool).find(([,x])=>x.nombre.toLowerCase()===t)||Object.entries(pool).find(([,x])=>x.nombre.toLowerCase().includes(t)); if(e) id=+e[0]; }
+  if(id==null||!pool[id]){ toast('No encuentro esa opción en Ágora: elegila de la lista.'); return; }
+  const g=prodEdit.opciones[gi];
+  if(g.opciones.some(o=>+o.id===id)){ toast('Esa opción ya está en el grupo.'); return; }
+  g.opciones.push({id}); pintarOpc();
+  setTimeout(()=>document.querySelector(`#pOpc .ogrupo[data-g="${gi}"] [data-o-add]`)?.focus(),0);
+}
+function limpiarOpciones(gs,p){
+  if(!Array.isArray(gs)) return null;
+  const pool=opcPool();
+  const out=[];
+  for(const g of gs){
+    const ops=g.opciones.filter(o=>o.id).map(o=>{
+      const x={id:+o.id};
+      const nom=String(o.nombre??'').trim();
+      if(nom&&nom!==pool[x.id]?.nombre) x.nombre=nom.slice(0,60);
+      const pr=aPrecio(o.precio);
+      if(Number.isNaN(pr)) throw `Revisá el precio de una opción de «${g.nombre||'sin nombre'}» (ej. 1,50).`;
+      if(pr!=null&&pr!==precioAgoraOpc(p,x.id)) x.precio=pr;
+      return x;
+    });
+    if(!ops.length) continue;
+    const nombre=String(g.nombre||'').trim();
+    if(!nombre) throw 'Ponele nombre a cada grupo de opciones (ej. Salsa, Extras).';
+    const min=Math.max(0,Math.min(10,parseInt(g.min,10)||0)), max=Math.max(1,Math.min(10,parseInt(g.max,10)||1));
+    if(min>max) throw `En «${nombre}» el mínimo no puede ser mayor que el máximo.`;
+    if(min>ops.length) throw `En «${nombre}» pediste elegir ${min} pero hay ${ops.length} opción${ops.length>1?'es':''}.`;
+    out.push({nombre:nombre.slice(0,40),min,max,opciones:ops});
+  }
+  return out;
+}
+$('reportes').addEventListener('click',e=>{
+  if(vista!=='pedidos'||!prodEdit) return;
+  const b=e.target.closest('[data-o]'); if(!b||!b.closest('#pOpc')) return;
+  e.preventDefault(); e.stopPropagation();
+  const a=b.dataset.o, gi=+(b.closest('[data-g]')?.dataset.g??-1), oi=+(b.closest('[data-i]')?.dataset.i??-1);
+  const gs=prodEdit.opciones;
+  if(a==='personalizar'){ prodEdit.opciones=gruposAgora(prodEdit); if(!prodEdit.opciones.length) prodEdit.opciones.push({nombre:'',min:0,max:1,opciones:[]}); }
+  else if(a==='agora'){ if(!confirm('¿Volver a usar las opciones de Ágora tal cual? Se pierden los cambios de acá (al guardar).')) return; prodEdit.opciones=null; }
+  else if(a==='nuevo-grupo') gs.push({nombre:'',min:0,max:1,opciones:[]});
+  else if(a==='quitar-grupo') gs.splice(gi,1);
+  else if(a==='subir'&&gi>0) gs.splice(gi-1,0,gs.splice(gi,1)[0]);
+  else if(a==='bajar'&&gi<gs.length-1) gs.splice(gi+1,0,gs.splice(gi,1)[0]);
+  else if(a==='quitar-opc') gs[gi].opciones.splice(oi,1);
+  else if(a==='agregar-opc'){ agregarOpc(gi,b.closest('.ogrupo').querySelector('[data-o-add]')); return; }
+  pintarOpc();
+  if(a==='nuevo-grupo'||a==='personalizar') setTimeout(()=>{ const l=[...document.querySelectorAll('#pOpc .ogrupo')].pop(); l?.querySelector('[data-of=nombre]')?.focus(); },0);
+},true);
+$('reportes').addEventListener('input',e=>{
+  const t=e.target; if(!prodEdit||!t.dataset.of||!t.closest('#pOpc')) return;
+  const g=prodEdit.opciones[+t.closest('[data-g]').dataset.g];
+  if(t.dataset.of==='nombre') g.nombre=t.value;
+  else if(t.dataset.of==='min'||t.dataset.of==='max'){ g[t.dataset.of]=t.value; const r=t.closest('.ogrupo').querySelector('.oregla'); if(r) r.textContent=`En la página: ${reglaOpc(g)}. Mín. 1 = obligatorio.`; }
+  else { const o=g.opciones[+t.closest('[data-i]').dataset.i]; if(t.dataset.of==='o-nombre') o.nombre=t.value; else o.precio=t.value; }
+});
+$('reportes').addEventListener('change',e=>{
+  const t=e.target; if(!prodEdit||!t.closest||!t.closest('#pOpc')) return;
+  if(t.matches('[data-o-copiar]')&&t.value){
+    const x=prodLista.find(p=>p.id===t.value); if(!x) return;
+    const nuevos=JSON.parse(JSON.stringify(gruposDe(x)));
+    prodEdit.opciones=[...(Array.isArray(prodEdit.opciones)?prodEdit.opciones:gruposAgora(prodEdit)),...nuevos];
+    toast(`Copiado: ${nuevos.map(g=>g.nombre).join(', ')}. Revisalo y guardá.`); pintarOpc(); return;
+  }
+  if(t.matches('[data-o-add]')&&/^\d+$/.test(t.value.trim())) agregarOpc(+t.closest('[data-g]').dataset.g,t);
+});
+$('reportes').addEventListener('keydown',e=>{
+  const t=e.target; if(e.key!=='Enter'||!t.closest||!t.closest('#pOpc')) return;
+  e.preventDefault();
+  if(t.matches('[data-o-add]')) agregarOpc(+t.closest('[data-g]').dataset.g,t);
+});
 let irAlEditor=false, arrastre=null;
 // ≡ : arrastrar un producto dentro de su categoría; al soltar se guarda el orden (10, 20, 30…)
 $('reportes').addEventListener('pointerdown',e=>{
@@ -1354,7 +1517,7 @@ $('reportes').addEventListener('click',async e=>{
     toast(error?'No se pudo: '+errMsg(error):'Se vuelve a mandar a Ágora en unos segundos'); renderPedidosVista(); return;
   }
   if(b.hasAttribute('data-p-nuevo')){ prodEdit={categoria:'burgers',take_away:true,terraza:true,activo:true,orden:100}; prodFoto=null; irAlEditor=true; renderPedidosVista(); return; }
-  if(b.dataset.pEdit){ const p=prodLista.find(x=>x.id===b.dataset.pEdit); if(p){ prodEdit={...p}; prodFoto=null; irAlEditor=true; renderPedidosVista(); } return; }
+  if(b.dataset.pEdit){ const p=prodLista.find(x=>x.id===b.dataset.pEdit); if(p){ prodEdit=JSON.parse(JSON.stringify(p)); prodFoto=null; irAlEditor=true; renderPedidosVista(); } return; }
   if(b.hasAttribute('data-p-cancelar')){ if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodEdit=null; prodFoto=null; renderPedidosVista(); return; }
   if(b.hasAttribute('data-p-sinfoto')){ guardarBorrador(); if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodFoto=null; prodEdit.foto_url=null; prodEdit.sinFoto=true; renderPedidosVista(); return; }
   if(b.dataset.pBorrar){
