@@ -170,9 +170,35 @@ function ArmarPedido($p) {
   return $pedido
 }
 
+# ---------- aviso al celular (ntfy) desde la conexion del local ----------
+# ntfy.sh gratis limita por IP; la de Supabase es compartida y se queda sin cupo, la del local no.
+function AvisarPedidos {
+  $r = Supabase 'tpv_avisos_pendientes' @{ p_token = $cfg.integracionToken }
+  if (-not $r -or -not $r.tema) { return }
+  $ok = @()
+  foreach ($a in @($r.avisos | ForEach-Object { $_ })) {
+    if (-not $a) { continue }
+    if ($Simular) { Escribir "SIMULADO aviso pedido $($a.id): $($a.titulo) - $($a.mensaje)"; continue }
+    try {
+      $cuerpo = @{ topic = $r.tema; title = $a.titulo; message = $a.mensaje; tags = @('takeout_box'); priority = [int]$a.prioridad; click = 'https://admin.terrysburgers.com/' } | ConvertTo-Json -Compress
+      Invoke-WebRequest -Uri 'https://ntfy.sh/' -Method Post -Body ([Text.Encoding]::UTF8.GetBytes($cuerpo)) -ContentType 'application/json; charset=utf-8' -UseBasicParsing -TimeoutSec 20 | Out-Null
+      $ok += [long]$a.id
+      Escribir "AVISO pedido $($a.id) enviado al celular."
+    } catch {
+      $m = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
+      Escribir "No se pudo avisar el pedido $($a.id): $($m -replace '\s+', ' ')"
+    }
+  }
+  if ($ok.Count) { Supabase 'tpv_aviso_marcar' @{ p_token = $cfg.integracionToken; p_ids = $ok } | Out-Null }
+}
+
 # ---------- una vuelta ----------
 function Vuelta {
   if (-not $M -or ((Get-Date) - $maestrosHora).TotalMinutes -ge 60) { CargarMaestros }
+  try { AvisarPedidos; $script:errAviso = $null } catch {
+    $m = $_.Exception.Message
+    if ($m -ne $script:errAviso) { Escribir "Avisos: $m"; $script:errAviso = $m }   # no repetir el mismo error cada 5 s
+  }
   # (PowerShell 5.1 devuelve el arreglo JSON como un solo objeto: el pipe lo separa en pedidos)
   $pendientes = @(Supabase 'agora_pendientes' @{ p_token = $cfg.integracionToken } | ForEach-Object { $_ })
   foreach ($p in $pendientes) {

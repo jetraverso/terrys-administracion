@@ -1294,3 +1294,66 @@ exception when others then
 end;
 $$;
 revoke all on function public._aviso_ntfy(text, text, text, text, int) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 16. Aviso de pedidos take away desde el TPV
+-- ---------------------------------------------------------------
+-- ntfy.sh gratis limita por IP y la de Supabase es compartida (429). Los avisos
+-- de pedidos los manda ahora enviar-pedidos.ps1 desde la conexión del local:
+-- le pide a Supabase los pedidos sin avisar (con el tema y el texto ya armados)
+-- y después los marca. Solo pedidos de las últimas 6 horas (si el TPV estuvo
+-- apagado no llega una avalancha de avisos viejos).
+
+alter table public.pedidos_take add column if not exists avisado timestamptz;
+update public.pedidos_take set avisado = coalesce(avisado, now()) where avisado is null;
+
+-- Supabase ya no intenta avisar los pedidos (reservas y consultas siguen igual).
+drop trigger if exists pedidos_take_avisar on public.pedidos_take;
+
+create or replace function public.tpv_avisos_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a public.web_avisos;
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  select * into a from public.web_avisos where id = 1;
+  if a.ntfy_tema is null or not coalesce(a.pedidos, true) then
+    return jsonb_build_object('tema', null, 'avisos', '[]'::jsonb);
+  end if;
+  return jsonb_build_object('tema', a.ntfy_tema, 'avisos', coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', p.id,
+      'titulo', case when p.dia = v_hoy then 'Pedido take away para HOY' else 'Pedido take away' end,
+      'mensaje', public._dia_corto(p.dia) || ' · retira ' || to_char(p.hora, 'HH24:MI') || ' · ' ||
+                 p.unidades || case when p.unidades = 1 then ' producto' else ' productos' end || ' · ' ||
+                 replace(to_char(p.total, 'FM9990.00'), '.', ',') || ' €',
+      'prioridad', case when p.dia = v_hoy then 5 else 4 end) order by p.creado)
+    from public.pedidos_take p
+    where p.avisado is null and p.estado <> 'cancelado' and p.creado > now() - interval '6 hours'), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.tpv_avisos_pendientes(text) from public;
+grant execute on function public.tpv_avisos_pendientes(text) to anon, authenticated;
+
+create or replace function public.tpv_aviso_marcar(p_token text, p_ids bigint[])
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.pedidos_take set avisado = now() where id = any(p_ids) and avisado is null;
+end;
+$$;
+revoke all on function public.tpv_aviso_marcar(text, bigint[]) from public;
+grant execute on function public.tpv_aviso_marcar(text, bigint[]) to anon, authenticated;
