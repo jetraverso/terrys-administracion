@@ -1,0 +1,31 @@
+{
+  "serie": "WEB",
+  "offsetNumero": 100,
+  "clienteId": 1000000312,
+  "clienteNombre": "WEB",
+  "nombreEnCliente": true,
+  "posId": 1,
+  "posNombre": "TPV",
+  "localId": 1,
+  "localNombre": "TERRYS BURGERS",
+  "usuarioId": 1018,
+  "usuarioNombre": "1",
+  "centroId": 12,
+  "centroNombre": "TAKE AWAY",
+  "centroUbicacion": "Take away",
+  "tarifaId": 2,
+  "formaPagoTarjetaId": 2,
+  "formaPagoTarjetaNombre": "Tarjeta de crédito",
+  "cadaSegundos": 5,
+  "cadaSegundosFuera": 60,
+  "horarios": [
+    [
+      "12:00",
+      "16:00"
+    ],
+    [
+      "19:00",
+      "23:30"
+    ]
+  ]
+}

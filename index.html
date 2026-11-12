@@ -238,6 +238,11 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .wtabla tr.w-nuevo .wh{color:var(--warn)}
 .wtabla tr.w-entregado,.wtabla tr.w-cancelado{opacity:.5}
 .wtabla .witems{font-size:13px;color:var(--ink-2);margin-top:3px}
+.ag{display:inline-block;margin-top:5px;padding:2px 8px;border-radius:999px;font-size:11.5px;font-weight:700;letter-spacing:.01em}
+.ag.ok{background:var(--ok-soft);color:var(--ok)}.ag.pen{background:var(--warn-soft);color:var(--warn)}
+.ag.err{background:color-mix(in srgb,var(--danger) 16%,transparent);color:var(--danger)}
+.ag button{margin-left:6px;padding:0 6px;border:1px solid currentColor;border-radius:999px;background:none;color:inherit;font:inherit;cursor:pointer}
+.ptabla .pag{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
 .wcon.w-nueva .wcon-h b{color:var(--warn)}
 .wcon-h{display:flex;gap:6px;align-items:baseline}.wcon-h span{margin-left:auto;color:var(--muted);font-size:12px}
 .wcon-d{font-size:13px;color:var(--ink-2);margin-top:3px}
@@ -1041,9 +1046,19 @@ async function renderWeb(){
     ${panelAvisos(avisos)}</div>`;
   contarPendientesWeb();
 }
+// Estado del envío a Ágora (lo hace enviar-pedidos.ps1 en el TPV; parte 14 del schema).
+function agoraBadge(p){
+  if(!('agora_estado' in p)||p.estado==='cancelado') return '';
+  if(p.agora_estado==='enviado') return `<div class="ag ok" title="Cargado en Ágora ${p.agora_enviado?new Date(p.agora_enviado).toLocaleString('es-ES'):''}">En Ágora · WEB-${esc(p.agora_numero)}</div>`;
+  if(p.agora_estado==='error'){
+    if(/^Anterior a la conexi/.test(p.agora_error||'')) return '';
+    return `<div class="ag err" title="${esc(p.agora_error||'')}">No entró en Ágora${p.agora_intentos>=5?'':' (reintentando)'}<button data-p-reagora="${p.id}" title="Volver a mandarlo">Reintentar</button></div><small>${esc(p.agora_error||'')}</small>`;
+  }
+  return `<div class="ag pen" title="El programa del TPV lo carga en Ágora en unos segundos">Esperando al TPV…</div>`;
+}
 function panelPedidos(ped,hoy){
   const cab=n=>`<div class="wcab"><h2>Pedidos take away</h2><div class="wseg"><button class="btn${pedRango==='proximos'?' primary':''}" data-p-rango="proximos">Próximos</button><button class="btn${pedRango==='anteriores'?' primary':''}" data-p-rango="anteriores">Anteriores</button><button class="btn" data-p-recargar>Actualizar</button></div></div>
-    <div class="sub">${pedRango==='proximos'?`Pedidos de terrysburgers.com/pedido/ para retirar en el local (se pagan al retirar)${n?` · <b>${n} ${n>1?'nuevos':'nuevo'}</b>`:''}. Pasalos a Preparando, Listo y Entregado.`:'Últimos 300 pedidos de días anteriores.'}</div>`;
+    <div class="sub">${pedRango==='proximos'?`Pedidos de terrysburgers.com/pedido/ para retirar en el local (se pagan al retirar)${n?` · <b>${n} ${n>1?'nuevos':'nuevo'}</b>`:''}. Entran solos a Ágora (pedidos Delivery, serie WEB): tocá <b>Preparar</b> en el TPV para que salga en cocina. Acá pasalos a Preparando, Listo y Entregado.`:'Últimos 300 pedidos de días anteriores.'}</div>`;
   if(ped.error) return `<div class="panel">${cab(0)}<div class="aviso">Falta correr la parte 12 del schema.sql en Supabase (${esc(ped.error)}).</div></div>`;
   const nuevos=ped.filter(p=>p.estado==='nuevo').length;
   if(!ped.length) return `<div class="panel">${cab(0)}<div class="vacio">${pedRango==='proximos'?'No hay pedidos para hoy ni para mañana.':'No hay pedidos anteriores.'}</div></div>`;
@@ -1059,7 +1074,7 @@ function panelPedidos(ped,hoy){
         :`¡Hola ${p.nombre}! Recibimos tu pedido nº ${p.id} en Terry's Burgers para retirar el ${fechaLargaW(p.dia)} a las ${hora}. Total: ${eurW(p.total)}, se paga al retirar. ¡Gracias! 🍔`;
       return `<tr class="w-${p.estado}">
         <td class="wh">${esc(hora)}</td>
-        <td class="wn"><b>nº ${p.id} · ${esc(p.nombre)}</b><div class="witems">${esc(items)}</div>${p.comentario?`<small>💬 ${esc(p.comentario)}</small>`:''}</td>
+        <td class="wn"><b>nº ${p.id} · ${esc(p.nombre)}</b><div class="witems">${esc(items)}</div>${p.comentario?`<small>💬 ${esc(p.comentario)}</small>`:''}${agoraBadge(p)}</td>
         <td class="wtot">${eurW(p.total)}</td>
         <td class="wt"><a href="tel:${esc(p.telefono)}">${esc(p.telefono)}</a></td>
         <td><select data-w-ped="${p.id}" aria-label="Estado del pedido">${optEst(p.estado)}</select></td>
@@ -1101,7 +1116,7 @@ function panelProductos(lista){
     const visibles=l.filter(p=>p.activo&&p.take_away).length;
     return `<tr class="pcat"><td colspan="7">${P_CAT[c]}<span>${l.length} producto${l.length>1?'s':''} · ${visibles} en take away</span></td></tr>`+l.map(p=>`<tr class="${p.activo?'':'p-off'}">
       <td class="pfoto">${p.foto_url?`<img src="${esc(p.foto_url)}" alt="" loading="lazy">`:'<i></i>'}</td>
-      <td><b>${esc(p.nombre)}</b>${p.descripcion?`<small>${esc(p.descripcion)}</small>`:''}${p.salsas&&p.salsas.length?`<small>Salsas: ${esc(p.salsas.join(', '))}</small>`:''}</td>
+      <td><b>${esc(p.nombre)}</b>${p.descripcion?`<small>${esc(p.descripcion)}</small>`:''}${p.salsas&&p.salsas.length?`<small>Salsas: ${esc(p.salsas.join(', '))}</small>`:''}${'agora_id' in p?`<small class="pag">${p.agora_id?`Ágora ${esc(p.agora_id)}${p.agora_id_doble?` · doble ${esc(p.agora_id_doble)}`:''}`:'<b style="color:var(--danger)">Sin código de Ágora</b>'}</small>`:''}</td>
       <td class="ppre">${precioTxt(p.precio)} €${p.precio_doble!=null?`<small>doble ${precioTxt(p.precio_doble)} €</small>`:''}</td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="take_away" data-p-id="${esc(p.id)}"${p.take_away?' checked':''}>Take away</label></td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="terraza" data-p-id="${esc(p.id)}"${p.terraza?' checked':''}>Terraza</label></td>
@@ -1129,6 +1144,10 @@ function panelProdEditor(){
       <label>Precio${p.categoria==='burgers'?' simple':''} (€)<input name="precio" inputmode="decimal" required value="${esc(precioTxt(p.precio))}" placeholder="7,90"></label>
       <label>Precio doble (€)<input name="precio_doble" inputmode="decimal" value="${esc(precioTxt(p.precio_doble))}" placeholder="Solo si tiene versión doble"></label>
       <label class="ancho">Salsas a elegir<input name="salsas" maxlength="200" value="${esc((p.salsas||[]).join(', '))}" placeholder="Ej. Barbacoa, Cheddar, Alioli (vacío = sin salsa)"></label>
+      ${conAgora()?`<label>Código Ágora${p.categoria==='burgers'?' simple':''}<input name="agora_id" inputmode="numeric" value="${esc(p.agora_id??'')}" placeholder="Ej. 3202"></label>
+      <label>Código Ágora doble<input name="agora_id_doble" inputmode="numeric" value="${esc(p.agora_id_doble??'')}" placeholder="Solo si tiene doble"></label>
+      <label class="ancho">Salsas en Ágora<input name="agora_salsas" maxlength="300" value="${esc(salsasTxt(p.agora_salsas))}" placeholder="Ej. Barbacoa=2167, Cheddar=2166"></label>
+      <div class="sub todo" style="margin:0">Con estos códigos el pedido entra a Ágora con el producto correcto (versión TAKE AWAY). El código es el número del producto en Ágora.</div>`:''}
       <div class="pfotobox">${foto?`<img src="${esc(foto)}" alt="">`:'<i></i>'}
         <label class="btn" style="cursor:pointer">${foto?'Cambiar foto':'Subir foto'}<input type="file" accept="image/*" data-p-foto hidden></label>
         ${foto?'<button type="button" class="btn" data-p-sinfoto>Quitar foto</button>':''}
@@ -1157,6 +1176,14 @@ function achicarFoto(file){
     img.src=url;
   });
 }
+const conAgora=()=>prodLista.length?('agora_id' in prodLista[0]):false;
+const salsasTxt=o=>o?Object.entries(o).map(([k,v])=>`${k}=${v}`).join(', '):'';
+const aCodigo=t=>{ const v=String(t||'').trim(); if(!v) return null; return /^\d{1,9}$/.test(v)?+v:NaN; };
+function aSalsas(t){
+  const v=String(t||'').trim(); if(!v) return null;
+  const o={}; for(const par of v.split(',')){ const m=par.trim().match(/^(.+?)\s*[=:]\s*(\d{1,9})$/); if(!m) return NaN; o[m[1].trim()]=+m[2]; }
+  return o;
+}
 const slug=t=>String(t).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,36)||'producto';
 function leerProdForm(f){
   const g=n=>f.elements[n];
@@ -1171,6 +1198,11 @@ function leerProdForm(f){
   if(o.nombre.length<2) return 'Falta el nombre.';
   if(o.precio==null||Number.isNaN(o.precio)) return 'Revisá el precio (ej. 7,90).';
   if(Number.isNaN(o.precio_doble)) return 'Revisá el precio doble (ej. 9,90) o dejalo vacío.';
+  if(g('agora_id')){
+    o.agora_id=aCodigo(g('agora_id').value); o.agora_id_doble=aCodigo(g('agora_id_doble').value); o.agora_salsas=aSalsas(g('agora_salsas').value);
+    if(Number.isNaN(o.agora_id)||Number.isNaN(o.agora_id_doble)) return 'El código de Ágora es un número (ej. 3202) o vacío.';
+    if(Number.isNaN(o.agora_salsas)) return 'Salsas en Ágora: escribilas así: Barbacoa=2167, Cheddar=2166';
+  }
   return o;
 }
 async function guardarProducto(f){
@@ -1225,6 +1257,8 @@ function guardarBorrador(){
     precio:typeof o==='object'?o.precio:prodEdit.precio, precio_doble:typeof o==='object'?o.precio_doble:prodEdit.precio_doble,
     salsas:g('salsas').value.split(',').map(x=>x.trim()).filter(Boolean),orden:g('orden').value,
     take_away:g('take_away').checked,terraza:g('terraza').checked,activo:g('activo').checked});
+  if(g('agora_id')) Object.assign(prodEdit,{agora_id:g('agora_id').value,agora_id_doble:g('agora_id_doble').value,
+    agora_salsas:typeof o==='object'?o.agora_salsas:prodEdit.agora_salsas});
 }
 $('reportes').addEventListener('click',async e=>{
   if(vista!=='pedidos') return;
@@ -1232,6 +1266,10 @@ $('reportes').addEventListener('click',async e=>{
   if(b.dataset.pVer){ pedVer=b.dataset.pVer; renderPedidosVista(); return; }
   if(b.dataset.pRango){ pedRango=b.dataset.pRango; renderPedidosVista(); return; }
   if(b.hasAttribute('data-p-recargar')){ renderPedidosVista(); return; }
+  if(b.dataset.pReagora){
+    const {error}=await sbc.from('pedidos_take').update({agora_estado:null,agora_error:null,agora_intentos:0}).eq('id',+b.dataset.pReagora);
+    toast(error?'No se pudo: '+errMsg(error):'Se vuelve a mandar a Ágora en unos segundos'); renderPedidosVista(); return;
+  }
   if(b.hasAttribute('data-p-nuevo')){ prodEdit={categoria:'burgers',take_away:true,terraza:true,activo:true,orden:100}; prodFoto=null; renderPedidosVista(); window.scrollTo({top:0,behavior:'smooth'}); return; }
   if(b.dataset.pEdit){ const p=prodLista.find(x=>x.id===b.dataset.pEdit); if(p){ prodEdit={...p}; prodFoto=null; renderPedidosVista(); window.scrollTo({top:0,behavior:'smooth'}); } return; }
   if(b.hasAttribute('data-p-cancelar')){ if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodEdit=null; prodFoto=null; renderPedidosVista(); return; }

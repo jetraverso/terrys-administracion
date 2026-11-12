@@ -1140,3 +1140,120 @@ end;
 $$;
 revoke all on function public.web_pedir(jsonb) from public;
 grant execute on function public.web_pedir(jsonb) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 14. Pedidos take away → Ágora (programa enviar-pedidos.ps1 en el TPV)
+-- ---------------------------------------------------------------
+-- El TPV pregunta cada 15 s por los pedidos nuevos (agora_pendientes) y los carga
+-- en Ágora en la serie WEB; después avisa cómo le fue (agora_marcar). Usa el mismo
+-- token 'agora' que subir-ventas.ps1. Cada producto de la web dice qué producto de
+-- Ágora es (agora_id, y agora_id_doble para la versión doble) y, si tiene salsas,
+-- qué producto de Ágora es cada salsa (agora_salsas: {"Barbacoa": 2167, ...}).
+
+alter table public.productos add column if not exists agora_id int;
+alter table public.productos add column if not exists agora_id_doble int;
+alter table public.productos add column if not exists agora_salsas jsonb;
+
+alter table public.pedidos_take add column if not exists agora_estado text
+  check (agora_estado is null or agora_estado in ('enviado', 'error'));
+alter table public.pedidos_take add column if not exists agora_numero int;
+alter table public.pedidos_take add column if not exists agora_error text;
+alter table public.pedidos_take add column if not exists agora_enviado timestamptz;
+alter table public.pedidos_take add column if not exists agora_intentos int not null default 0;
+
+-- Códigos de Ágora de la carta 2026 (versiones TAKE AWAY). Se pueden cambiar en la solapa Pedidos.
+update public.productos p set agora_id = v.a, agora_id_doble = v.d, agora_salsas = v.s
+from (values
+  ('terry', 3194, 3197, null::jsonb), ('torch', 3198, 3199, null), ('russel', 3204, 3205, null),
+  ('zulma', 3200, 3201, null), ('rumpi', 3202, 3203, null), ('buba', 3206, 3207, null),
+  ('patatas', 3190, null, null), ('patatas-russel', 3196, null, null), ('patatas-torch', 3195, null, null),
+  ('boniatos', 3215, null, null),
+  ('muzzarellitas', 3191, null, '{"Barbacoa": 2167, "Cheddar": 2166, "Alioli": 2165}'),
+  ('nuggets',       3192, null, '{"Barbacoa": 2167, "Cheddar": 2166, "Alioli": 2165}'),
+  ('aros',          3193, null, '{"Barbacoa": 2167, "Cheddar": 2166, "Alioli": 2165}'),
+  ('agua', 3217, null, null), ('aquarius', 3208, null, null), ('cocacola', 3187, null, null),
+  ('estrella', 2159, null, null), ('estrella00', 2158, null, null), ('turia', 2051, null, null),
+  ('damm-lemon', 3225, null, null), ('quilmes', 3216, null, null), ('vino', 3264, null, null),
+  ('franui', 2053, null, null)
+) as v(id, a, d, s)
+where p.id = v.id and p.agora_id is null;
+
+-- Los pedidos que ya existían (pruebas) no se mandan.
+update public.pedidos_take set agora_estado = 'error', agora_intentos = 5,
+       agora_error = 'Anterior a la conexión con Ágora (no se manda)'
+ where agora_estado is null;
+
+-- Pedidos para mandar a Ágora: los que no se mandaron (o fallaron menos de 5 veces),
+-- no cancelados y para hoy o mañana. Cada línea trae el código de Ágora ya resuelto.
+create or replace function public.agora_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r public.pedidos_take;
+  l jsonb;
+  pr public.productos;
+  v_extra text; v_var text; v_salsa text; v_agora int; v_addin int;
+  v_lineas jsonb;
+  v_out jsonb := '[]';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.integraciones set ultimo_uso = now() where nombre = 'agora';
+  for r in select * from public.pedidos_take
+            where estado <> 'cancelado' and dia >= v_hoy
+              and (agora_estado is null or (agora_estado = 'error' and agora_intentos < 5))
+            order by creado limit 20 loop
+    v_lineas := '[]';
+    for l in select * from jsonb_array_elements(r.items) loop
+      select * into pr from public.productos where id = l ->> 'id';
+      v_extra := coalesce(l ->> 'extra', '');
+      v_var   := case when lower(v_extra) in ('simple', 'doble') then lower(v_extra) end;
+      v_salsa := case when v_extra ilike 'Salsa %' then substr(v_extra, 7) end;
+      v_agora := case when v_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+      v_addin := null;
+      if v_salsa is not null and pr.agora_salsas is not null then
+        select value::int into v_addin from jsonb_each_text(pr.agora_salsas) where lower(key) = lower(v_salsa) limit 1;
+      end if;
+      v_lineas := v_lineas || jsonb_build_object(
+        'id', l ->> 'id', 'nombre', l ->> 'nombre', 'extra', nullif(v_extra, ''),
+        'cant', (l ->> 'cant')::int, 'precio', (l ->> 'precio')::numeric,
+        'agora_id', v_agora, 'agora_salsa', v_addin, 'salsa', v_salsa);
+    end loop;
+    v_out := v_out || jsonb_build_object(
+      'id', r.id, 'creado', r.creado, 'dia', r.dia, 'hora', to_char(r.hora, 'HH24:MI'),
+      'nombre', r.nombre, 'telefono', r.telefono, 'comentario', r.comentario,
+      'total', r.total, 'pagado', false, 'lineas', v_lineas, 'intentos', r.agora_intentos);
+  end loop;
+  return v_out;
+end;
+$$;
+revoke all on function public.agora_pendientes(text) from public;
+grant execute on function public.agora_pendientes(text) to anon, authenticated;
+
+-- El TPV avisa cómo le fue: ok → 'enviado' con el número de Ágora; si no, 'error' con el motivo.
+create or replace function public.agora_marcar(p_token text, p_id bigint, p_ok boolean, p_numero int default null, p_error text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.pedidos_take set
+    agora_estado   = case when p_ok then 'enviado' else 'error' end,
+    agora_numero   = case when p_ok then p_numero else agora_numero end,
+    agora_error    = case when p_ok then null else left(p_error, 500) end,
+    agora_enviado  = case when p_ok then now() else agora_enviado end,
+    agora_intentos = agora_intentos + case when p_ok then 0 else 1 end
+  where id = p_id;
+end;
+$$;
+revoke all on function public.agora_marcar(text, bigint, boolean, int, text) from public;
+grant execute on function public.agora_marcar(text, bigint, boolean, int, text) to anon, authenticated;

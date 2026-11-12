@@ -37,3 +37,25 @@ Cada corrida deja una línea en `subir-ventas.log`, en la misma carpeta.
 Cada día queda en la tabla `ventas_dias` tal cual lo devuelve Ágora (tickets, líneas, pagos, centro de venta, hora, quién cobró, precio de costo). La página arma un resumen compacto por día la primera vez que lo necesita, y con eso hace los reportes de la solapa Ventas.
 
 Si un día se vuelve a subir (por ejemplo después de corregir algo en Ágora), reemplaza al anterior.
+
+# Pedidos de la web → Ágora (`enviar-pedidos.ps1`)
+
+Los pedidos take away de terrysburgers.com/pedido/ entran solos en Ágora (solapa de pedidos **Delivery**, serie **WEB**, número = 100 + nº del pedido web). Sin pago entran **Pendientes**: tocar **Preparar** en el TPV para que se imprima y salga en cocina. Si algún día llegan pagados online, Ágora los pasa solo a En Preparación.
+
+- `enviar-pedidos.ps1` corre en el TPV y cada 5 s en horario del local (12–16 y 19–23:30; 60 s fuera de horario, configurable en `pedidos-agora.json`) le pide a Supabase los pedidos nuevos (`agora_pendientes`, token `agora`, el mismo de las ventas), los arma con los datos de Ágora (productos, IVA, familias, preparación) y los manda a `/api/import/`. Después marca cada pedido en Supabase (`agora_marcar`): el admin muestra «En Ágora · WEB-n» o el error (con botón Reintentar).
+- `pedidos-agora.json`: serie, cliente WEB (`clienteId`), TPV, local, usuario, centro de venta TAKE AWAY y tarifa. Sin secretos.
+- Qué producto de Ágora es cada producto de la web: en el admin, solapa Pedidos → Productos → Editar (código Ágora, código doble y salsas `Barbacoa=2167, …`).
+- Registro: `enviar-pedidos.log` al lado del script.
+
+Puesta en marcha (una vez):
+1. Supabase → SQL Editor: correr la parte 14 de `schema.sql`.
+2. En Ágora crear el cliente «WEB» y poner su número en `clienteId` de `pedidos-agora.json`.
+3. Probar sin mandar nada: `powershell -ExecutionPolicy Bypass -File .\enviar-pedidos.ps1 -Simular` (deja `exploracion\simulado-pedido-N.json`).
+4. Probar una vuelta de verdad: `... -File .\enviar-pedidos.ps1 -UnaVez`.
+5. Que arranque solo al iniciar sesión en el TPV (PowerShell como administrador):
+   ```powershell
+   schtasks /Create /TN "Terrys pedidos web a Agora" /SC ONLOGON /DELAY 0001:00 /RL HIGHEST /F /TR "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"G:\Mi unidad\Terry Admin AI\Sistema Pedidos\enviar-pedidos.ps1\""
+   ```
+   (`/DELAY` deja tiempo a que Google Drive monte la unidad G:.) Para frenarlo: `schtasks /End /TN "Terrys pedidos web a Agora"`.
+
+Scripts de exploración que se usaron para armar esto (solo para diagnóstico): `explorar-api.ps1`, `buscar-pedidos.ps1`, `probar-import.ps1`, `estados-pedido.ps1`, `probar-pedido.ps1`.
