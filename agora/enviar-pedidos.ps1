@@ -172,18 +172,39 @@ function ArmarPedido($p) {
 
 # ---------- aviso al celular (ntfy) desde la conexion del local ----------
 # ntfy.sh gratis limita por IP; la de Supabase es compartida y se queda sin cupo, la del local no.
+# Simbolos con [char] para que el archivo siga en ASCII (PowerShell 5.1 lee mal los acentos).
+$C = @{ punto = [char]0x00B7; por = [char]0x00D7; eur = [char]0x20AC; no = [char]0x00BA; enie = [char]0x00D1; flecha = [char]0x21B3 }
+# JSON solo con ASCII: todo lo demas viaja como \uXXXX (asi no se rompe en el camino).
+function JsonAscii($obj) {
+  $j = $obj | ConvertTo-Json -Compress -Depth 5
+  return [regex]::Replace($j, '[^\x00-\x7F]', { param($m) '\u{0:x4}' -f [int][char]$m.Value })
+}
+function TextoAviso($a) {
+  $cuando = switch ($a.cuando) { 'hoy' { 'HOY' } 'manana' { 'MA' + $C.enie + 'ANA' } default { $a.dia } }
+  $titulo = 'Pedido n{0} {1} {2} {3} {4}' -f $C.no, $a.id, $C.punto, $cuando, $a.hora
+  $lineas = @()
+  foreach ($it in @($a.items | ForEach-Object { $_ })) {
+    if (-not $it) { continue }
+    $lineas += ('{0}{1} {2}{3}' -f $it.cant, $C.por, $it.nombre, $(if ($it.extra) { ' (' + ([string]$it.extra).ToLower() + ')' } else { '' }))
+  }
+  $total = ([double]$a.total).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
+  $lineas += ('Total {0} {1} {2} se paga al retirar' -f $total, $C.eur, $C.punto)
+  if ($a.comentario) { $lineas += 'Tiene comentario (ver en el admin)' }
+  return @{ titulo = $titulo; mensaje = ($lineas -join "`n") }
+}
 function AvisarPedidos {
   $r = Supabase 'tpv_avisos_pendientes' @{ p_token = $cfg.integracionToken }
   if (-not $r -or -not $r.tema) { return }
   $ok = @()
   foreach ($a in @($r.avisos | ForEach-Object { $_ })) {
     if (-not $a) { continue }
-    if ($Simular) { Escribir "SIMULADO aviso pedido $($a.id): $($a.titulo) - $($a.mensaje)"; continue }
+    $t = TextoAviso $a
+    if ($Simular) { Escribir "SIMULADO aviso pedido $($a.id): $($t.titulo) | $($t.mensaje -replace "`n", ' | ')"; continue }
     try {
-      $cuerpo = @{ topic = $r.tema; title = $a.titulo; message = $a.mensaje; tags = @('takeout_box'); priority = [int]$a.prioridad; click = 'https://admin.terrysburgers.com/' } | ConvertTo-Json -Compress
-      Invoke-WebRequest -Uri 'https://ntfy.sh/' -Method Post -Body ([Text.Encoding]::UTF8.GetBytes($cuerpo)) -ContentType 'application/json; charset=utf-8' -UseBasicParsing -TimeoutSec 20 | Out-Null
+      $cuerpo = JsonAscii @{ topic = $r.tema; title = $t.titulo; message = $t.mensaje; tags = @('takeout_box'); priority = $(if ($a.cuando -eq 'hoy') { 5 } else { 4 }); click = 'https://admin.terrysburgers.com/' }
+      Invoke-WebRequest -Uri 'https://ntfy.sh/' -Method Post -Body ([Text.Encoding]::ASCII.GetBytes($cuerpo)) -ContentType 'application/json' -UseBasicParsing -TimeoutSec 20 | Out-Null
       $ok += [long]$a.id
-      Escribir "AVISO pedido $($a.id) enviado al celular."
+      Escribir "AVISO pedido $($a.id) enviado: $($t.titulo) | $($t.mensaje -replace "`n", ' | ')"
     } catch {
       $m = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
       Escribir "No se pudo avisar el pedido $($a.id): $($m -replace '\s+', ' ')"

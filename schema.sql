@@ -1327,14 +1327,14 @@ begin
   if a.ntfy_tema is null or not coalesce(a.pedidos, true) then
     return jsonb_build_object('tema', null, 'avisos', '[]'::jsonb);
   end if;
+  -- Datos sueltos: el texto lo arma el TPV (sin nombre ni teléfono del cliente).
   return jsonb_build_object('tema', a.ntfy_tema, 'avisos', coalesce((
     select jsonb_agg(jsonb_build_object(
-      'id', p.id,
-      'titulo', case when p.dia = v_hoy then 'Pedido take away para HOY' else 'Pedido take away' end,
-      'mensaje', public._dia_corto(p.dia) || ' · retira ' || to_char(p.hora, 'HH24:MI') || ' · ' ||
-                 p.unidades || case when p.unidades = 1 then ' producto' else ' productos' end || ' · ' ||
-                 replace(to_char(p.total, 'FM9990.00'), '.', ',') || ' €',
-      'prioridad', case when p.dia = v_hoy then 5 else 4 end) order by p.creado)
+      'id', p.id, 'dia', to_char(p.dia, 'DD/MM'), 'hora', to_char(p.hora, 'HH24:MI'),
+      'cuando', case when p.dia = v_hoy then 'hoy' when p.dia = v_hoy + 1 then 'manana' else 'otro' end,
+      'unidades', p.unidades, 'total', p.total, 'comentario', p.comentario is not null,
+      'items', (select coalesce(jsonb_agg(jsonb_build_object('cant', i ->> 'cant', 'nombre', i ->> 'nombre', 'extra', i ->> 'extra')), '[]'::jsonb)
+                  from jsonb_array_elements(p.items) i)) order by p.creado)
     from public.pedidos_take p
     where p.avisado is null and p.estado <> 'cancelado' and p.creado > now() - interval '6 hours'), '[]'::jsonb));
 end;
