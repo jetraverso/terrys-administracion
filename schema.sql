@@ -1610,6 +1610,10 @@ begin
     if v_pr.id is null or v_cant is null or v_cant not between 1 and 50 then
       raise exception 'producto inválido' using errcode = '22023';
     end if;
+    -- Menús: solo de lunes a viernes, para retirar entre las 12:00 y las 16:00
+    if v_pr.categoria = 'menus' and not (extract(isodow from v_dia) between 1 and 5 and v_hora between time '12:00' and time '16:00') then
+      raise exception 'menú fuera de horario' using errcode = '22023';
+    end if;
     v_doble := v_pr.agora_id_doble is not null or v_pr.precio_doble is not null;
     if v_doble then
       if v_var is null or v_var not in ('simple', 'doble') then raise exception 'producto inválido' using errcode = '22023'; end if;
