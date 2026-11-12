@@ -4,7 +4,7 @@ Lo sigue Claude, tanto a pedido en el chat como desde la tarea programada que at
 
 ## Dónde están
 
-Carpeta sincronizada en la Mac: `~/admin.terrys.ia@gmail.com - Google Drive/My Drive/Terry Admin AI/Proveedores/AAAA/MM_Mes/`.
+Carpeta sincronizada en la Mac: `~/<cuenta de Google del admin> - Google Drive/My Drive/Terry Admin AI/Proveedores/AAAA/MM_Mes/`.
 Los archivos se llaman `MMDD_Proveedor_Detalle.pdf|jpg` (ej. `0918_Europastry_Reposicion panes.PDF`).
 
 ## Herramienta
