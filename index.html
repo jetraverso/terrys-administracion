@@ -261,6 +261,9 @@ body.redimensionando,body.redimensionando *{cursor:col-resize!important;user-sel
 .wav-a{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
 .wav-c{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--ink-2);margin:4px 0 10px}
 .wav-c label{display:flex;gap:5px;align-items:center}
+.wav-t{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 10px;font-size:13px}
+.wav-t input{padding:6px 9px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;font:inherit;min-width:230px}
+.wav-t .ok{color:var(--ok);font-weight:700}.wav-t .mal{color:var(--warn);font-weight:700}
 
 /* ---------- reportes ---------- */
 .tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -1297,6 +1300,9 @@ function panelAvisos(a){
       <li>En la app tocá <b>+</b> y suscribite a este tema (servidor ntfy.sh, el que viene): <code>${esc(a.ntfy_tema)}</code> <button class="btn" data-w-av="copiar">Copiar</button></li>
       <li>Tocá <b>Probar aviso</b>: tiene que llegarte una notificación.</li>
     </ol>
+    ${'ntfy_token' in a?`<div class="wav-t">${a.ntfy_token?'<span class="ok">Con cuenta de ntfy ✓</span>':'<span class="mal">Sin cuenta de ntfy:</span> sin cuenta, ntfy corta los avisos cuando se llena el cupo diario que comparte Supabase. Creá una cuenta gratis en ntfy.sh (Account → Access tokens) y pegá el token:'}
+      <input id="ntfyTok" placeholder="${a.ntfy_token?'Token guardado ('+esc(a.ntfy_token.slice(0,6))+'…)':'tk_…'}" autocomplete="off" spellcheck="false">
+      <button class="btn" data-w-av="token">Guardar token</button>${a.ntfy_token?'<button class="btn" data-w-av="sintoken">Quitar</button>':''}</div>`:''}
     <div class="wav-c"><label><input type="checkbox" data-w-avc="reservas"${a.reservas?' checked':''}> Reservas</label><label><input type="checkbox" data-w-avc="consultas"${a.consultas?' checked':''}> Consultas de eventos</label>${'pedidos' in a?`<label><input type="checkbox" data-w-avc="pedidos"${a.pedidos?' checked':''}> Pedidos take away</label>`:''}</div>
     <div class="wav-a"><button class="btn primary" data-w-av="probar">Probar aviso</button><button class="btn" data-w-av="cambiar" title="Crea un tema nuevo: el viejo deja de recibir avisos">Cambiar tema</button><button class="btn" data-w-av="apagar">Apagar avisos</button></div>
     <div class="sub" style="margin-top:8px">El tema funciona como una contraseña: no lo compartas fuera del equipo. Si se filtra, tocá Cambiar tema y suscribite al nuevo. También se puede ver en la compu: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>
@@ -1311,6 +1317,11 @@ async function webAviso(acc){
   if(acc==='probar'){
     const {error}=await sbc.rpc('web_probar_aviso');
     toast(error?'No se pudo mandar: '+errMsg(error):'Aviso de prueba enviado: fijate en el celular'); return;
+  }
+  if(acc==='token'||acc==='sintoken'){
+    const t=acc==='token'?($('ntfyTok').value||'').trim():null;
+    if(acc==='token'&&!/^tk_[A-Za-z0-9]{10,64}$/.test(t)){ toast('El token de ntfy empieza con tk_ (Account → Access tokens en ntfy.sh)'); return; }
+    webCambiar('web_avisos',1,{ntfy_token:t,actualizado:new Date().toISOString()},t?'Token guardado: tocá Probar aviso':'Token quitado'); return;
   }
   if(acc==='cambiar'&&!confirm('¿Crear un tema nuevo? El celular que esté suscripto al viejo deja de recibir avisos hasta que se suscriba al nuevo.')) return;
   if(acc==='apagar'&&!confirm('¿Apagar los avisos de reservas?')) return;

@@ -1257,3 +1257,40 @@ end;
 $$;
 revoke all on function public.agora_marcar(text, bigint, boolean, int, text) from public;
 grant execute on function public.agora_marcar(text, bigint, boolean, int, text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 15. Avisos ntfy con cuenta propia (token)
+-- ---------------------------------------------------------------
+-- Sin cuenta, ntfy.sh limita los mensajes por dirección IP, y la de Supabase la
+-- comparten muchos proyectos: el cupo diario se agota ("429 daily message quota
+-- reached") y no llegan los avisos. Con el token de una cuenta gratis de ntfy.sh,
+-- el límite pasa a ser el de esa cuenta. El token se pega en el admin (panel
+-- Avisos al celular) y queda solo en esta tabla, que solo leen los admins.
+
+alter table public.web_avisos add column if not exists ntfy_token text
+  check (ntfy_token is null or ntfy_token ~ '^tk_[A-Za-z0-9]{10,64}$');
+
+create or replace function public._aviso_ntfy(p_tema text, p_titulo text, p_mensaje text, p_tag text, p_prioridad int default 3)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_token text;
+begin
+  if p_tema is null then return; end if;
+  select ntfy_token into v_token from public.web_avisos where id = 1;
+  perform net.http_post(
+    url  := 'https://ntfy.sh/',
+    body := jsonb_build_object(
+      'topic', p_tema, 'title', p_titulo, 'message', p_mensaje,
+      'tags', jsonb_build_array(p_tag), 'priority', p_prioridad,
+      'click', 'https://admin.terrysburgers.com/'),
+    headers := case when v_token is null then '{"Content-Type": "application/json"}'::jsonb
+                    else jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_token) end);
+exception when others then
+  raise warning 'aviso ntfy no enviado: %', sqlerrm;   -- nunca frena la reserva ni el pedido
+end;
+$$;
+revoke all on function public._aviso_ntfy(text, text, text, text, int) from public, anon, authenticated;
