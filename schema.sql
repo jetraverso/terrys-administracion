@@ -1845,3 +1845,22 @@ begin
 end;
 $$;
 revoke all on function public._carta_variante(public.productos, text) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 20. Postres: tres Franui (Leche, Negro y Pink)
+-- ---------------------------------------------------------------
+-- Cada uno con su producto de Ágora: FRANUI LECHE 2053, FRANUI AMARGO 2054, FRANUI ROSADO 3368.
+-- Los dos nuevos arrancan con la misma foto del Franui; se cambia en el admin.
+update public.productos
+   set nombre = 'Franui Leche',
+       descripcion = 'Frambuesas congeladas bañadas en chocolate blanco y chocolate con leche',
+       agora_id = 2053, orden = 10, actualizado = now()
+ where id = 'franui';
+insert into public.productos (id, categoria, nombre, descripcion, precio, agora_id, foto_url, take_away, terraza, activo, orden)
+select v.id, 'postres', v.nombre, v.descripcion, 5.50, v.agora_id, f.foto_url, true, true, true, v.orden
+  from (values
+    ('franui-negro', 'Franui Negro', 'Frambuesas congeladas bañadas en chocolate blanco y chocolate negro', 2054, 20),
+    ('franui-pink',  'Franui Pink',  'Frambuesas frescas bañadas en chocolate blanco y chocolate de frambuesa', 3368, 30)
+  ) as v(id, nombre, descripcion, agora_id, orden)
+  left join public.productos f on f.id = 'franui'
+on conflict (id) do nothing;
