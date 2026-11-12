@@ -1101,7 +1101,8 @@ setInterval(()=>{
   if(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#reportes select')) return;
   renderPedidosVista();
 },30000);
-const P_CAT={burgers:'Hamburguesas',picar:'Para picar',bebidas:'Bebidas',postres:'Postres'};
+const P_CAT={burgers:'Hamburguesas',menus:'Menús',picar:'Para picar',bebidas:'Bebidas',postres:'Postres'};
+let agoraCat=null;   // catálogo de Ágora (parte 18): id → {nombre, precio, roles, activo, actualizado}
 const precioTxt=v=>v==null||v===''?'':(+v).toFixed(2).replace('.',',');
 const aPrecio=t=>{ const v=String(t||'').trim().replace(/\s|€/g,'').replace(',','.'); if(v==='') return null; const n=+v; return Number.isFinite(n)&&n>=0&&n<10000?Math.round(n*100)/100:NaN; };
 async function renderPedidosVista(){
@@ -1117,13 +1118,25 @@ async function renderPedidosVista(){
     if(tk!==repTk||vista!=='pedidos') return;
     html=panelPedidos(r.error?{error:errMsg(r.error)}:r.data,hoy);
   }else{
-    const r=await sbc.from('productos').select('*').order('orden').order('nombre');
+    const [r,c]=await Promise.all([sbc.from('productos').select('*').order('orden').order('nombre'),
+      sbc.from('agora_catalogo').select('id,nombre,precio,roles,activo,actualizado')]);
     if(tk!==repTk||vista!=='pedidos') return;
+    agoraCat=c.error?null:Object.fromEntries(c.data.map(x=>[x.id,x]));
     if(r.error){ html=`<div class="panel"><h2>Productos</h2><div class="aviso">Falta correr la parte 13 del schema.sql en Supabase (${esc(errMsg(r.error))}).</div></div>`; }
     else { prodLista=r.data; html=(prodEdit?panelProdEditor():'')+panelProductos(prodLista); }
   }
   cont.innerHTML=`<div class="wped">${seg}${html}</div>`;
   contarPendientesWeb();
+}
+const agoraPrecio=id=>agoraCat&&id&&agoraCat[id]&&agoraCat[id].activo?agoraCat[id].precio:null;
+function agoraFila(p){
+  if(!p.agora_id) return '<small class="pag"><b style="color:var(--danger)">Sin código de Ágora: no entra en Ágora</b></small>';
+  const cod=`Ágora ${esc(p.agora_id)}${p.agora_id_doble?` · doble ${esc(p.agora_id_doble)}`:''}`;
+  if(!agoraCat) return `<small class="pag">${cod}</small>`;
+  const a=agoraCat[p.agora_id];
+  if(!a||!a.activo) return `<small class="pag">${cod} · <b style="color:var(--danger)">no está en el catálogo de Ágora</b></small>`;
+  const grupos=(a.roles||[]).filter(g=>(g.opciones||[]).length).map(g=>{ const t=String(g.nombre).toLowerCase(); return t[0].toUpperCase()+t.slice(1); });
+  return `<small class="pag">${cod} · ${esc(a.nombre)}${grupos.length?` · opciones: ${esc(grupos.join(', '))}`:''}</small>`;
 }
 function panelProductos(lista){
   const cats=Object.keys(P_CAT);
@@ -1132,8 +1145,8 @@ function panelProductos(lista){
     const visibles=l.filter(p=>p.activo&&p.take_away).length;
     return `<tr class="pcat"><td colspan="7">${P_CAT[c]}<span>${l.length} producto${l.length>1?'s':''} · ${visibles} en take away</span></td></tr>`+l.map(p=>`<tr class="${p.activo?'':'p-off'}">
       <td class="pfoto">${p.foto_url?`<img src="${esc(p.foto_url)}" alt="" loading="lazy">`:'<i></i>'}</td>
-      <td><b>${esc(p.nombre)}</b>${p.descripcion?`<small>${esc(p.descripcion)}</small>`:''}${p.salsas&&p.salsas.length?`<small>Salsas: ${esc(p.salsas.join(', '))}</small>`:''}${'agora_id' in p?`<small class="pag">${p.agora_id?`Ágora ${esc(p.agora_id)}${p.agora_id_doble?` · doble ${esc(p.agora_id_doble)}`:''}`:'<b style="color:var(--danger)">Sin código de Ágora</b>'}</small>`:''}</td>
-      <td class="ppre">${precioTxt(p.precio)} €${p.precio_doble!=null?`<small>doble ${precioTxt(p.precio_doble)} €</small>`:''}</td>
+      <td><b>${esc(p.nombre)}</b>${p.descripcion?`<small>${esc(p.descripcion)}</small>`:''}${p.salsas&&p.salsas.length?`<small>Salsas: ${esc(p.salsas.join(', '))}</small>`:''}${'agora_id' in p?agoraFila(p):''}</td>
+      <td class="ppre">${precioTxt(agoraPrecio(p.agora_id)??p.precio)} €${p.precio_doble!=null||p.agora_id_doble?`<small>doble ${precioTxt(agoraPrecio(p.agora_id_doble)??p.precio_doble)} €</small>`:''}</td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="take_away" data-p-id="${esc(p.id)}"${p.take_away?' checked':''}>Take away</label></td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="terraza" data-p-id="${esc(p.id)}"${p.terraza?' checked':''}>Terraza</label></td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="activo" data-p-id="${esc(p.id)}"${p.activo?' checked':''}>Activo</label></td>
@@ -1142,7 +1155,8 @@ function panelProductos(lista){
   }).join('');
   return `<div class="panel">
     <div class="wcab"><h2>Productos</h2><div class="wseg"><button class="btn primary" data-p-nuevo>+ Nuevo producto</button></div></div>
-    <div class="sub">Lo que se ve en terrysburgers.com/pedido/ y lo que se cobra. <b>Take away</b>: aparece en la página de pedidos. <b>Terraza</b>: queda marcado para cuando se pueda pedir desde la mesa. <b>Activo</b>: sacalo para esconderlo en todos lados sin borrarlo.</div>
+    <div class="sub">Lo que se ve en terrysburgers.com/pedido/. El <b>precio y las opciones</b> (extras, quitar, salsas, partes del menú) salen de <b>Ágora</b> por el código de cada producto: se cambian en Ágora y la web se actualiza sola (el TPV sube el catálogo cada hora)${agoraCat?(()=>{ const f=Object.values(agoraCat).map(x=>x.actualizado).sort().pop(); return f?` · último catálogo: ${new Date(f).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`:' · todavía no llegó el catálogo del TPV'; })():''}. Acá elegís qué se muestra, el nombre, la foto y la descripción. <b>Take away</b>: aparece en la página de pedidos. <b>Terraza</b>: para cuando se pueda pedir desde la mesa. <b>Activo</b>: sacalo para esconderlo sin borrarlo.</div>
+    ${agoraCat?`<datalist id="agoraLista">${Object.values(agoraCat).filter(x=>x.activo).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(x=>`<option value="${x.id}">${esc(x.nombre)} · ${precioTxt(x.precio)} €</option>`).join('')}</datalist>`:''}
     ${lista.length?`<div class="wscroll"><table class="wtabla ptabla"><tbody>${filas}</tbody></table></div>`:'<div class="vacio">Todavía no hay productos.</div>'}
   </div>`;
 }
@@ -1157,13 +1171,13 @@ function panelProdEditor(){
       <label class="ancho">Nombre<input name="nombre" maxlength="60" required value="${esc(p.nombre||'')}" placeholder="Ej. Terry"></label>
       <label>Orden<input name="orden" type="number" min="0" max="9999" value="${p.orden??100}" title="Los números más chicos van primero"></label>
       <label class="todo">Descripción<input name="descripcion" maxlength="200" value="${esc(p.descripcion||'')}" placeholder="Ej. Con doble cheddar"></label>
-      <label>Precio${p.categoria==='burgers'?' simple':''} (€)<input name="precio" inputmode="decimal" required value="${esc(precioTxt(p.precio))}" placeholder="7,90"></label>
+      <label>Precio${p.categoria==='burgers'?' simple':''} (€)${p.agora_id&&agoraPrecio(p.agora_id)!=null?` <span style="font-weight:400">· Ágora: ${precioTxt(agoraPrecio(p.agora_id))} €</span>`:''}<input name="precio" inputmode="decimal" required value="${esc(precioTxt(p.precio))}" placeholder="7,90"></label>
       <label>Precio doble (€)<input name="precio_doble" inputmode="decimal" value="${esc(precioTxt(p.precio_doble))}" placeholder="Solo si tiene versión doble"></label>
       <label class="ancho">Salsas a elegir<input name="salsas" maxlength="200" value="${esc((p.salsas||[]).join(', '))}" placeholder="Ej. Barbacoa, Cheddar, Alioli (vacío = sin salsa)"></label>
-      ${conAgora()?`<label>Código Ágora${p.categoria==='burgers'?' simple':''}<input name="agora_id" inputmode="numeric" value="${esc(p.agora_id??'')}" placeholder="Ej. 3202"></label>
-      <label>Código Ágora doble<input name="agora_id_doble" inputmode="numeric" value="${esc(p.agora_id_doble??'')}" placeholder="Solo si tiene doble"></label>
+      ${conAgora()?`<label>Código Ágora${p.categoria==='burgers'||p.categoria==='menus'?' simple':''}<input name="agora_id" list="agoraLista" value="${esc(p.agora_id??'')}" placeholder="Escribí el nombre o el código"></label>
+      <label>Código Ágora doble<input name="agora_id_doble" list="agoraLista" value="${esc(p.agora_id_doble??'')}" placeholder="Solo si tiene doble"></label>
       <label class="ancho">Salsas en Ágora<input name="agora_salsas" maxlength="300" value="${esc(salsasTxt(p.agora_salsas))}" placeholder="Ej. Barbacoa=2167, Cheddar=2166"></label>
-      <div class="sub todo" style="margin:0">Con estos códigos el pedido entra a Ágora con el producto correcto (versión TAKE AWAY). El código es el número del producto en Ágora.</div>`:''}
+      <div class="sub todo" style="margin:0">Con estos códigos la web toma de Ágora el precio y las opciones, y el pedido entra con el producto correcto (versión TAKE AWAY). Escribí parte del nombre y elegí de la lista. «Salsas en Ágora» y los precios de acá solo se usan si el producto no está en el catálogo de Ágora.</div>`:''}
       <div class="pfotobox">${foto?`<img src="${esc(foto)}" alt="">`:'<i></i>'}
         <label class="btn" style="cursor:pointer">${foto?'Cambiar foto':'Subir foto'}<input type="file" accept="image/*" data-p-foto hidden></label>
         ${foto?'<button type="button" class="btn" data-p-sinfoto>Quitar foto</button>':''}

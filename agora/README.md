@@ -46,6 +46,7 @@ Los pedidos take away de terrysburgers.com/pedido/ entran solos en Ágora (solap
 - `pedidos-agora.json`: serie, cliente WEB (`clienteId`), TPV, local, usuario, centro de venta TAKE AWAY y tarifa. Sin secretos.
 - Qué producto de Ágora es cada producto de la web: en el admin, solapa Pedidos → Productos → Editar (código Ágora, código doble y salsas `Barbacoa=2167, …`).
 - Aviso al celular de cada pedido nuevo: lo manda este mismo programa a ntfy desde la conexión del local (parte 16 del schema: `tpv_avisos_pendientes` / `tpv_aviso_marcar`), porque ntfy.sh gratis limita por IP y la de Supabase es compartida. Solo con el TPV prendido; pedidos de las últimas 6 horas.
+- Catálogo para la web (parte 18): al cargar los datos de Ágora (al arrancar y cada hora) sube a Supabase los productos con precio en la tarifa del centro TAKE AWAY y sus grupos de opciones (`agora_subir_catalogo`). La página de pedidos toma de ahí precios, extras, quitar, salsas y menús; cada opción elegida viaja a Ágora como `Addin` del producto.
 - Registro: `enviar-pedidos.log` al lado del script.
 
 Puesta en marcha (una vez):

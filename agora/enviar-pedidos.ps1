@@ -95,6 +95,43 @@ function CargarMaestros {
   foreach ($x in (AgoraMaestro 'Vats')) { $script:M.Vat[[int]$x.Id] = $x }
   $script:maestrosHora = Get-Date
   Escribir ("Datos de Agora cargados: {0} productos." -f $script:M.Prod.Count)
+  try { SubirCatalogo } catch { Escribir "Catalogo: $($_.Exception.Message)" }
+}
+
+# Catalogo para la web (parte 18): productos vendibles con precio en la tarifa del centro TAKE AWAY
+# y sus grupos de opciones (EXTRA, QUITAR, SALSA, menus...). Solo se sube si cambio.
+$huellaCatalogo = ''
+function PrecioTarifa($p, $campo) {
+  foreach ($x in @($p.Prices)) { if ($x -and [int]$x.PriceListId -eq [int]$opc.tarifaId) { return $x.$campo } }
+  return $null
+}
+function SubirCatalogo {
+  $porFormato = @{}
+  foreach ($p in $M.Prod.Values) { if (-not $p.DeletionDate) { $porFormato[[int]$p.BaseSaleFormatId] = $p } }
+  $lista = @()
+  foreach ($p in $M.Prod.Values) {
+    if ($p.DeletionDate -or -not $p.SaleableAsMain) { continue }
+    $precio = PrecioTarifa $p 'MainPrice'
+    if ($null -eq $precio) { continue }
+    $roles = @()
+    foreach ($r in @($p.AddinRoles)) {
+      if (-not $r) { continue }
+      $ops = @()
+      foreach ($a in @($r.Addins)) {
+        if (-not $a) { continue }
+        $q = $porFormato[[int]$a.AddinSaleFormatId]
+        if ($q) { $pa = PrecioTarifa $q 'AddinPrice'; $ops += [ordered]@{ id = [int]$q.Id; nombre = [string]$q.Name; precio = $(if ($null -ne $pa) { [double]$pa } else { 0.0 }) } }
+      }
+      $roles += [ordered]@{ nombre = [string]$r.Name; min = [int]$r.MinAddins; max = [int]$r.MaxAddins; opciones = $ops }
+    }
+    $lista += [ordered]@{ id = [int]$p.Id; nombre = [string]$p.Name; cocina = (N $p.PreparationOrderId $M.PO); precio = [double]$precio; roles = $roles }
+  }
+  if (-not $lista.Count) { return }
+  $json = $lista | Sort-Object { $_.id } | ConvertTo-Json -Depth 8 -Compress
+  if ($json -eq $script:huellaCatalogo -or $Simular) { return }
+  $n = Supabase 'agora_subir_catalogo' @{ p_token = $cfg.integracionToken; p_productos = @($lista) }
+  $script:huellaCatalogo = $json
+  Escribir "Catalogo de Agora subido a la web: $n productos."
 }
 function N($id, $tabla) { if ($null -ne $id -and $tabla.ContainsKey([int]$id)) { $tabla[[int]$id] } else { '' } }
 
@@ -122,17 +159,23 @@ function ArmarPedido($p) {
       UnitPrice = $precio; DiscountRate = 0.0; CashDiscount = 0.0; OfferId = $null; OfferCode = ''; TotalAmount = $tot
       PriceListId = [int]$opc.tarifaId
     }
-    if ($l.agora_salsa) {
-      $sa = $M.Prod[[int]$l.agora_salsa]
-      if (-not $sa) { throw "El codigo de Agora $($l.agora_salsa) (salsa '$($l.salsa)') no existe en Agora." }
+    # extras / quitar / salsa / partes del menu: van colgados del producto, a la misma cocina (como en Agora)
+    $adds = @(); $sumaAdd = 0.0
+    foreach ($ad in @($l.addins | ForEach-Object { $_ })) {
+      if (-not $ad -or -not $ad.id) { continue }
+      $sa = $M.Prod[[int]$ad.id]
+      if (-not $sa) { throw "El codigo de Agora $($ad.id) ('$($ad.nombre)') no existe en Agora." }
       $sv = $M.Vat[[int]$sa.VatId]
-      $linea.Addins = @([ordered]@{
+      $pa = if ($ad.precio) { [double]$ad.precio } else { 0.0 }
+      $sumaAdd += $pa
+      $adds += [ordered]@{
         ProductId = [int]$sa.Id; ProductName = $sa.Name; SaleFormatId = [int]$sa.BaseSaleFormatId; SaleFormatName = $sa.Name; SaleFormatRatio = 1.0
-        MainBarcode = ''; ProductPrice = 0.0; VatId = [int]$sa.VatId; VatRate = [double]$sv.VatRate; SurchargeRate = [double]$sv.SurchargeRate
+        MainBarcode = ''; ProductPrice = $pa; VatId = [int]$sa.VatId; VatRate = [double]$sv.VatRate; SurchargeRate = [double]$sv.SurchargeRate
         ProductCostPrice = $(if ($sa.CostPrice) { [double]$sa.CostPrice } else { 0.0 })
         PreparationTypeId = $pr.PreparationTypeId; PreparationTypeName = (N $pr.PreparationTypeId $M.PT); PLU = ''; FamilyId = $null; FamilyName = ''
-      })
+      }
     }
+    if ($adds.Count) { $linea.Addins = $adds; $linea.ProductPrice = [math]::Round($precio - $sumaAdd, 2) }
     $lineas += $linea; $i++
     $k = '{0}|{1}' -f $vat.VatRate, $vat.SurchargeRate
     if (-not $impuestos.ContainsKey($k)) { $impuestos[$k] = @{ VatRate = [double]$vat.VatRate; SurchargeRate = [double]$vat.SurchargeRate; Gross = 0.0 } }

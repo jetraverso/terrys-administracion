@@ -1409,3 +1409,344 @@ end;
 $$;
 revoke all on function public.agora_estados(text, jsonb) from public;
 grant execute on function public.agora_estados(text, jsonb) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 18. Carta de pedidos sincronizada con Ágora (extras, quitar, salsas y menús)
+-- ---------------------------------------------------------------
+-- El TPV sube cada hora el catálogo de Ágora (agora_subir_catalogo): producto,
+-- precio de la tarifa Local y sus grupos de opciones (EXTRA, QUITAR, SALSA,
+-- HAMBURGUESA SIMPLE, BEBIDA…, con mínimo, máximo y precio de cada opción).
+-- La tabla productos sigue siendo la carta de la web (qué se muestra, nombre
+-- lindo, foto, descripción, orden), pero el precio y las opciones salen de
+-- Ágora por agora_id / agora_id_doble. web_carta() arma la carta para la página
+-- y web_pedir() valida y cobra las opciones con esos mismos datos.
+
+create table if not exists public.agora_catalogo (
+  id          int primary key,             -- ProductId de Ágora
+  nombre      text not null,
+  cocina      text,                        -- orden de preparación (Bebidas, Fritos, Hamburguesas…)
+  precio      numeric(6,2),                -- tarifa Local (la que usa el centro TAKE AWAY)
+  roles       jsonb not null default '[]', -- [{nombre, min, max, opciones:[{id, nombre, precio}]}]
+  activo      boolean not null default true,
+  actualizado timestamptz not null default now()
+);
+alter table public.agora_catalogo enable row level security;
+revoke all on public.agora_catalogo from anon, authenticated;
+grant select on public.agora_catalogo to authenticated;
+drop policy if exists agora_catalogo_admin on public.agora_catalogo;
+create policy agora_catalogo_admin on public.agora_catalogo for select to authenticated using (public.es_admin());
+
+-- Menús como categoría propia.
+alter table public.productos drop constraint if exists productos_categoria_check;
+alter table public.productos add constraint productos_categoria_check
+  check (categoria in ('burgers', 'menus', 'picar', 'bebidas', 'postres'));
+
+-- El TPV sube el catálogo entero; lo que ya no viene queda inactivo.
+create or replace function public.agora_subir_catalogo(p_token text, p_productos jsonb)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_n int;
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  if jsonb_typeof(p_productos) <> 'array' or jsonb_array_length(p_productos) = 0 then return 0; end if;
+  insert into public.agora_catalogo (id, nombre, cocina, precio, roles, activo, actualizado)
+  select (x ->> 'id')::int, left(x ->> 'nombre', 120), left(x ->> 'cocina', 60),
+         nullif(x ->> 'precio', '')::numeric, coalesce(x -> 'roles', '[]'::jsonb), true, now()
+    from jsonb_array_elements(p_productos) x
+  on conflict (id) do update set nombre = excluded.nombre, cocina = excluded.cocina, precio = excluded.precio,
+    roles = excluded.roles, activo = true, actualizado = now();
+  get diagnostics v_n = row_count;
+  update public.agora_catalogo set activo = false, actualizado = now()
+   where activo and id not in (select (x ->> 'id')::int from jsonb_array_elements(p_productos) x);
+  return v_n;
+end;
+$$;
+revoke all on function public.agora_subir_catalogo(text, jsonb) from public;
+grant execute on function public.agora_subir_catalogo(text, jsonb) to anon, authenticated;
+
+-- "EXTRA MEDALLÓN" → "Extra medallón", "POTE ALIOLI" → "Alioli", "RUMPI DOBLE TAKE AWAY" → "Rumpi doble"
+create or replace function public._nombre_lindo(t text)
+returns text
+language sql
+immutable
+as $$
+  select case when x is null or x = '' then x
+              else upper(left(x, 1)) || translate(lower(substr(x, 2)), 'ÁÉÍÓÚÑÜÀÈÌÒÙÇ', 'áéíóúñüàèìòùç') end
+    from (select btrim(regexp_replace(regexp_replace(t, '\s+TAKE\s+AWAY\s*$', '', 'i'), '^POTE\s+', '', 'i')) as x) s;
+$$;
+
+-- Una variante de un producto de la web: precio y opciones (de Ágora si está en el catálogo;
+-- si no, el precio del admin y, si tiene salsas cargadas a mano, un grupo "Salsa").
+create or replace function public._carta_variante(pr public.productos, p_var text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_aid int := case when p_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+  c public.agora_catalogo;
+  v_roles jsonb := '[]';
+begin
+  select * into c from public.agora_catalogo where id = v_aid and activo;
+  if c.id is not null then
+    select coalesce(jsonb_agg(jsonb_build_object(
+             'nombre', public._nombre_lindo(r ->> 'nombre'),
+             'min', coalesce((r ->> 'min')::int, 0), 'max', greatest(coalesce((r ->> 'max')::int, 1), 1),
+             'opciones', (select coalesce(jsonb_agg(jsonb_build_object(
+                                 'id', (o ->> 'id')::int, 'nombre', public._nombre_lindo(o ->> 'nombre'),
+                                 'precio', coalesce(nullif(o ->> 'precio', '')::numeric, 0))), '[]'::jsonb)
+                            from jsonb_array_elements(r -> 'opciones') o))), '[]'::jsonb)
+      into v_roles
+      from jsonb_array_elements(c.roles) r
+     where jsonb_array_length(coalesce(r -> 'opciones', '[]'::jsonb)) > 0;
+  elsif coalesce(cardinality(pr.salsas), 0) > 0 then
+    v_roles := jsonb_build_array(jsonb_build_object('nombre', 'Salsa', 'min', 1, 'max', 1,
+      'opciones', (select jsonb_agg(jsonb_build_object(
+                      'id', coalesce((select value::int from jsonb_each_text(coalesce(pr.agora_salsas, '{}')) where lower(key) = lower(s) limit 1), -n::int),
+                      'nombre', s, 'precio', 0) order by n)
+                     from unnest(pr.salsas) with ordinality as u(s, n))));
+  end if;
+  return jsonb_build_object(
+    'v', coalesce(p_var, ''), 'agora_id', v_aid,
+    'precio', coalesce(c.precio, case when p_var = 'doble' then pr.precio_doble else pr.precio end),
+    'roles', v_roles);
+end;
+$$;
+revoke all on function public._carta_variante(public.productos, text) from public, anon, authenticated;
+
+-- Carta para terrysburgers.com/pedido/ (productos activos con take away).
+create or replace function public.web_carta()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', p.id, 'categoria', p.categoria, 'nombre', p.nombre, 'descripcion', p.descripcion,
+           'foto_url', p.foto_url,
+           'variantes', case when p.agora_id_doble is not null or p.precio_doble is not null
+                             then jsonb_build_array(public._carta_variante(p, 'simple'), public._carta_variante(p, 'doble'))
+                             else jsonb_build_array(public._carta_variante(p, null)) end)
+         order by p.orden, p.nombre), '[]'::jsonb)
+    from public.productos p
+   where p.activo and p.take_away;
+$$;
+revoke all on function public.web_carta() from public;
+grant execute on function public.web_carta() to anon, authenticated;
+
+-- Pedido take away: cobra con los precios y opciones de la carta (Ágora).
+-- items: [{id, variante: 'simple'|'doble'|null, cant, opciones: [id de Ágora, ...]}]
+create or replace function public.web_pedir(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
+  v_dia   date;
+  v_hora  time;
+  v_tel   text := public._txt(p ->> 'telefono', 30);
+  v_it    jsonb;
+  v_pr    public.productos;
+  v_doble boolean;
+  v_var   text;
+  v_cant  int;
+  v_c     jsonb;
+  v_r     jsonb;
+  v_ops   int[];
+  v_sel   jsonb;
+  v_n     int;
+  v_usadas int;
+  v_precio numeric(8,2);
+  v_lineas jsonb := '[]';
+  v_unid  int := 0;
+  v_total numeric(8,2) := 0;
+  v_pid   bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then          -- campo trampa para bots
+    return jsonb_build_object('ok', true);
+  end if;
+  begin
+    v_dia  := (p ->> 'dia')::date;
+    v_hora := (p ->> 'hora')::time;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_dia is null or v_dia < v_hoy or v_dia > v_hoy + 1 then
+    raise exception 'día fuera de rango' using errcode = '22023';
+  end if;
+  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
+     or not (v_hora between time '13:15' and time '15:30' or v_hora between time '20:15' and time '23:00') then
+    raise exception 'horario sin pedidos' using errcode = '22023';
+  end if;
+  if v_dia = v_hoy and v_hora < v_ahora + interval '30 minutes' then
+    raise exception 'horario pasado' using errcode = '22023';
+  end if;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if public._txt(p ->> 'nombre', 80) is null or char_length(public._txt(p ->> 'nombre', 80)) < 2 then
+    raise exception 'falta el nombre' using errcode = '22023';
+  end if;
+  if jsonb_typeof(p -> 'items') <> 'array' or jsonb_array_length(p -> 'items') not between 1 and 60 then
+    raise exception 'pedido vacío' using errcode = '22023';
+  end if;
+
+  for v_it in select * from jsonb_array_elements(p -> 'items') loop
+    select * into v_pr from public.productos
+      where id = left(coalesce(v_it ->> 'id', ''), 40) and activo and take_away;
+    v_var := nullif(v_it ->> 'variante', '');
+    begin v_cant := (v_it ->> 'cant')::int; exception when others then v_cant := null; end;
+    if v_pr.id is null or v_cant is null or v_cant not between 1 and 50 then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    v_doble := v_pr.agora_id_doble is not null or v_pr.precio_doble is not null;
+    if v_doble then
+      if v_var is null or v_var not in ('simple', 'doble') then raise exception 'producto inválido' using errcode = '22023'; end if;
+    elsif v_var is not null then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    v_c := public._carta_variante(v_pr, v_var);
+    if (v_c ->> 'precio') is null then raise exception 'producto inválido' using errcode = '22023'; end if;
+
+    -- opciones elegidas (ids de Ágora); compatibilidad con la página vieja: "salsa" por nombre
+    v_ops := array(select distinct (x)::int from jsonb_array_elements_text(coalesce(v_it -> 'opciones', '[]'::jsonb)) x);
+    if cardinality(v_ops) = 0 and nullif(v_it ->> 'salsa', '') is not null then
+      v_ops := array(select (o ->> 'id')::int from jsonb_array_elements(v_c -> 'roles') r, jsonb_array_elements(r -> 'opciones') o
+                      where lower(o ->> 'nombre') = lower(v_it ->> 'salsa') limit 1);
+    end if;
+    if cardinality(v_ops) > 30 then raise exception 'producto inválido' using errcode = '22023'; end if;
+
+    -- cada grupo dentro de su mínimo y máximo; ninguna opción fuera de los grupos
+    v_usadas := 0;
+    for v_r in select * from jsonb_array_elements(v_c -> 'roles') loop
+      select count(*) into v_n from jsonb_array_elements(v_r -> 'opciones') o where (o ->> 'id')::int = any(v_ops);
+      if v_n < (v_r ->> 'min')::int or v_n > (v_r ->> 'max')::int then
+        raise exception 'producto inválido' using errcode = '22023';
+      end if;
+    end loop;
+    -- elegidas, en el orden de los grupos de Ágora (hamburguesa, patatas, bebida, quitar…)
+    select coalesce(jsonb_agg(o order by ri, oi), '[]'::jsonb) into v_sel
+      from (select distinct on ((o ->> 'id')::int) o, ri, oi
+              from jsonb_array_elements(v_c -> 'roles') with ordinality r(r, ri),
+                   jsonb_array_elements(r -> 'opciones') with ordinality x(o, oi)
+             where (o ->> 'id')::int = any(v_ops)
+             order by (o ->> 'id')::int, ri, oi) s;
+    if jsonb_array_length(v_sel) <> cardinality(v_ops) then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+
+    v_precio := (v_c ->> 'precio')::numeric + coalesce((select sum((o ->> 'precio')::numeric) from jsonb_array_elements(v_sel) o), 0);
+    v_lineas := v_lineas || jsonb_build_object(
+      'id', v_pr.id, 'nombre', v_pr.nombre,
+      'extra', nullif(concat_ws(' · ', initcap(v_var),
+                 (select string_agg(o ->> 'nombre', ', ' order by n) from jsonb_array_elements(v_sel) with ordinality x(o, n))), ''),
+      'cant', v_cant, 'precio', v_precio,
+      'agora_id', (v_c ->> 'agora_id')::int,
+      'addins', (select coalesce(jsonb_agg(jsonb_build_object('id', (o ->> 'id')::int, 'nombre', o ->> 'nombre', 'precio', (o ->> 'precio')::numeric)), '[]'::jsonb)
+                   from jsonb_array_elements(v_sel) o where (o ->> 'id')::int > 0));
+    v_unid  := v_unid + v_cant;
+    v_total := v_total + v_cant * v_precio;
+  end loop;
+  if v_unid > 200 then raise exception 'pedido demasiado grande' using errcode = '22023'; end if;
+
+  if (select count(*) from public.pedidos_take where telefono = v_tel and creado > now() - interval '1 day') >= 5
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
+  end if;
+
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total)
+  values (v_dia, v_hora, public._txt(p ->> 'nombre', 80), v_tel, public._txt(p ->> 'comentario', 500),
+          v_lineas, v_unid, v_total)
+  returning id into v_pid;
+  return jsonb_build_object('ok', true, 'id', v_pid, 'total', v_total);
+end;
+$$;
+revoke all on function public.web_pedir(jsonb) from public;
+grant execute on function public.web_pedir(jsonb) to anon, authenticated;
+
+-- Para el TPV: las líneas nuevas ya traen agora_id y addins; las viejas se resuelven como antes.
+create or replace function public.agora_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r public.pedidos_take;
+  l jsonb;
+  pr public.productos;
+  v_extra text; v_var text; v_salsa text; v_agora int; v_addin int; v_addins jsonb;
+  v_lineas jsonb;
+  v_out jsonb := '[]';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.integraciones set ultimo_uso = now() where nombre = 'agora';
+  for r in select * from public.pedidos_take
+            where estado <> 'cancelado' and dia >= v_hoy
+              and (agora_estado is null or (agora_estado = 'error' and agora_intentos < 5))
+            order by creado limit 20 loop
+    v_lineas := '[]';
+    for l in select * from jsonb_array_elements(r.items) loop
+      v_extra := coalesce(l ->> 'extra', '');
+      if l ? 'agora_id' then
+        v_agora := (l ->> 'agora_id')::int;
+        v_addins := coalesce(l -> 'addins', '[]'::jsonb);
+        v_salsa := null; v_addin := null;
+      else
+        select * into pr from public.productos where id = l ->> 'id';
+        v_var   := case when lower(v_extra) in ('simple', 'doble') then lower(v_extra) end;
+        v_salsa := case when v_extra ilike 'Salsa %' then substr(v_extra, 7) end;
+        v_agora := case when v_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+        v_addin := null;
+        if v_salsa is not null and pr.agora_salsas is not null then
+          select value::int into v_addin from jsonb_each_text(pr.agora_salsas) where lower(key) = lower(v_salsa) limit 1;
+        end if;
+        v_addins := case when v_addin is not null then jsonb_build_array(jsonb_build_object('id', v_addin, 'nombre', v_salsa, 'precio', 0)) else '[]'::jsonb end;
+      end if;
+      v_lineas := v_lineas || jsonb_build_object(
+        'id', l ->> 'id', 'nombre', l ->> 'nombre', 'extra', nullif(v_extra, ''),
+        'cant', (l ->> 'cant')::int, 'precio', (l ->> 'precio')::numeric,
+        'agora_id', v_agora, 'addins', v_addins,
+        'agora_salsa', v_addin, 'salsa', v_salsa);
+    end loop;
+    v_out := v_out || jsonb_build_object(
+      'id', r.id, 'creado', r.creado, 'dia', r.dia, 'hora', to_char(r.hora, 'HH24:MI'),
+      'nombre', r.nombre, 'telefono', r.telefono, 'comentario', r.comentario,
+      'total', r.total, 'pagado', false, 'lineas', v_lineas, 'intentos', r.agora_intentos);
+  end loop;
+  return v_out;
+end;
+$$;
+revoke all on function public.agora_pendientes(text) from public;
+grant execute on function public.agora_pendientes(text) to anon, authenticated;
+
+-- Productos de Ágora (take away) que faltaban en la web. Precio de referencia: el de Ágora,
+-- que igual se toma del catálogo. Nombre, foto y descripción se completan en el admin.
+insert into public.productos (id, categoria, nombre, descripcion, precio, precio_doble, agora_id, agora_id_doble, orden) values
+  ('ferb',   'burgers', 'Ferb',   null, 11.50, 13.50, 3273, 3274, 70),
+  ('numu',   'burgers', 'Numu',   null, 10.50, 12.50, 3280, 3281, 80),
+  ('tata',   'burgers', 'Tata',   null, 10.50, 12.50, 3291, 3289, 90),
+  ('tonchi', 'burgers', 'Tonchi', null, 11.50, 13.50, 3259, 3260, 100),
+  ('pupi',   'burgers', 'Pupi',   null, 12.50, null,  3305, null, 110),
+  ('menu',   'menus',   'Menú',   'Hamburguesa, patatas fritas y bebida', 12.90, 14.90, 3227, 3228, 10),
+  ('coca-zero', 'bebidas', 'Coca-Cola Zero',   null, 2.50, null, 3188, null, 31),
+  ('fanta',     'bebidas', 'Fanta naranja',    null, 2.50, null, 3189, null, 32),
+  ('agua-gas',  'bebidas', 'Agua con gas',     null, 2.20, null, 3219, null, 11)
+on conflict (id) do nothing;
+-- "Bebidas Coca-Cola" pasa a ser la Coca-Cola común (Zero y Fanta van aparte).
+update public.productos set nombre = 'Coca-Cola' where id = 'cocacola' and nombre = 'Bebidas Coca-Cola';
+-- Las salsas de muzzarellitas, nuggets y aros ahora salen de Ágora.
