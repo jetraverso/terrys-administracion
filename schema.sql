@@ -1357,3 +1357,55 @@ end;
 $$;
 revoke all on function public.tpv_aviso_marcar(text, bigint[]) from public;
 grant execute on function public.tpv_aviso_marcar(text, bigint[]) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 17. Estado de los pedidos en Ágora → admin
+-- ---------------------------------------------------------------
+-- Cada 30 s el TPV exporta de Ágora los pedidos de la serie WEB y manda su estado
+-- (agora_estados). La API de Ágora solo distingue Pending, Cancelled e Invoiced:
+-- anulado en Ágora → 'cancelado'; cobrado (facturado) en Ágora → 'entregado'.
+
+alter table public.pedidos_take add column if not exists agora_status text;
+alter table public.pedidos_take add column if not exists agora_status_at timestamptz;
+
+-- p_estados: [{"numero": 105, "status": "Invoiced"}, ...]  → cuántos pedidos cambiaron
+create or replace function public.agora_estados(p_token text, p_estados jsonb)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  e jsonb;
+  v_status text;
+  v_n int := 0;
+  v_filas int;
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  if jsonb_typeof(p_estados) <> 'array' then return 0; end if;
+  for e in select * from jsonb_array_elements(p_estados) loop
+    v_status := left(e ->> 'status', 30);
+    update public.pedidos_take set
+      agora_status = v_status,
+      agora_status_at = now(),
+      estado = case
+        when v_status = 'Cancelled' and estado <> 'cancelado' then 'cancelado'
+        when v_status = 'Invoiced' and estado not in ('entregado', 'cancelado') then 'entregado'
+        else estado end,
+      actualizado = case
+        when (v_status = 'Cancelled' and estado <> 'cancelado')
+          or (v_status = 'Invoiced' and estado not in ('entregado', 'cancelado')) then now()
+        else actualizado end
+    where agora_numero = (e ->> 'numero')::int
+      and agora_estado = 'enviado'
+      and agora_status is distinct from v_status;
+    get diagnostics v_filas = row_count;
+    v_n := v_n + v_filas;
+  end loop;
+  return v_n;
+end;
+$$;
+revoke all on function public.agora_estados(text, jsonb) from public;
+grant execute on function public.agora_estados(text, jsonb) to anon, authenticated;

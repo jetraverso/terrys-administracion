@@ -1052,7 +1052,10 @@ async function renderWeb(){
 // Estado del envío a Ágora (lo hace enviar-pedidos.ps1 en el TPV; parte 14 del schema).
 function agoraBadge(p){
   if(!('agora_estado' in p)||p.estado==='cancelado') return '';
-  if(p.agora_estado==='enviado') return `<div class="ag ok" title="Cargado en Ágora ${p.agora_enviado?new Date(p.agora_enviado).toLocaleString('es-ES'):''}">En Ágora · WEB-${esc(p.agora_numero)}</div>`;
+  if(p.agora_estado==='enviado'){
+    const st={Pending:'pendiente',Invoiced:'cobrado',Cancelled:'anulado'}[p.agora_status]||(p.agora_status?String(p.agora_status).toLowerCase():'');
+    return `<div class="ag ok" title="Cargado en Ágora ${p.agora_enviado?new Date(p.agora_enviado).toLocaleString('es-ES'):''}${p.agora_status_at?' · estado leído '+new Date(p.agora_status_at).toLocaleTimeString('es-ES'):''}">En Ágora · WEB-${esc(p.agora_numero)}${st?' · '+esc(st):''}</div>`;
+  }
   if(p.agora_estado==='error'){
     if(/^Anterior a la conexi/.test(p.agora_error||'')) return '';
     return `<div class="ag err" title="${esc(p.agora_error||'')}">No entró en Ágora${p.agora_intentos>=5?'':' (reintentando)'}<button data-p-reagora="${p.id}" title="Volver a mandarlo">Reintentar</button></div><small>${esc(p.agora_error||'')}</small>`;
@@ -1060,10 +1063,13 @@ function agoraBadge(p){
   return `<div class="ag pen" title="El programa del TPV lo carga en Ágora en unos segundos">Esperando al TPV…</div>`;
 }
 function panelPedidos(ped,hoy){
-  const cab=n=>`<div class="wcab"><h2>Pedidos take away</h2><div class="wseg"><button class="btn${pedRango==='proximos'?' primary':''}" data-p-rango="proximos">Próximos</button><button class="btn${pedRango==='anteriores'?' primary':''}" data-p-rango="anteriores">Anteriores</button><button class="btn" data-p-recargar>Actualizar</button></div></div>
+  const cab=n=>`<div class="wcab"><h2>Pedidos take away</h2><div class="wseg"><button class="btn${pedRango==='proximos'?' primary':''}" data-p-rango="proximos">Próximos</button><button class="btn${pedRango==='anteriores'?' primary':''}" data-p-rango="anteriores">Anteriores</button><button class="btn" data-p-recargar>Actualizar</button><button class="btn${pedOcultarCanc?' primary':''}" data-p-canc title="Mostrar u ocultar los pedidos cancelados">${pedOcultarCanc?'Mostrar cancelados':'Ocultar cancelados'}</button></div></div>
     <div class="sub">${pedRango==='proximos'?`Pedidos de terrysburgers.com/pedido/ para retirar en el local (se pagan al retirar)${n?` · <b>${n} ${n>1?'nuevos':'nuevo'}</b>`:''}. Entran solos a Ágora (pedidos Delivery, serie WEB): tocá <b>Preparar</b> en el TPV para que salga en cocina. Acá pasalos a Preparando, Listo y Entregado.`:'Últimos 300 pedidos de días anteriores.'}</div>`;
   if(ped.error) return `<div class="panel">${cab(0)}<div class="aviso">Falta correr la parte 12 del schema.sql en Supabase (${esc(ped.error)}).</div></div>`;
   const nuevos=ped.filter(p=>p.estado==='nuevo').length;
+  const nCanc=ped.filter(p=>p.estado==='cancelado').length;
+  if(pedOcultarCanc) ped=ped.filter(p=>p.estado!=='cancelado');
+  if(!ped.length&&nCanc&&pedOcultarCanc) return `<div class="panel">${cab(nuevos)}<div class="vacio">Solo hay pedidos cancelados (${nCanc}, ocultos).</div></div>`;
   if(!ped.length) return `<div class="panel">${cab(0)}<div class="vacio">${pedRango==='proximos'?'No hay pedidos para hoy ni para mañana.':'No hay pedidos anteriores.'}</div></div>`;
   const optEst=v=>Object.entries(W_EST_PED).map(([k,t])=>`<option value="${k}"${k===v?' selected':''}>${t}</option>`).join('');
   const dias=new Map(); for(const p of ped){ if(!dias.has(p.dia)) dias.set(p.dia,[]); dias.get(p.dia).push(p); }
@@ -1084,10 +1090,17 @@ function panelPedidos(ped,hoy){
         <td class="wa"><a class="btn" href="${esc(waLink(p.telefono,txt))}" target="_blank" rel="noopener" title="Abre WhatsApp con un mensaje para el cliente">WhatsApp</a></td>
       </tr>`;}).join('');
   }).join('');
-  return `<div class="panel">${cab(nuevos)}<div class="wscroll"><table class="wtabla"><tbody>${filas}</tbody></table></div></div>`;
+  return `<div class="panel">${cab(nuevos)}${pedOcultarCanc&&nCanc?`<div class="sub">${nCanc} cancelado${nCanc>1?'s':''} oculto${nCanc>1?'s':''}.</div>`:''}<div class="wscroll"><table class="wtabla"><tbody>${filas}</tbody></table></div></div>`;
 }
 /* ---------- solapa Pedidos: pedidos take away + productos de la página de pedidos ---------- */
 let pedVer='pedidos', pedRango='proximos', prodEdit=null, prodFoto=null, prodLista=[];
+let pedOcultarCanc=(()=>{ try{ return localStorage.getItem('ped-ocultar-cancelados')==='1'; }catch(_){ return false; } })();
+// La lista de pedidos se actualiza sola cada 30 s (estados que llegan de Ágora, pedidos nuevos).
+setInterval(()=>{
+  if(vista!=='pedidos'||pedVer!=='pedidos'||document.visibilityState!=='visible') return;
+  if(document.activeElement&&document.activeElement.closest&&document.activeElement.closest('#reportes select')) return;
+  renderPedidosVista();
+},30000);
 const P_CAT={burgers:'Hamburguesas',picar:'Para picar',bebidas:'Bebidas',postres:'Postres'};
 const precioTxt=v=>v==null||v===''?'':(+v).toFixed(2).replace('.',',');
 const aPrecio=t=>{ const v=String(t||'').trim().replace(/\s|€/g,'').replace(',','.'); if(v==='') return null; const n=+v; return Number.isFinite(n)&&n>=0&&n<10000?Math.round(n*100)/100:NaN; };
@@ -1269,6 +1282,7 @@ $('reportes').addEventListener('click',async e=>{
   if(b.dataset.pVer){ pedVer=b.dataset.pVer; renderPedidosVista(); return; }
   if(b.dataset.pRango){ pedRango=b.dataset.pRango; renderPedidosVista(); return; }
   if(b.hasAttribute('data-p-recargar')){ renderPedidosVista(); return; }
+  if(b.hasAttribute('data-p-canc')){ pedOcultarCanc=!pedOcultarCanc; try{ localStorage.setItem('ped-ocultar-cancelados',pedOcultarCanc?'1':'0'); }catch(_){} renderPedidosVista(); return; }
   if(b.dataset.pReagora){
     const {error}=await sbc.from('pedidos_take').update({agora_estado:null,agora_error:null,agora_intentos:0}).eq('id',+b.dataset.pReagora);
     toast(error?'No se pudo: '+errMsg(error):'Se vuelve a mandar a Ágora en unos segundos'); renderPedidosVista(); return;

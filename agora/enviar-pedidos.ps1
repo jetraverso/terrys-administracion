@@ -213,9 +213,47 @@ function AvisarPedidos {
   if ($ok.Count) { Supabase 'tpv_aviso_marcar' @{ p_token = $cfg.integracionToken; p_ids = $ok } | Out-Null }
 }
 
+# ---------- estado de los pedidos en Agora -> admin (cada 30 s) ----------
+# La API de Agora solo dice Pending / Cancelled / Invoiced. Se guarda lo exportado en
+# exploracion\estados-agora.json (solo si cambia) para ver si aparece algo mas.
+$ultimosEstados = [datetime]::MinValue; $huellaEstados = ''
+function SincronizarEstados {
+  $script:ultimosEstados = Get-Date
+  $lista = @(); $crudo = @()
+  foreach ($d in 0..2) {
+    $dia = (Get-Date).Date.AddDays(-$d).ToString('yyyy-MM-dd')
+    $wc = New-Object System.Net.WebClient
+    $wc.Encoding = [Text.Encoding]::UTF8
+    $wc.Headers['Api-Token'] = $cfg.agoraToken
+    $txt = ([string]$wc.DownloadString("$base/api/export/?filter=SalesOrders&business-day=$dia")).Trim([char[]]@([char]0xFEFF, [char]32, [char]13, [char]10))
+    if ($txt.Length -lt 10) { continue }
+    foreach ($o in @(($txt | ConvertFrom-Json).SalesOrders | ForEach-Object { $_ })) {
+      if (-not $o -or $o.Serie -ne $opc.serie) { continue }
+      $lista += @{ numero = [int]$o.Number; status = [string]$o.Status }
+      $crudo += [ordered]@{ Number = $o.Number; Status = $o.Status; ScheduledPreparation = $o.ScheduledPreparation; DeliveryDate = $o.DeliveryDate; BusinessDay = $o.BusinessDay; Payments = @($o.Payments).Count; Campos = (($o.PSObject.Properties | ForEach-Object { $_.Name }) -join ',') }
+    }
+  }
+  if (-not $lista.Count) { return }
+  $huella = ($crudo | ConvertTo-Json -Depth 4 -Compress)
+  if ($huella -ne $script:huellaEstados) {
+    $script:huellaEstados = $huella
+    $dir = Join-Path $carpeta 'exploracion'; New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    [IO.File]::WriteAllText((Join-Path $dir 'estados-agora.json'), ($crudo | ConvertTo-Json -Depth 4), [Text.Encoding]::UTF8)
+  }
+  if ($Simular) { return }
+  $n = Supabase 'agora_estados' @{ p_token = $cfg.integracionToken; p_estados = $lista }
+  if ($n -and [int]$n -gt 0) { Escribir "ESTADOS: $n pedido(s) actualizados desde Agora." }
+}
+
 # ---------- una vuelta ----------
 function Vuelta {
   if (-not $M -or ((Get-Date) - $maestrosHora).TotalMinutes -ge 60) { CargarMaestros }
+  if (((Get-Date) - $ultimosEstados).TotalSeconds -ge 30) {
+    try { SincronizarEstados; $script:errEstados = $null } catch {
+      $m = $_.Exception.Message
+      if ($m -ne $script:errEstados) { Escribir "Estados: $m"; $script:errEstados = $m }
+    }
+  }
   try { AvisarPedidos; $script:errAviso = $null } catch {
     $m = $_.Exception.Message
     if ($m -ne $script:errAviso) { Escribir "Avisos: $m"; $script:errAviso = $m }   # no repetir el mismo error cada 5 s
