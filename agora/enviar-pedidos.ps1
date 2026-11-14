@@ -190,15 +190,23 @@ function ArmarPedido($p) {
   $g = [math]::Round($g, 2); $n = [math]::Round($n, 2)
 
   $nombreCliente = if ($opc.nombreEnCliente) { ('{0} - {1} (web)' -f $p.nombre, $p.hora) } else { [string]$opc.clienteNombre }
+  # Terraza (parte 21): pedido de mesa (Type = Table) en la mesa del centro TERRAZA; necesita la jornada abierta
+  $tipo = 'TakeAway'
+  $centro = [ordered]@{ Id = [int]$opc.centroId; Name = [string]$opc.centroNombre; Location = [string]$opc.centroUbicacion }
+  if ($p.mesa) {
+    $tipo = 'Table'
+    $centro = [ordered]@{ Id = [int]$opc.terrazaCentroId; Name = [string]$opc.terrazaCentroNombre; Location = [string]$p.agora_mesa }
+    $nombreCliente = ('Mesa {0} - {1} (web)' -f $p.mesa, $p.nombre)
+  }
   $pedido = [ordered]@{
-    Serie = [string]$opc.serie; Number = [int]$opc.offsetNumero + [int]$p.id; Type = 'TakeAway'
+    Serie = [string]$opc.serie; Number = [int]$opc.offsetNumero + [int]$p.id; Type = $tipo
     DeliveryDate = ('{0}T{1}:00' -f $p.dia, $p.hora); Status = 'Pending'
     Customer = [ordered]@{ Id = [long]$opc.clienteId; FiscalName = $nombreCliente; Cif = ''; Street = ''; City = ''; Region = ''; ZipCode = ''; ApplySurcharge = $false; CountryCode = 'ES'; AccountCode = '' }
     DeliveryAddress = [ordered]@{ Street = ''; City = ''; Region = ''; ZipCode = '' }
     Pos = [ordered]@{ Id = [int]$opc.posId; Name = [string]$opc.posNombre }
     Workplace = [ordered]@{ Id = [int]$opc.localId; Name = [string]$opc.localNombre }
     User = [ordered]@{ Id = [int]$opc.usuarioId; Name = [string]$opc.usuarioNombre }
-    SaleCenter = [ordered]@{ Id = [int]$opc.centroId; Name = [string]$opc.centroNombre; Location = [string]$opc.centroUbicacion }
+    SaleCenter = $centro
     GlobalId = [guid]::NewGuid().ToString(); BusinessDay = $ahora.ToString('yyyy-MM-dd'); Guests = $null; Date = $fecha
     ServiceCharge = [ordered]@{ Rate = 0.0; VatId = 1; VatRate = 0.0; SurchargeRate = 0.0; ApplyToVatIncluded = $true; IgnoreTicketDiscounts = $false; GrossAmount = 0.0; NetAmount = 0.0; VatAmount = 0.0; SurchargeAmount = 0.0 }
     Lines = $lineas
@@ -225,13 +233,14 @@ function JsonAscii($obj) {
 function TextoAviso($a) {
   $cuando = switch ($a.cuando) { 'hoy' { 'HOY' } 'manana' { 'MA' + $C.enie + 'ANA' } default { $a.dia } }
   $titulo = 'Pedido n{0} {1} {2} {3} {4}' -f $C.no, $a.id, $C.punto, $cuando, $a.hora
+  if ($a.mesa) { $titulo = 'Pedido n{0} {1} {2} TERRAZA MESA {3}' -f $C.no, $a.id, $C.punto, $a.mesa }
   $lineas = @()
   foreach ($it in @($a.items | ForEach-Object { $_ })) {
     if (-not $it) { continue }
     $lineas += ('{0}{1} {2}{3}' -f $it.cant, $C.por, $it.nombre, $(if ($it.extra) { ' (' + ([string]$it.extra).ToLower() + ')' } else { '' }))
   }
   $total = ([double]$a.total).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
-  $lineas += ('Total {0} {1} {2} se paga al retirar' -f $total, $C.eur, $C.punto)
+  $lineas += ('Total {0} {1} {2} {3}' -f $total, $C.eur, $C.punto, $(if ($a.mesa) { 'se paga en la mesa' } else { 'se paga al retirar' }))
   if ($a.comentario) { $lineas += 'Tiene comentario (ver en el admin)' }
   return @{ titulo = $titulo; mensaje = ($lineas -join "`n") }
 }

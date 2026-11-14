@@ -13,6 +13,8 @@
   "centroId": 12,
   "centroNombre": "TAKE AWAY",
   "centroUbicacion": "Take away",
+  "terrazaCentroId": 13,
+  "terrazaCentroNombre": "TERRAZA",
   "tarifaId": 2,
   "formaPagoTarjetaId": 2,
   "formaPagoTarjetaNombre": "Tarjeta de crédito",
