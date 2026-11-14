@@ -2206,3 +2206,100 @@ as $$
    where p.activo and (case when p_terraza then p.terraza else p.take_away end);
 $$;
 revoke all on function public._web_carta(boolean) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 23. Productos solo de terraza y foto de local como respaldo
+-- ---------------------------------------------------------------
+-- · Si un producto no tiene foto de take away, la página de take away usa la de local.
+-- · En la terraza, un producto es «simple / doble» también si solo tiene código doble de local.
+create or replace function public._web_carta(p_terraza boolean)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', p.id, 'categoria', p.categoria, 'nombre', p.nombre, 'descripcion', p.descripcion,
+           'foto_url', case when p_terraza then coalesce(p.foto_terraza_url, p.foto_url) else coalesce(p.foto_url, p.foto_terraza_url) end,
+           'variantes', case when p.agora_id_doble is not null or p.precio_doble is not null
+                               or (p_terraza and p.agora_id_doble_local is not null)
+                             then jsonb_build_array(public._carta_variante(p, 'simple', p_terraza), public._carta_variante(p, 'doble', p_terraza))
+                             else jsonb_build_array(public._carta_variante(p, null, p_terraza)) end)
+         order by p.orden, p.nombre), '[]'::jsonb)
+    from public.productos p
+   where p.activo and (case when p_terraza then p.terraza else p.take_away end);
+$$;
+revoke all on function public._web_carta(boolean) from public, anon, authenticated;
+
+-- Mismo criterio de simple / doble al cobrar el pedido.
+create or replace function public._pedido_lineas(p_items jsonb, p_terraza boolean, p_dia date, p_hora time)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_it jsonb; v_pr public.productos; v_doble boolean; v_var text; v_cant int; v_c jsonb; v_r jsonb;
+  v_ops int[]; v_sel jsonb; v_n int; v_precio numeric(8,2);
+  v_lineas jsonb := '[]'; v_unid int := 0; v_total numeric(8,2) := 0;
+begin
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) not between 1 and 60 then
+    raise exception 'pedido vacío' using errcode = '22023';
+  end if;
+  for v_it in select * from jsonb_array_elements(p_items) loop
+    select * into v_pr from public.productos
+      where id = left(coalesce(v_it ->> 'id', ''), 40) and activo
+        and (case when p_terraza then terraza else take_away end);
+    v_var := nullif(v_it ->> 'variante', '');
+    begin v_cant := (v_it ->> 'cant')::int; exception when others then v_cant := null; end;
+    if v_pr.id is null or v_cant is null or v_cant not between 1 and 50 then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    if v_pr.categoria = 'menus' and not (extract(isodow from p_dia) between 1 and 5 and p_hora between time '12:00' and time '16:00') then
+      raise exception 'menú fuera de horario' using errcode = '22023';
+    end if;
+    v_doble := v_pr.agora_id_doble is not null or v_pr.precio_doble is not null
+               or (p_terraza and v_pr.agora_id_doble_local is not null);
+    if v_doble then
+      if v_var is null or v_var not in ('simple', 'doble') then raise exception 'producto inválido' using errcode = '22023'; end if;
+    elsif v_var is not null then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    v_c := public._carta_variante(v_pr, v_var, p_terraza);
+    if (v_c ->> 'precio') is null then raise exception 'producto inválido' using errcode = '22023'; end if;
+    v_ops := array(select distinct (x)::int from jsonb_array_elements_text(coalesce(v_it -> 'opciones', '[]'::jsonb)) x);
+    if cardinality(v_ops) > 30 then raise exception 'producto inválido' using errcode = '22023'; end if;
+    for v_r in select * from jsonb_array_elements(v_c -> 'roles') loop
+      select count(*) into v_n from jsonb_array_elements(v_r -> 'opciones') o where (o ->> 'id')::int = any(v_ops);
+      if v_n < (v_r ->> 'min')::int or v_n > (v_r ->> 'max')::int then
+        raise exception 'producto inválido' using errcode = '22023';
+      end if;
+    end loop;
+    select coalesce(jsonb_agg(o order by ri, oi), '[]'::jsonb) into v_sel
+      from (select distinct on ((o ->> 'id')::int) o, ri, oi
+              from jsonb_array_elements(v_c -> 'roles') with ordinality r(r, ri),
+                   jsonb_array_elements(r -> 'opciones') with ordinality x(o, oi)
+             where (o ->> 'id')::int = any(v_ops)
+             order by (o ->> 'id')::int, ri, oi) s;
+    if jsonb_array_length(v_sel) <> cardinality(v_ops) then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    v_precio := (v_c ->> 'precio')::numeric + coalesce((select sum((o ->> 'precio')::numeric) from jsonb_array_elements(v_sel) o), 0);
+    v_lineas := v_lineas || jsonb_build_object(
+      'id', v_pr.id, 'nombre', v_pr.nombre,
+      'extra', nullif(concat_ws(' · ', initcap(v_var),
+                 (select string_agg(o ->> 'nombre', ', ' order by n) from jsonb_array_elements(v_sel) with ordinality x(o, n))), ''),
+      'cant', v_cant, 'precio', v_precio,
+      'agora_id', (v_c ->> 'agora_id')::int,
+      'addins', (select coalesce(jsonb_agg(jsonb_build_object('id', (o ->> 'id')::int, 'nombre', o ->> 'nombre', 'precio', (o ->> 'precio')::numeric)), '[]'::jsonb)
+                   from jsonb_array_elements(v_sel) o where (o ->> 'id')::int > 0));
+    v_unid  := v_unid + v_cant;
+    v_total := v_total + v_cant * v_precio;
+  end loop;
+  if v_unid > 200 then raise exception 'pedido demasiado grande' using errcode = '22023'; end if;
+  return jsonb_build_object('lineas', v_lineas, 'unidades', v_unid, 'total', v_total);
+end;
+$$;
+revoke all on function public._pedido_lineas(jsonb, boolean, date, time) from public, anon, authenticated;

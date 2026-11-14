@@ -1290,7 +1290,8 @@ async function renderPedidosVista(){
 }
 const agoraPrecio=id=>agoraCat&&id&&agoraCat[id]&&agoraCat[id].activo?agoraCat[id].precio:null;
 function agoraFila(p){
-  if(!p.agora_id) return '<small class="pag"><b style="color:var(--danger)">Sin código de Ágora: no entra en Ágora</b></small>';
+  if(!p.agora_id&&!p.agora_id_local) return '<small class="pag"><b style="color:var(--danger)">Sin código de Ágora: no entra en Ágora</b></small>';
+  if(!p.agora_id) return `<small class="pag">Solo terraza · Ágora ${esc(p.agora_id_local)}${p.agora_id_doble_local?`/${esc(p.agora_id_doble_local)}`:''}${p.take_away?' · <b style="color:var(--danger)">sin código de take away</b>':''}</small>`;
   const cod=`Ágora ${esc(p.agora_id)}${p.agora_id_doble?` · doble ${esc(p.agora_id_doble)}`:''}${p.agora_id_local?` · terraza ${esc(p.agora_id_local)}${p.agora_id_doble_local?`/${esc(p.agora_id_doble_local)}`:''}`:''}`;
   if(!agoraCat) return `<small class="pag">${cod}</small>`;
   const a=agoraCat[p.agora_id];
@@ -1306,7 +1307,7 @@ function panelProductos(lista){
     const visibles=l.filter(p=>p.activo&&p.take_away).length;
     return `<tr class="pcat"><td colspan="8">${P_CAT[c]}<span>${l.length} producto${l.length>1?'s':''} · ${visibles} en take away</span></td></tr>`+l.map(p=>`<tr class="${p.activo?'':'p-off'}" data-p-row="${esc(p.id)}" data-cat="${esc(c)}">
       <td class="pmov"><button type="button" class="pmover" data-p-mover="${esc(p.id)}" title="Arrastrá para cambiar el orden" aria-label="Mover ${esc(p.nombre)}"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 6h12M4 10h12M4 14h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></td>
-      <td class="pfoto"><label title="Tocá para cambiar la foto de take away">${p.foto_url?`<img src="${esc(p.foto_url)}" alt="" loading="lazy">`:'<i></i>'}<input type="file" accept="image/*" data-p-fotolista="${esc(p.id)}" hidden></label></td>
+      <td class="pfoto"><label title="Tocá para cambiar la foto de take away">${p.foto_url||p.foto_terraza_url?`<img src="${esc(p.foto_url||p.foto_terraza_url)}" alt="" loading="lazy">`:'<i></i>'}<input type="file" accept="image/*" data-p-fotolista="${esc(p.id)}" hidden></label></td>
       <td><b>${esc(p.nombre)}</b>${p.descripcion?`<small>${esc(p.descripcion)}</small>`:''}${p.salsas&&p.salsas.length?`<small>Salsas: ${esc(p.salsas.join(', '))}</small>`:''}${'agora_id' in p?agoraFila(p):''}</td>
       <td class="ppre">${precioTxt(agoraPrecio(p.agora_id)??p.precio)} €${p.precio_doble!=null||p.agora_id_doble?`<small>doble ${precioTxt(agoraPrecio(p.agora_id_doble)??p.precio_doble)} €</small>`:''}</td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="take_away" data-p-id="${esc(p.id)}"${p.take_away?' checked':''}>Take away</label></td>
@@ -1357,7 +1358,7 @@ function panelProdEditor(){
         ${conFotoLocal()?(p.mismaFoto
           ?`<div class="pfoto2"><b>Foto local / terraza</b><div class="pfimg pfimg--igual">${fotoTake?`<img src="${esc(fotoTake)}" alt="">`:''}<i>Igual a take away</i></div><div class="pfpie"><small>Destildá «Misma foto» para subir una distinta.</small></div></div>`
           :caja('local','Foto local / terraza',fotoLocal,'La ve el cliente en la página de la mesa. Sin foto usa la de take away.')):''}
-        ${caja('take','Foto take away',fotoTake,'La de terrysburgers.com/pedido/ y la de la lista. Se achica sola a 900 px.')}
+        ${caja('take','Foto take away',fotoTake,'La de terrysburgers.com/pedido/ y la de la lista; sin foto usa la de local. Se achica sola a 900 px.')}
       </div>
       ${conAgora()?`<div class="popc todo" id="pOpc">${conOpciones()?htmlOpciones():'<h3>Opciones en la página de pedidos</h3><div class="aviso">Para editar las opciones de cada producto falta correr la parte 19 del schema.sql en Supabase.</div>'}</div>`:''}
       <div class="chks">
@@ -1422,14 +1423,19 @@ function leerProdForm(f){
   };
   if(!o.salsas.length) o.salsas=null;
   if(o.nombre.length<2) return 'Falta el nombre.';
-  if(o.precio==null||Number.isNaN(o.precio)) return 'Revisá el precio (ej. 7,90).';
-  if(Number.isNaN(o.precio_doble)) return 'Revisá el precio doble (ej. 9,90) o dejalo vacío.';
   if(g('agora_id')){
     o.agora_id=aCodigo(g('agora_id').value); o.agora_id_doble=aCodigo(g('agora_id_doble').value); o.agora_salsas=aSalsas(g('agora_salsas').value);
     if(g('agora_id_local')){ o.agora_id_local=aCodigo(g('agora_id_local').value); o.agora_id_doble_local=aCodigo(g('agora_id_doble_local').value); }
     if(Number.isNaN(o.agora_id)||Number.isNaN(o.agora_id_doble)||Number.isNaN(o.agora_id_local)||Number.isNaN(o.agora_id_doble_local)) return 'El código de Ágora es un número (ej. 3202) o vacío.';
     if(Number.isNaN(o.agora_salsas)) return 'Salsas en Ágora: escribilas así: Barbacoa=2167, Cheddar=2166';
+    // precio vacío: el de Ágora (take away o, si no hay, el de local)
+    if(o.precio==null) o.precio=agoraPrecio(o.agora_id)??agoraPrecio(o.agora_id_local)??null;
+    if(o.precio_doble==null&&(o.agora_id_doble||o.agora_id_doble_local)) o.precio_doble=agoraPrecio(o.agora_id_doble)??agoraPrecio(o.agora_id_doble_local)??null;
+    if(o.take_away&&!o.agora_id) return 'No tiene código de take away: elegilo o destildá «Take away» (abajo) si no se vende para llevar.';
+    if(o.terraza&&!o.agora_id&&!o.agora_id_local) return 'No tiene código de terraza: elegilo o destildá «Terraza».';
   }
+  if(o.precio==null||Number.isNaN(o.precio)) return 'Revisá el precio (ej. 7,90).';
+  if(Number.isNaN(o.precio_doble)) return 'Revisá el precio doble (ej. 9,90) o dejalo vacío.';
   return o;
 }
 async function guardarProducto(f){
