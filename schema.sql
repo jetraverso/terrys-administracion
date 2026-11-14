@@ -2180,3 +2180,29 @@ end;
 $$;
 revoke all on function public.tpv_avisos_pendientes(text) from public;
 grant execute on function public.tpv_avisos_pendientes(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 22. Foto aparte para local / terraza
+-- ---------------------------------------------------------------
+-- foto_url sigue siendo la de take away (terrysburgers.com/pedido/). foto_terraza_url es la del
+-- producto servido en el local; la usa la página de la terraza (si no hay, usa la de take away).
+alter table public.productos add column if not exists foto_terraza_url text;
+
+create or replace function public._web_carta(p_terraza boolean)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', p.id, 'categoria', p.categoria, 'nombre', p.nombre, 'descripcion', p.descripcion,
+           'foto_url', case when p_terraza then coalesce(p.foto_terraza_url, p.foto_url) else p.foto_url end,
+           'variantes', case when p.agora_id_doble is not null or p.precio_doble is not null
+                             then jsonb_build_array(public._carta_variante(p, 'simple', p_terraza), public._carta_variante(p, 'doble', p_terraza))
+                             else jsonb_build_array(public._carta_variante(p, null, p_terraza)) end)
+         order by p.orden, p.nombre), '[]'::jsonb)
+    from public.productos p
+   where p.activo and (case when p_terraza then p.terraza else p.take_away end);
+$$;
+revoke all on function public._web_carta(boolean) from public, anon, authenticated;

@@ -273,6 +273,27 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .pform .pfotobox img,.pform .pfotobox i{width:96px;height:72px;border-radius:10px;object-fit:cover;background:var(--surface-2);display:block}
 .pform .acc{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap}
 .pform .acc .borrar{margin-left:auto;color:var(--danger)}
+/* editor en dos columnas (datos a la izquierda, precios y códigos a la derecha) + dos fotos */
+.pform2{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px 22px}
+.pform2 .pcol{display:grid;gap:10px;align-content:start}
+.pform2 label{white-space:nowrap}.pform2 label span{font-weight:400}.pform2 label input,.pform2 label select,.pform2 label textarea{white-space:normal}
+.pform2 .pfila{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.pform2 .pfila.c3{grid-template-columns:2fr 1fr}
+.pform2 .pcolT{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:2px 0 -2px}
+.pfotos{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.pfoto2{border:1px solid var(--line-2);border-radius:12px;padding:10px;display:grid;gap:8px;align-content:start}
+.pfoto2 b{font-size:13px}
+.pfoto2 .pfimg{cursor:pointer;display:block;width:100%;max-width:260px;border-radius:10px;overflow:hidden;background:var(--surface-2);aspect-ratio:3/2;position:relative}
+.pfoto2 .pfimg img{width:100%;height:100%;object-fit:cover;display:block}
+.pfoto2 .pfimg i{position:absolute;inset:0;display:grid;place-items:center;font-style:normal;color:var(--muted);font-size:13px}
+.pfoto2 .pfimg:hover::after{content:'Cambiar foto';position:absolute;inset:auto 8px 8px auto;background:rgba(0,0,0,.7);color:#fff;font-size:12px;padding:4px 8px;border-radius:6px}
+.pfoto2 .pfpie{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.pfoto2 small{color:var(--muted);font-size:12px}
+.ptabla tr[data-p-row]{cursor:pointer}
+.ptabla tr[data-p-row]:hover td{background:rgba(255,255,255,.03)}
+.ptabla .pfoto label{cursor:pointer;display:block;position:relative}
+.ptabla .pfoto label:hover::after{content:'';position:absolute;inset:0;border-radius:8px;box-shadow:inset 0 0 0 2px var(--ink)}
+@media (max-width:720px){.pform2,.pfotos{grid-template-columns:1fr}}
 @media (max-width:720px){.pform{grid-template-columns:1fr 1fr}.pform .ancho{grid-column:1/-1}}
 .wtabla .wtot{white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:700;text-align:right;width:1%}
 .wtabla tr.w-nuevo .wh{color:var(--warn)}
@@ -1141,7 +1162,7 @@ function panelPedidos(ped,hoy){
   return `<div class="panel">${cab(nuevos)}${pedOcultarCanc&&nCanc?`<div class="sub">${nCanc} cancelado${nCanc>1?'s':''} oculto${nCanc>1?'s':''}.</div>`:''}<div class="wscroll"><table class="wtabla"><tbody>${filas}</tbody></table></div></div>`;
 }
 /* ---------- solapa Pedidos: pedidos take away + productos de la página de pedidos ---------- */
-let pedVer='pedidos', pedRango='proximos', prodEdit=null, prodFoto=null, prodLista=[];
+let pedVer='pedidos', pedRango='proximos', prodEdit=null, prodFoto=null, prodFotoLocal=null, prodLista=[];
 let pedOcultarCanc=(()=>{ try{ return localStorage.getItem('ped-ocultar-cancelados')==='1'; }catch(_){ return false; } })();
 // La lista de pedidos se actualiza sola cada 30 s (estados que llegan de Ágora, pedidos nuevos).
 setInterval(()=>{
@@ -1278,7 +1299,7 @@ function panelProductos(lista){
     const visibles=l.filter(p=>p.activo&&p.take_away).length;
     return `<tr class="pcat"><td colspan="8">${P_CAT[c]}<span>${l.length} producto${l.length>1?'s':''} · ${visibles} en take away</span></td></tr>`+l.map(p=>`<tr class="${p.activo?'':'p-off'}" data-p-row="${esc(p.id)}" data-cat="${esc(c)}">
       <td class="pmov"><button type="button" class="pmover" data-p-mover="${esc(p.id)}" title="Arrastrá para cambiar el orden" aria-label="Mover ${esc(p.nombre)}"><svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 6h12M4 10h12M4 14h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button></td>
-      <td class="pfoto">${p.foto_url?`<img src="${esc(p.foto_url)}" alt="" loading="lazy">`:'<i></i>'}</td>
+      <td class="pfoto"><label title="Tocá para cambiar la foto de take away">${p.foto_url?`<img src="${esc(p.foto_url)}" alt="" loading="lazy">`:'<i></i>'}<input type="file" accept="image/*" data-p-fotolista="${esc(p.id)}" hidden></label></td>
       <td><b>${esc(p.nombre)}</b>${p.descripcion?`<small>${esc(p.descripcion)}</small>`:''}${p.salsas&&p.salsas.length?`<small>Salsas: ${esc(p.salsas.join(', '))}</small>`:''}${'agora_id' in p?agoraFila(p):''}</td>
       <td class="ppre">${precioTxt(agoraPrecio(p.agora_id)??p.precio)} €${p.precio_doble!=null||p.agora_id_doble?`<small>doble ${precioTxt(agoraPrecio(p.agora_id_doble)??p.precio_doble)} €</small>`:''}</td>
       <td class="pchk"><label><input type="checkbox" data-p-flag="take_away" data-p-id="${esc(p.id)}"${p.take_away?' checked':''}>Take away</label></td>
@@ -1289,36 +1310,45 @@ function panelProductos(lista){
   }).join('');
   return `<div class="panel">
     <div class="wcab"><h2>Productos</h2><div class="wseg"><button class="btn primary" data-p-nuevo>+ Nuevo producto</button></div></div>
-    <div class="sub">Lo que se ve en terrysburgers.com/pedido/. El <b>precio y las opciones</b> (extras, quitar, salsas, partes del menú) salen de <b>Ágora</b> por el código de cada producto: se cambian en Ágora y la web se actualiza sola. Las opciones también se pueden <b>personalizar</b> por producto desde Editar (sumar salsas a un frito, sacar un extra…) (el TPV sube el catálogo cada hora)${agoraCat?(()=>{ const f=Object.values(agoraCat).map(x=>x.actualizado).sort().pop(); return f?` · último catálogo: ${new Date(f).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`:' · todavía no llegó el catálogo del TPV'; })():''}. Acá elegís qué se muestra, el nombre, la foto y la descripción, y con las rayitas <b>≡</b> arrastrás para cambiar el orden. <b>Take away</b>: aparece en la página de pedidos. <b>Terraza</b>: para cuando se pueda pedir desde la mesa. <b>Activo</b>: sacalo para esconderlo sin borrarlo.</div>
+    <div class="sub">Lo que se ve en terrysburgers.com/pedido/. El <b>precio y las opciones</b> (extras, quitar, salsas, partes del menú) salen de <b>Ágora</b> por el código de cada producto: se cambian en Ágora y la web se actualiza sola. Las opciones también se pueden <b>personalizar</b> por producto desde Editar (sumar salsas a un frito, sacar un extra…) (el TPV sube el catálogo cada hora)${agoraCat?(()=>{ const f=Object.values(agoraCat).map(x=>x.actualizado).sort().pop(); return f?` · último catálogo: ${new Date(f).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'})}`:' · todavía no llegó el catálogo del TPV'; })():''}. Acá elegís qué se muestra, el nombre, las fotos y la descripción: tocá un producto para editarlo, tocá su foto para cambiar la de take away, y con las rayitas <b>≡</b> arrastrás para cambiar el orden. <b>Take away</b>: aparece en la página de pedidos. <b>Terraza</b>: para cuando se pueda pedir desde la mesa. <b>Activo</b>: sacalo para esconderlo sin borrarlo.</div>
     ${agoraCat?`<datalist id="agoraLista">${Object.values(agoraCat).filter(x=>x.activo).sort((a,b)=>a.nombre.localeCompare(b.nombre)).map(x=>`<option value="${x.id}">${esc(x.nombre)} · ${precioTxt(x.precio)} €</option>`).join('')}</datalist>`:''}
     ${lista.length?`<div class="wscroll"><table class="wtabla ptabla"><tbody>${filas}</tbody></table></div>`:'<div class="vacio">Todavía no hay productos.</div>'}
   </div>`;
 }
 function panelProdEditor(){
-  const p=prodEdit, nuevo=!p.id;
-  const foto=prodFoto?prodFoto.url:p.foto_url;
+  const p=prodEdit, nuevo=!p.id, dob=p.categoria==='burgers'||p.categoria==='menus';
+  const fotoTake=prodFoto?prodFoto.url:p.foto_url, fotoLocal=prodFotoLocal?prodFotoLocal.url:p.foto_terraza_url;
   const optCat=Object.entries(P_CAT).map(([k,t])=>`<option value="${k}"${k===p.categoria?' selected':''}>${t}</option>`).join('');
+  const caja=(tipo,titulo,url,uso)=>`<div class="pfoto2"><b>${titulo}</b>
+      <label class="pfimg" title="Tocá para ${url?'cambiar':'subir'} la foto">${url?`<img src="${esc(url)}" alt="">`:'<i>+ Subir foto</i>'}<input type="file" accept="image/*" data-p-foto="${tipo}" hidden></label>
+      <div class="pfpie">${url?`<button type="button" class="btn" data-p-sinfoto="${tipo}">Quitar</button>`:''}<small>${uso}</small></div></div>`;
   return `<div class="panel" id="pEditor">
     <div class="wcab"><h2>${nuevo?'Nuevo producto':'Editar · '+esc(p.nombre)}</h2></div>
-    <form class="pform" id="pForm" novalidate>
-      <label>Categoría<select name="categoria">${optCat}</select></label>
-      <label class="ancho">Nombre<input name="nombre" maxlength="60" required value="${esc(p.nombre||'')}" placeholder="Ej. Terry"></label>
-      <label>Orden<input name="orden" type="number" min="0" max="9999" value="${p.orden??100}" title="Los números más chicos van primero"></label>
-      <label class="todo">Descripción<input name="descripcion" maxlength="200" value="${esc(p.descripcion||'')}" placeholder="Ej. Con doble cheddar"></label>
-      <label>Precio${p.categoria==='burgers'?' simple':''} (€)${p.agora_id&&agoraPrecio(p.agora_id)!=null?` <span style="font-weight:400">· Ágora: ${precioTxt(agoraPrecio(p.agora_id))} €</span>`:''}<input name="precio" inputmode="decimal" required value="${esc(precioTxt(p.precio))}" placeholder="7,90"></label>
-      <label>Precio doble (€)<input name="precio_doble" inputmode="decimal" value="${esc(precioTxt(p.precio_doble))}" placeholder="Solo si tiene versión doble"></label>
-      ${conAgora()?`<input type="hidden" name="salsas" value="${esc((p.salsas||[]).join(', '))}">`:`<label class="ancho">Salsas a elegir<input name="salsas" maxlength="200" value="${esc((p.salsas||[]).join(', '))}" placeholder="Ej. Barbacoa, Cheddar, Alioli (vacío = sin salsa)"></label>`}
-      ${conAgora()?`<label>Código Ágora${p.categoria==='burgers'||p.categoria==='menus'?' simple':''}<input name="agora_id" list="agoraLista" value="${esc(p.agora_id??'')}" placeholder="Escribí el nombre o el código"></label>
-      <label>Código Ágora doble<input name="agora_id_doble" list="agoraLista" value="${esc(p.agora_id_doble??'')}" placeholder="Solo si tiene doble"></label>
-      ${conLocal()?`<label>Código terraza (local)${p.categoria==='burgers'||p.categoria==='menus'?' simple':''}<input name="agora_id_local" list="agoraLista" value="${esc(p.agora_id_local??'')}" placeholder="Versión sin TAKE AWAY"></label>
-      <label>Código terraza (local) doble<input name="agora_id_doble_local" list="agoraLista" value="${esc(p.agora_id_doble_local??'')}" placeholder="Solo si tiene doble"></label>`:''}
-      <input type="hidden" name="agora_salsas" value="${esc(salsasTxt(p.agora_salsas))}">
-      <div class="sub todo" style="margin:0">Con estos códigos la web toma de Ágora el precio y las opciones, y el pedido entra con el producto correcto: versión TAKE AWAY para take away y la de local (sin TAKE AWAY) para la terraza; si no hay código de terraza usa el de take away. Escribí parte del nombre y elegí de la lista. Los precios de acá solo se usan si el producto no está en el catálogo de Ágora.</div>
-      <div class="popc todo" id="pOpc">${conOpciones()?htmlOpciones():'<h3>Opciones en la página de pedidos</h3><div class="aviso">Para editar las opciones de cada producto falta correr la parte 19 del schema.sql en Supabase.</div>'}</div>`:''}
-      <div class="pfotobox">${foto?`<img src="${esc(foto)}" alt="">`:'<i></i>'}
-        <label class="btn" style="cursor:pointer">${foto?'Cambiar foto':'Subir foto'}<input type="file" accept="image/*" data-p-foto hidden></label>
-        ${foto?'<button type="button" class="btn" data-p-sinfoto>Quitar foto</button>':''}
-        <span class="sub" style="margin:0">Se achica sola a 900 px antes de subirla.</span></div>
+    <form class="pform pform2" id="pForm" novalidate>
+      <div class="pcol">
+        <div class="pcolT">Producto</div>
+        <div class="pfila c3"><label>Categoría<select name="categoria">${optCat}</select></label>
+          <label>Orden<input name="orden" type="number" min="0" max="9999" value="${p.orden??100}" title="Los números más chicos van primero"></label></div>
+        <label>Nombre<input name="nombre" maxlength="60" required value="${esc(p.nombre||'')}" placeholder="Ej. Terry"></label>
+        <label>Descripción<textarea name="descripcion" maxlength="200" rows="2" placeholder="Ej. Con doble cheddar">${esc(p.descripcion||'')}</textarea></label>
+        ${conAgora()?`<input type="hidden" name="salsas" value="${esc((p.salsas||[]).join(', '))}">`:`<label>Salsas a elegir<input name="salsas" maxlength="200" value="${esc((p.salsas||[]).join(', '))}" placeholder="Ej. Barbacoa, Cheddar, Alioli (vacío = sin salsa)"></label>`}
+      </div>
+      <div class="pcol">
+        <div class="pcolT">Precios y Ágora</div>
+        <div class="pfila"><label>Precio${dob?' simple':''} €${agoraPrecio(p.agora_id)!=null?` <span>· Ágora ${precioTxt(agoraPrecio(p.agora_id))}</span>`:''}<input name="precio" inputmode="decimal" required value="${esc(precioTxt(p.precio))}" placeholder="7,90"></label>
+          <label>Precio doble €${agoraPrecio(p.agora_id_doble)!=null?` <span>· Ágora ${precioTxt(agoraPrecio(p.agora_id_doble))}</span>`:''}<input name="precio_doble" inputmode="decimal" value="${esc(precioTxt(p.precio_doble))}" placeholder="Solo si tiene doble"></label></div>
+        ${conAgora()?`<div class="pfila"><label>Código Ágora take away${dob?' simple':''}<input name="agora_id" list="agoraLista" value="${esc(p.agora_id??'')}" placeholder="Nombre o código"></label>
+          <label>Take away doble<input name="agora_id_doble" list="agoraLista" value="${esc(p.agora_id_doble??'')}" placeholder="Solo si tiene doble"></label></div>
+        ${conLocal()?`<div class="pfila"><label>Código terraza (local)${dob?' simple':''}<input name="agora_id_local" list="agoraLista" value="${esc(p.agora_id_local??'')}" placeholder="Sin TAKE AWAY"></label>
+          <label>Terraza doble<input name="agora_id_doble_local" list="agoraLista" value="${esc(p.agora_id_doble_local??'')}" placeholder="Solo si tiene doble"></label></div>`:''}
+        <input type="hidden" name="agora_salsas" value="${esc(salsasTxt(p.agora_salsas))}">
+        <div class="sub" style="margin:0">Take away usa la versión TAKE AWAY de Ágora y la terraza la de local; sin código de terraza usa el de take away. Escribí parte del nombre y elegí de la lista. Los precios de acá solo se usan si el producto no está en Ágora.</div>`:''}
+      </div>
+      <div class="pfotos">
+        ${conFotoLocal()?caja('local','Foto local / terraza',fotoLocal,'La ve el cliente en la página de la mesa. Sin foto usa la de take away.'):''}
+        ${caja('take','Foto take away',fotoTake,'La de terrysburgers.com/pedido/ y la de la lista. Se achica sola a 900 px.')}
+      </div>
+      ${conAgora()?`<div class="popc todo" id="pOpc">${conOpciones()?htmlOpciones():'<h3>Opciones en la página de pedidos</h3><div class="aviso">Para editar las opciones de cada producto falta correr la parte 19 del schema.sql en Supabase.</div>'}</div>`:''}
       <div class="chks">
         <label><input type="checkbox" name="take_away"${p.take_away!==false?' checked':''}> Take away</label>
         <label><input type="checkbox" name="terraza"${p.terraza!==false?' checked':''}> Terraza</label>
@@ -1344,6 +1374,7 @@ function achicarFoto(file){
   });
 }
 const conAgora=()=>prodLista.length?('agora_id' in prodLista[0]):false;
+const conFotoLocal=()=>prodLista.length?('foto_terraza_url' in prodLista[0]):false;   // parte 22 corrida
 const conLocal=()=>prodLista.length?('agora_id_local' in prodLista[0]):false;   // parte 21 corrida
 const conOpciones=()=>prodLista.length?('opciones' in prodLista[0]):false;   // parte 19 corrida
 const salsasTxt=o=>o?Object.entries(o).map(([k,v])=>`${k}=${v}`).join(', '):'';
@@ -1389,12 +1420,17 @@ async function guardarProducto(f){
       if(up.error) throw up.error;
       o.foto_url=sbc.storage.from('productos').getPublicUrl(ruta).data.publicUrl;
     }else if(prodEdit.sinFoto) o.foto_url=null;
+    if(prodFotoLocal){
+      const ruta=`${id}-local-${Date.now()}.webp`;
+      const up=await sbc.storage.from('productos').upload(ruta,prodFotoLocal.blob,{contentType:'image/webp',upsert:false});
+      if(up.error) throw up.error;
+      o.foto_terraza_url=sbc.storage.from('productos').getPublicUrl(ruta).data.publicUrl;
+    }else if(prodEdit.sinFotoLocal) o.foto_terraza_url=null;
     o.actualizado=new Date().toISOString();
     const r=prodEdit.id?await sbc.from('productos').update(o).eq('id',id):await sbc.from('productos').insert({...o,id});
     if(r.error) throw r.error;
     toast(prodEdit.id?'Producto guardado':'Producto creado');
-    if(prodFoto) URL.revokeObjectURL(prodFoto.url);
-    prodEdit=null; prodFoto=null; renderPedidosVista();
+    soltarFotos(); prodEdit=null; renderPedidosVista();
   }catch(e){ toast('No se pudo guardar: '+errMsg(e)); btn.disabled=false; btn.textContent='Guardar'; }
 }
 /* ---------- Opciones de cada producto (parte 19) ----------
@@ -1587,15 +1623,34 @@ $('reportes').addEventListener('change',async e=>{
   }
   if(t.matches('[data-p-foto]')&&t.files[0]){
     try{
-      const blob=await achicarFoto(t.files[0]);
-      if(prodFoto) URL.revokeObjectURL(prodFoto.url);
-      prodFoto={blob,url:URL.createObjectURL(blob)};
+      const blob=await achicarFoto(t.files[0]), f={blob,url:URL.createObjectURL(blob)};
+      if(t.dataset.pFoto==='local'){ if(prodFotoLocal) URL.revokeObjectURL(prodFotoLocal.url); prodFotoLocal=f; prodEdit.sinFotoLocal=false; }
+      else { if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodFoto=f; prodEdit.sinFoto=false; }
       guardarBorrador(); renderPedidosVista();
     }catch(err){ toast('Foto: '+err.message); }
+  }
+  // tocar la foto de la lista: cambia la foto de take away de ese producto al toque
+  if(t.matches('[data-p-fotolista]')&&t.files[0]){
+    const id=t.dataset.pFotolista, img=t.closest('label').querySelector('img,i');
+    try{
+      if(img) img.style.opacity='.4';
+      const blob=await achicarFoto(t.files[0]), ruta=`${id}-${Date.now()}.webp`;
+      const up=await sbc.storage.from('productos').upload(ruta,blob,{contentType:'image/webp',upsert:false});
+      if(up.error) throw up.error;
+      const url=sbc.storage.from('productos').getPublicUrl(ruta).data.publicUrl;
+      const {error}=await sbc.from('productos').update({foto_url:url,actualizado:new Date().toISOString()}).eq('id',id);
+      if(error) throw error;
+      const p=prodLista.find(x=>x.id===id); if(p) p.foto_url=url;
+      toast('Foto de take away cambiada'); renderPedidosVista();
+    }catch(err){ toast('No se pudo cambiar la foto: '+errMsg(err)); if(img) img.style.opacity=''; }
   }
   if(t.name==='categoria'&&t.closest('#pForm')){ guardarBorrador(); renderPedidosVista(); }
 });
 // conserva lo que se escribió cuando el editor se vuelve a dibujar (al elegir foto o categoría)
+function soltarFotos(){
+  for(const f of [prodFoto,prodFotoLocal]) if(f) URL.revokeObjectURL(f.url);
+  prodFoto=null; prodFotoLocal=null;
+}
 function guardarBorrador(){
   const f=$('pForm'); if(!f) return;
   const o=leerProdForm(f), g=n=>f.elements[n];
@@ -1609,6 +1664,13 @@ function guardarBorrador(){
 }
 $('reportes').addEventListener('click',async e=>{
   if(vista!=='pedidos') return;
+  // tocar un producto de la lista = Editar (menos la foto, las tildes, las rayitas y los botones)
+  const fila=e.target.closest('tr[data-p-row]');
+  if(fila&&!e.target.closest('button,label,input,select,a,.pmover')){
+    const p=prodLista.find(x=>x.id===fila.dataset.pRow);
+    if(p){ soltarFotos(); prodEdit=JSON.parse(JSON.stringify(p)); irAlEditor=true; renderPedidosVista(); }
+    return;
+  }
   const b=e.target.closest('button,[data-p-ver]'); if(!b) return;
   if(b.dataset.pVer){ pedVer=b.dataset.pVer; renderPedidosVista(); return; }
   if(b.dataset.pRango){ pedRango=b.dataset.pRango; renderPedidosVista(); return; }
@@ -1618,15 +1680,20 @@ $('reportes').addEventListener('click',async e=>{
     const {error}=await sbc.from('pedidos_take').update({agora_estado:null,agora_error:null,agora_intentos:0}).eq('id',+b.dataset.pReagora);
     toast(error?'No se pudo: '+errMsg(error):'Se vuelve a mandar a Ágora en unos segundos'); renderPedidosVista(); return;
   }
-  if(b.hasAttribute('data-p-nuevo')){ prodEdit={categoria:'burgers',take_away:true,terraza:true,activo:true,orden:100}; prodFoto=null; irAlEditor=true; renderPedidosVista(); return; }
-  if(b.dataset.pEdit){ const p=prodLista.find(x=>x.id===b.dataset.pEdit); if(p){ prodEdit=JSON.parse(JSON.stringify(p)); prodFoto=null; irAlEditor=true; renderPedidosVista(); } return; }
-  if(b.hasAttribute('data-p-cancelar')){ if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodEdit=null; prodFoto=null; renderPedidosVista(); return; }
-  if(b.hasAttribute('data-p-sinfoto')){ guardarBorrador(); if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodFoto=null; prodEdit.foto_url=null; prodEdit.sinFoto=true; renderPedidosVista(); return; }
+  if(b.hasAttribute('data-p-nuevo')){ soltarFotos(); prodEdit={categoria:'burgers',take_away:true,terraza:true,activo:true,orden:100}; irAlEditor=true; renderPedidosVista(); return; }
+  if(b.dataset.pEdit){ const p=prodLista.find(x=>x.id===b.dataset.pEdit); if(p){ soltarFotos(); prodEdit=JSON.parse(JSON.stringify(p)); irAlEditor=true; renderPedidosVista(); } return; }
+  if(b.hasAttribute('data-p-cancelar')){ soltarFotos(); prodEdit=null; renderPedidosVista(); return; }
+  if(b.hasAttribute('data-p-sinfoto')){
+    guardarBorrador();
+    if(b.dataset.pSinfoto==='local'){ if(prodFotoLocal) URL.revokeObjectURL(prodFotoLocal.url); prodFotoLocal=null; prodEdit.foto_terraza_url=null; prodEdit.sinFotoLocal=true; }
+    else { if(prodFoto) URL.revokeObjectURL(prodFoto.url); prodFoto=null; prodEdit.foto_url=null; prodEdit.sinFoto=true; }
+    renderPedidosVista(); return;
+  }
   if(b.dataset.pBorrar){
     if(!confirm(`¿Borrar «${prodEdit.nombre}»? Desaparece de la página de pedidos. Si solo querés esconderlo, destildá Activo.`)) return;
     const {error}=await sbc.from('productos').delete().eq('id',b.dataset.pBorrar);
     if(error){ toast('No se pudo borrar: '+errMsg(error)); return; }
-    toast('Producto borrado'); prodEdit=null; prodFoto=null; renderPedidosVista();
+    toast('Producto borrado'); soltarFotos(); prodEdit=null; renderPedidosVista();
   }
 });
 $('reportes').addEventListener('submit',e=>{
