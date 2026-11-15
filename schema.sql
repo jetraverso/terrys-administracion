@@ -2875,3 +2875,134 @@ end;
 $$;
 revoke all on function public.agora_pendientes(text) from public;
 grant execute on function public.agora_pendientes(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 26. Página de camareros: solo desde dispositivos aceptados
+-- ---------------------------------------------------------------
+-- Cada iPad / celular guarda una clave propia. La primera vez que alguien pone un PIN correcto
+-- desde un dispositivo nuevo, queda «pendiente» con un código de 4 letras; hasta que se acepta en
+-- el admin (Pedidos → Camareros) no se puede entrar. Quitar un dispositivo cierra su sesión.
+create table if not exists public.pos_dispositivos (
+  id          int generated always as identity primary key,
+  clave_hash  text not null unique,
+  codigo      text not null,
+  nombre      text check (nombre is null or char_length(nombre) <= 40),
+  estado      text not null default 'pendiente' check (estado in ('pendiente', 'aceptado')),
+  pedido_por  text,
+  agente      text,
+  creado      timestamptz not null default now(),
+  aceptado    timestamptz,
+  ultimo_uso  timestamptz
+);
+alter table public.pos_dispositivos enable row level security;
+revoke all on public.pos_dispositivos from anon, authenticated;
+grant select (id, codigo, nombre, estado, pedido_por, agente, creado, aceptado, ultimo_uso) on public.pos_dispositivos to authenticated;
+drop policy if exists pos_dispositivos_admin on public.pos_dispositivos;
+create policy pos_dispositivos_admin on public.pos_dispositivos for select to authenticated using (public.es_admin());
+
+alter table public.pos_sesiones add column if not exists dispositivo_id int references public.pos_dispositivos (id) on delete cascade;
+-- las sesiones abiertas antes de esto (sin dispositivo) se cierran
+delete from public.pos_sesiones where dispositivo_id is null;
+
+drop function if exists public.pos_entrar(text);
+create or replace function public.pos_entrar(p_pin text, p_dispositivo text default null, p_agente text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros; d public.pos_dispositivos; v_hash text; v_tok text;
+begin
+  delete from public.pos_intentos where creado < now() - interval '15 minutes';
+  if (select count(*) from public.pos_intentos) >= 20 then
+    return jsonb_build_object('ok', false, 'error', 'Demasiados intentos. Esperá unos minutos.');
+  end if;
+  select * into c from public.pos_camareros where activo and pin_hash = public._pos_pin_hash(left(coalesce(p_pin, ''), 10));
+  if c.id is null then
+    insert into public.pos_intentos default values;
+    return jsonb_build_object('ok', false, 'error', 'PIN incorrecto');
+  end if;
+  if coalesce(p_dispositivo, '') !~ '^[0-9a-f]{32,64}$' then
+    return jsonb_build_object('ok', false, 'error', 'Actualizá la página (Cmd/Ctrl + R) y probá de nuevo.');
+  end if;
+  v_hash := encode(extensions.digest(p_dispositivo, 'sha256'), 'hex');
+  select * into d from public.pos_dispositivos where clave_hash = v_hash;
+  if d.id is null then
+    if (select count(*) from public.pos_dispositivos where estado = 'pendiente') >= 30 then
+      return jsonb_build_object('ok', false, 'error', 'Hay demasiados dispositivos esperando. Pedí que revisen el admin.');
+    end if;
+    insert into public.pos_dispositivos (clave_hash, codigo, pedido_por, agente)
+    values (v_hash, upper(substr(v_hash, 1, 4)), c.nombre, public._txt(p_agente, 120))
+    returning * into d;
+  elsif d.estado = 'pendiente' then
+    update public.pos_dispositivos set pedido_por = c.nombre, agente = coalesce(public._txt(p_agente, 120), agente) where id = d.id;
+  end if;
+  if d.estado <> 'aceptado' then
+    return jsonb_build_object('ok', false, 'pendiente', true, 'codigo', d.codigo,
+      'error', 'Este dispositivo todavía no está autorizado.');
+  end if;
+  delete from public.pos_sesiones where vence < now();
+  v_tok := encode(extensions.gen_random_bytes(24), 'hex');
+  insert into public.pos_sesiones (token_hash, camarero_id, vence, dispositivo_id)
+  values (encode(extensions.digest(v_tok, 'sha256'), 'hex'), c.id, now() + interval '14 hours', d.id);
+  update public.pos_dispositivos set ultimo_uso = now() where id = d.id;
+  return jsonb_build_object('ok', true, 'token', v_tok, 'nombre', c.nombre, 'dispositivo', d.nombre);
+end;
+$$;
+revoke all on function public.pos_entrar(text, text, text) from public;
+grant execute on function public.pos_entrar(text, text, text) to anon, authenticated;
+
+-- La sesión vale solo si el dispositivo sigue aceptado.
+create or replace function public._pos_sesion(p_token text)
+returns public.pos_camareros
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros;
+begin
+  select k.* into c
+    from public.pos_sesiones s
+    join public.pos_camareros k on k.id = s.camarero_id
+    join public.pos_dispositivos d on d.id = s.dispositivo_id and d.estado = 'aceptado'
+   where s.token_hash = encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex') and s.vence > now() and k.activo;
+  if c.id is null then raise exception 'sesión vencida' using errcode = '28000'; end if;
+  return c;
+end;
+$$;
+revoke all on function public._pos_sesion(text) from public, anon, authenticated;
+
+-- Admin: aceptar / renombrar (p_aceptar) y borrar (rechazar o quitar).
+create or replace function public.pos_dispositivo_guardar(p_id int, p_nombre text, p_aceptar boolean default true)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  update public.pos_dispositivos
+     set nombre = nullif(left(btrim(coalesce(p_nombre, '')), 40), ''),
+         estado = case when p_aceptar then 'aceptado' else estado end,
+         aceptado = case when p_aceptar and estado <> 'aceptado' then now() else aceptado end
+   where id = p_id;
+  if not found then raise exception 'No existe ese dispositivo' using errcode = '22023'; end if;
+end;
+$$;
+revoke all on function public.pos_dispositivo_guardar(int, text, boolean) from public;
+grant execute on function public.pos_dispositivo_guardar(int, text, boolean) to authenticated;
+
+create or replace function public.pos_dispositivo_borrar(p_id int)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  delete from public.pos_dispositivos where id = p_id;   -- sus sesiones se borran solas
+end;
+$$;
+revoke all on function public.pos_dispositivo_borrar(int) from public;
+grant execute on function public.pos_dispositivo_borrar(int) to authenticated;

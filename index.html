@@ -238,6 +238,9 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .camfila.off{opacity:.55}
 .camfila b{flex:1;min-width:120px;font-size:16px}
 .camfila label{display:flex;align-items:center;gap:6px;font-size:14px}
+.camfila b small{display:block;font-weight:500;font-size:12px;color:var(--muted)}
+.camfila.dpend{border-color:var(--warn);background:var(--warn-soft)}
+.dcod{font-family:var(--display);font-size:24px;letter-spacing:.12em;color:var(--warn);min-width:64px}
 .camform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
 .camform input{height:38px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--ink);padding:0 10px;font:inherit}
 .qrs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
@@ -1225,6 +1228,39 @@ function panelCamareros(cams){
     <div class="camlista">${filas||'<div class="vacio">Todavía no hay camareros: cargá el primero con su PIN.</div>'}</div></div>`;
 }
 const camLista=()=>[...document.querySelectorAll('.camfila')];
+// Dispositivos (parte 26): solo entran a la página los iPad / celulares aceptados acá.
+const cuandoTxt=v=>v?new Date(v).toLocaleString('es-ES',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'';
+function panelDispositivos(ds){
+  const cab=`<div class="wcab"><h2>Dispositivos</h2></div>
+    <div class="sub">Solo se puede usar la página desde los dispositivos aceptados acá. La primera vez que un camarero pone su PIN en un iPad o celular nuevo, aparece abajo como <b>pendiente</b> con un código de 4 letras: si es el mismo código que ve en la pantalla, aceptalo y ponele un nombre (ej. «iPad barra»). <b>Quitar</b> lo saca al instante. Ojo: en el iPhone/iPad, la página en Safari y agregada a la pantalla de inicio cuentan como dos dispositivos.</div>`;
+  if(ds.error) return `<div class="panel">${cab}<div class="aviso">Falta correr la parte 26 del schema.sql en Supabase (${esc(ds.error)}).</div></div>`;
+  const pend=ds.filter(d=>d.estado==='pendiente'), ok=ds.filter(d=>d.estado==='aceptado');
+  const fila=d=>`<div class="camfila${d.estado==='pendiente'?' dpend':''}"><span class="dcod">${esc(d.codigo)}</span>
+      <b>${esc(d.nombre||d.agente||'Dispositivo')}<small>${d.estado==='pendiente'?`Pidió acceso ${esc(cuandoTxt(d.creado))}${d.pedido_por?' · PIN de '+esc(d.pedido_por):''}`:`${esc(d.agente||'')}${d.ultimo_uso?' · usado '+esc(cuandoTxt(d.ultimo_uso)):''}`}</small></b>
+      ${d.estado==='pendiente'?`<button class="btn primary" data-d-aceptar="${d.id}" data-d-sug="${esc(d.agente||'')}">Aceptar</button><button class="btn" data-d-borrar="${d.id}">Rechazar</button>`
+        :`<button class="btn" data-d-nombre="${d.id}">Cambiar nombre</button><button class="btn" data-d-borrar="${d.id}">Quitar</button>`}</div>`;
+  return `<div class="panel">${cab}
+    ${pend.length?`<div class="camlista">${pend.map(fila).join('')}</div>`:''}
+    <div class="camlista">${ok.map(fila).join('')||'<div class="vacio">Todavía no hay dispositivos aceptados.</div>'}</div></div>`;
+}
+$('reportes').addEventListener('click',async e=>{
+  if(vista!=='pedidos'||pedVer!=='camareros') return;
+  const b=e.target.closest('button'); if(!b) return;
+  if(b.dataset.dAceptar){
+    const n=prompt('Nombre para este dispositivo (ej. iPad barra):',b.dataset.dSug||''); if(n==null) return;
+    const {error}=await sbc.rpc('pos_dispositivo_guardar',{p_id:+b.dataset.dAceptar,p_nombre:n,p_aceptar:true});
+    toast(error?'No se pudo: '+errMsg(error):'Dispositivo aceptado: ya puede entrar'); renderPedidosVista();
+  }else if(b.dataset.dNombre){
+    const actual=b.closest('.camfila')?.querySelector('b')?.firstChild?.textContent||'';
+    const n=prompt('Nombre:',actual); if(n==null) return;
+    const {error}=await sbc.rpc('pos_dispositivo_guardar',{p_id:+b.dataset.dNombre,p_nombre:n,p_aceptar:false});
+    toast(error?'No se pudo: '+errMsg(error):'Guardado'); renderPedidosVista();
+  }else if(b.dataset.dBorrar){
+    if(!confirm(b.textContent==='Rechazar'?'¿Rechazar este dispositivo?':'¿Quitar este dispositivo? Deja de poder usar la página al instante.')) return;
+    const {error}=await sbc.rpc('pos_dispositivo_borrar',{p_id:+b.dataset.dBorrar});
+    toast(error?'No se pudo: '+errMsg(error):'Listo'); renderPedidosVista();
+  }
+});
 async function camGuardar(id,nombre,pin,activo){
   const {error}=await sbc.rpc('pos_camarero_guardar',{p_id:id,p_nombre:nombre,p_pin:pin,p_activo:activo});
   if(error){ toast('No se pudo: '+errMsg(error)); return false; }
@@ -1336,9 +1372,10 @@ async function renderPedidosVista(){
     if(tk!==repTk||vista!=='pedidos') return;
     html=panelPedidos(r.error?{error:errMsg(r.error)}:r.data,hoy);
   }else if(pedVer==='camareros'){
-    const r=await sbc.from('pos_camareros').select('id,nombre,activo,creado').order('nombre');
+    const [r,d]=await Promise.all([sbc.from('pos_camareros').select('id,nombre,activo,creado').order('nombre'),
+      sbc.from('pos_dispositivos').select('id,codigo,nombre,estado,pedido_por,agente,creado,aceptado,ultimo_uso').order('creado',{ascending:false})]);
     if(tk!==repTk||vista!=='pedidos') return;
-    html=panelCamareros(r.error?{error:errMsg(r.error)}:r.data);
+    html=panelCamareros(r.error?{error:errMsg(r.error)}:r.data)+panelDispositivos(d.error?{error:errMsg(d.error)}:d.data);
   }else if(pedVer==='mesas'){
     const [r]=await Promise.all([sbc.from('terraza_mesas').select('*').order('numero'),cargarQR()]);
     if(tk!==repTk||vista!=='pedidos') return;

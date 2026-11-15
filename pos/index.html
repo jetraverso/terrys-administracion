@@ -42,6 +42,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .teclado button:active{background:var(--surface-3)}
 .teclado .t-ok{background:var(--ok);color:#08210f;font-size:18px;font-weight:700}
 .teclado .t-borrar{font-size:18px;color:var(--ink-2)}
+.pendTit{font-size:18px;font-weight:700;margin:28px 0 10px}
+.pendCod{font-family:var(--display);font-size:64px;letter-spacing:.18em;line-height:1;margin:6px 0 12px;color:var(--warn)}
+.pendTxt{color:var(--ink-2);font-size:15px;margin:0 0 10px}
+.pendBtns{display:grid;gap:10px;margin-top:14px}
+.pendBtns button{height:56px;border-radius:14px;font-size:17px;font-weight:700;background:var(--surface-2)}
+.pendBtns .t-ok{background:var(--ok);color:#08210f}
 
 /* ---------- app ---------- */
 #app{position:fixed;inset:0;display:grid;grid-template-columns:150px 1fr}
@@ -191,9 +197,18 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 <div id="pin" class="oculto">
   <div class="pinCard">
     <div class="marca">TERRY'S<small>Pedidos en el local</small></div>
-    <div class="pinPuntos" id="pinPuntos"></div>
-    <div class="pinError" id="pinError" role="alert"></div>
-    <div class="teclado" id="teclado"></div>
+    <div id="pinNormal">
+      <div class="pinPuntos" id="pinPuntos"></div>
+      <div class="pinError" id="pinError" role="alert"></div>
+      <div class="teclado" id="teclado"></div>
+    </div>
+    <div id="pinPend" class="oculto">
+      <p class="pendTit">Este dispositivo todavía no está autorizado</p>
+      <div class="pendCod" id="pinCodigo"></div>
+      <p class="pendTxt">Pedí que lo acepten en el admin: <b>Pedidos → Camareros → Dispositivos</b>, con este código. Después tocá <b>Ya está</b>.</p>
+      <div class="pinError" id="pinPendMsg" role="alert"></div>
+      <div class="pendBtns"><button class="t-ok" id="pendReintentar">Ya está</button><button class="t-borrar" id="pendVolver">Volver</button></div>
+    </div>
   </div>
 </div>
 <div id="app" class="oculto"></div>
@@ -204,6 +219,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 const CLAVE='terrys-pos-v1';
+const CLAVE_DISP='terrys-pos-dispositivo';
 const CADA_MS=4000;
 
 // ---------- utilidades ----------
@@ -259,7 +275,7 @@ function textoOps(l){
 let pinTxt='';
 function mostrarPin(msg){
   $('#app').classList.add('oculto'); $('#pin').classList.remove('oculto');
-  pinTxt=''; $('#pinError').textContent=msg||''; dibujarPin();
+  pinTxt=''; ocultarPendiente(); $('#pinError').textContent=msg||''; dibujarPin();
   const t=$('#teclado');
   if(!t.childElementCount){
     t.innerHTML=[1,2,3,4,5,6,7,8,9].map(n=>`<button data-n="${n}">${n}</button>`).join('')+
@@ -272,20 +288,51 @@ function mostrarPin(msg){
   }
 }
 function dibujarPin(){$('#pinPuntos').innerHTML=Array.from({length:Math.max(4,pinTxt.length)},(_,i)=>`<i class="${i<pinTxt.length?'on':''}"></i>`).join('')}
+document.addEventListener('click',async e=>{
+  if(e.target.id==='pendReintentar'){$('#pinPendMsg').textContent='Revisando…';await entrar(pinPendiente||'');
+    if(!$('#pinPend').classList.contains('oculto')) $('#pinPendMsg').textContent='Todavía no lo aceptaron.'}
+  if(e.target.id==='pendVolver'){pinPendiente=null;pinTxt='';dibujarPin();ocultarPendiente()}
+});
 document.addEventListener('keydown',e=>{
-  if($('#pin').classList.contains('oculto')) return;
+  if($('#pin').classList.contains('oculto')||!$('#pinPend').classList.contains('oculto')) return;
   if(/^[0-9]$/.test(e.key)&&pinTxt.length<6){pinTxt+=e.key;dibujarPin()}
   else if(e.key==='Backspace'){pinTxt=pinTxt.slice(0,-1);dibujarPin()}
   else if(e.key==='Enter') entrar();
 });
-async function entrar(){
-  if(pinTxt.length<4){$('#pinError').textContent='El PIN tiene al menos 4 números';return}
+// Cada dispositivo tiene su clave (queda guardada en este navegador): hay que aceptarlo en el admin.
+function claveDispositivo(){
+  let k=null; try{k=localStorage.getItem(CLAVE_DISP)}catch(e){}
+  if(!/^[0-9a-f]{64}$/.test(k||'')){
+    k=[...crypto.getRandomValues(new Uint8Array(32))].map(x=>x.toString(16).padStart(2,'0')).join('');
+    try{localStorage.setItem(CLAVE_DISP,k)}catch(e){}
+  }
+  return k;
+}
+function agente(){
+  const u=navigator.userAgent;
+  const eq=/iPad/.test(u)||(/Macintosh/.test(u)&&navigator.maxTouchPoints>1)?'iPad':/iPhone/.test(u)?'iPhone':/Android/.test(u)?(/Mobile/.test(u)?'Android':'Tablet Android'):/Windows/.test(u)?'Windows':/Macintosh/.test(u)?'Mac':'Otro';
+  const nav=/Edg\//.test(u)?'Edge':/CriOS|Chrome\//.test(u)?'Chrome':/FxiOS|Firefox\//.test(u)?'Firefox':/Safari\//.test(u)?'Safari':'';
+  return eq+(nav?' · '+nav:'')+(matchMedia('(display-mode: standalone)').matches||navigator.standalone?' (app)':'');
+}
+let pinPendiente=null;
+async function entrar(pin){
+  pin=pin||pinTxt;
+  if(pin.length<4){$('#pinError').textContent='El PIN tiene al menos 4 números';return}
   try{
-    const r=await rpc('pos_entrar',{p_pin:pinTxt});
+    const r=await rpc('pos_entrar',{p_pin:pin,p_dispositivo:claveDispositivo(),p_agente:agente()});
+    if(r&&r.pendiente){pinPendiente=pin;mostrarPendiente(r.codigo);return}
     if(!r||!r.ok){pinTxt='';dibujarPin();$('#pinError').textContent=(r&&r.error)||'No se pudo entrar';return}
+    pinPendiente=null; ocultarPendiente();
     S.token=r.token; S.nombre=r.nombre; guardar(); arrancar();
   }catch(e){$('#pinError').textContent='Sin conexión. Probá de nuevo.'}
 }
+function mostrarPendiente(codigo){
+  $('#pinNormal').classList.add('oculto');
+  $('#pinPend').classList.remove('oculto');
+  $('#pinCodigo').textContent=codigo||'';
+  $('#pinPendMsg').textContent='';
+}
+function ocultarPendiente(){$('#pinNormal').classList.remove('oculto');$('#pinPend').classList.add('oculto')}
 async function salir(){
   try{await rpc('pos_salir',{p_token:S.token})}catch(e){}
   S.token=null;S.nombre='';S.mesa=null;guardar();mostrarPin();
