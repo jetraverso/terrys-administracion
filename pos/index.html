@@ -100,6 +100,14 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .paso button:active{background:var(--surface-3)}
 .paso span{min-width:26px;text-align:center;font-weight:700}
 .tLin.nuevo .info{cursor:pointer}
+.desliza{position:relative;overflow:hidden;touch-action:pan-y}
+.desliza .tLin{position:relative;background:var(--surface);transition:transform .2s ease}
+.desliza.arrastrando .tLin{transition:none}
+.desliza.abierta .tLin{transform:translateX(-104px)}
+.borrarFila{position:absolute;top:0;right:0;bottom:1px;width:104px;background:var(--danger);color:#fff;font-weight:700;font-size:15px}
+.desliza.fuera{transition:height .2s ease,opacity .2s ease;opacity:0}
+.ayuda{color:var(--muted);font-size:12px;padding:8px 0 0}
+.toastBtn{margin-left:14px;padding:4px 10px;border-radius:8px;background:var(--paper);color:var(--ink);font-weight:700}
 .tPie{border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
 .tPie .tot{display:flex;justify-content:space-between;font-size:15px;color:var(--ink-2)}
 .tPie .tot b{color:var(--ink);font-size:20px}
@@ -202,7 +210,11 @@ const eur=n=>(Math.round((+n||0)*100)/100).toLocaleString('es-ES',{minimumFracti
 const num=n=>{const x=+n||0;return Number.isInteger(x)?String(x):x.toLocaleString('es-ES')};
 function leer(){try{return JSON.parse(localStorage.getItem(CLAVE)||'{}')}catch(e){return{}}}
 function guardar(){try{localStorage.setItem(CLAVE,JSON.stringify({token:S.token,nombre:S.nombre,centro:S.centro,carritos:S.carritos}))}catch(e){}}
-function toast(t,err){const d=document.createElement('div');d.className='toast'+(err?' err':'');d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),err?5000:2600)}
+function toast(t,err,accion,fn){
+  document.querySelectorAll('.toast').forEach(x=>x.remove());
+  const d=document.createElement('div');d.className='toast'+(err?' err':'');d.textContent=t;
+  if(accion){const b=document.createElement('button');b.className='toastBtn';b.textContent=accion;b.onclick=()=>{d.remove();fn()};d.appendChild(b)}
+  document.body.appendChild(d);setTimeout(()=>d.remove(),err||accion?5000:2600)}
 async function rpc(fn,args){
   const r=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify(args||{})});
   const t=await r.text(); let j=null; try{j=t?JSON.parse(t):null}catch(e){}
@@ -383,8 +395,8 @@ function renderTicket(){
     const tit=p.estado==='enviado'?'✓ Entró en Ágora':p.estado==='error'?'No entró en Ágora, se reintenta solo':'Enviando a Ágora…';
     return `<div class="envio ${cl}"><b>${tit}</b>${(p.items||[]).map(i=>`${esc(i.cant)} × ${esc(i.nombre)}${i.extra?' ('+esc(i.extra)+')':''}`).join(' · ')}${p.error?`<br><small>${esc(p.error)}</small>`:''}<br><small>${esc(p.camarero||'')} · ${new Date(p.creado).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></div>`}).join('');
   const lNue=car.map((l,i)=>{const p=prod(l.id);const o=textoOps(l);
-    return `<div class="tLin nuevo"><div class="paso"><button data-menos="${i}" aria-label="Uno menos">−</button><span>${l.cant}</span><button data-mas="${i}" aria-label="Uno más">+</button></div>
-      <span class="info n" data-editar="${i}">${esc(p?p.nombre:'Producto '+l.id)}${o?`<small>${esc(o)}</small>`:''}${l.nota?`<small class="nota">${esc(l.nota)}</small>`:''}</span><span class="p">${eur(l.cant*precioLinea(l))}</span></div>`}).join('');
+    return `<div class="desliza${S.abierta===i?' abierta':''}" data-fila="${i}"><button class="borrarFila" data-borrar="${i}" tabindex="-1">Eliminar</button><div class="tLin nuevo"><div class="paso"><button data-menos="${i}" aria-label="Uno menos">−</button><span>${l.cant}</span><button data-mas="${i}" aria-label="Uno más">+</button></div>
+      <span class="info n" data-editar="${i}">${esc(p?p.nombre:'Producto '+l.id)}${o?`<small>${esc(o)}</small>`:''}${l.nota?`<small class="nota">${esc(l.nota)}</small>`:''}</span><span class="p">${eur(l.cant*precioLinea(l))}</span></div></div>`}).join('');
   el.innerHTML=`<div class="scroll">
       <div class="tCab">${esc(centroAct()?.nombre||'')} · ${esc(S.mesa)}</div>
       <div class="tSec"><span>En Ágora</span><span>${a?'desde '+esc(a.abierta):''}</span></div>
@@ -392,7 +404,7 @@ function renderTicket(){
       ${a?`<div class="tLin agora"><span></span><span class="n">Total de la mesa</span><span class="p"><b>${eur(a.total)}</b></span></div>`:''}
       ${lPed}
       <div class="tSec"><span>Pedido nuevo</span><span>${unid?unid+' u.':''}</span></div>
-      ${lNue||'<div class="vacio">Tocá los productos para agregarlos.</div>'}
+      ${lNue?lNue+'<div class="ayuda">Deslizá un producto hacia la izquierda para eliminarlo.</div>':'<div class="vacio">Tocá los productos para agregarlos.</div>'}
     </div>
     <div class="tPie">
       <div class="tot"><span>Nuevo</span><b>${eur(total)}</b></div>
@@ -406,7 +418,7 @@ function renderTicket(){
 function renderVivo(){
   if(document.querySelector('.fondo')) return renderEstadoSolo();
   if(S.mesa==null){render();return}
-  renderEstadoSolo(); renderTicket();
+  renderEstadoSolo(); if(!arrastre&&S.abierta==null) renderTicket();
 }
 function renderEstadoSolo(){const e=estadoTPV(),el=$('#estadoTPV');if(el){el.className='estado'+(e.ok?'':' mal');el.innerHTML='<i></i>'+esc(e.txt)}}
 
@@ -468,6 +480,52 @@ function agregarDirecto(id){
   guardar(); renderProds(); renderTicket();
 }
 
+// ---------- deslizar para eliminar (pedido nuevo) ----------
+let arrastre=null, sinClick=false;
+S.abierta=null;
+function cerrarAbierta(){ if(S.abierta==null) return; S.abierta=null; document.querySelectorAll('.desliza.abierta').forEach(f=>f.classList.remove('abierta')) }
+function eliminarLinea(i,fila){
+  const car=carrito(), l=car[i]; if(!l) return;
+  const sacar=()=>{car.splice(i,1);S.abierta=null;guardar();renderProds();renderTicket();
+    toast(`Eliminado: ${prod(l.id)?.nombre||'producto'}`,false,'Deshacer',()=>{carrito().splice(Math.min(i,carrito().length),0,l);guardar();renderProds();renderTicket()})};
+  if(fila){fila.style.height=fila.offsetHeight+'px';fila.querySelector('.tLin').style.transform='translateX(-110%)';
+    requestAnimationFrame(()=>{fila.classList.add('fuera');fila.style.height='0px'});setTimeout(sacar,200)}
+  else sacar();
+}
+document.addEventListener('pointerdown',e=>{
+  const fila=e.target.closest('.desliza');
+  if(!fila){ if(!e.target.closest('.borrarFila')) cerrarAbierta(); 
+    const ag=e.target.closest('.tLin.agora'); if(ag&&e.pointerType!=='mouse') arrastre={agora:true,x:e.clientX,y:e.clientY};
+    return }
+  if(S.abierta!=null&&+fila.dataset.fila!==S.abierta) cerrarAbierta();
+  arrastre={fila,x:e.clientX,y:e.clientY,dx:0,base:fila.classList.contains('abierta')?-104:0,dir:null,id:e.pointerId};
+});
+document.addEventListener('pointermove',e=>{
+  if(!arrastre) return;
+  const dx=e.clientX-arrastre.x, dy=e.clientY-arrastre.y;
+  if(!arrastre.dir){ if(Math.abs(dx)<8&&Math.abs(dy)<8) return; arrastre.dir=Math.abs(dx)>Math.abs(dy)?'h':'v'; }
+  if(arrastre.dir!=='h'){arrastre=null;return}
+  if(arrastre.agora){ if(dx<-30){toast('Lo que ya está en Ágora se anula desde el TPV o el iPad de Ágora.');arrastre=null} return }
+  sinClick=true;
+  const f=arrastre.fila; f.classList.add('arrastrando');
+  arrastre.dx=Math.min(0,arrastre.base+dx);
+  f.querySelector('.tLin').style.transform=`translateX(${arrastre.dx}px)`;
+});
+function soltar(){
+  if(!arrastre) return;
+  const a=arrastre; arrastre=null;
+  if(a.agora||!a.dir) return;
+  const f=a.fila, tl=f.querySelector('.tLin'), i=+f.dataset.fila;
+  f.classList.remove('arrastrando'); tl.style.transform='';
+  setTimeout(()=>{sinClick=false},50);
+  if(a.dx<-Math.min(180,f.offsetWidth*0.45)){eliminarLinea(i,f);return}
+  if(a.dx<-50){S.abierta=i;f.classList.add('abierta')}
+  else{if(S.abierta===i)S.abierta=null;f.classList.remove('abierta')}
+}
+document.addEventListener('pointerup',soltar);
+document.addEventListener('pointercancel',soltar);
+document.addEventListener('click',e=>{ if(sinClick){e.stopPropagation();e.preventDefault();sinClick=false} },true);
+
 // ---------- enviar ----------
 async function enviar(){
   const car=carrito(); if(!car.length||S.enviando) return;
@@ -486,12 +544,14 @@ async function enviar(){
 
 // ---------- clics ----------
 document.addEventListener('click',e=>{
+  const bb=e.target.closest('[data-borrar]');
+  if(bb){eliminarLinea(+bb.dataset.borrar,bb.closest('.desliza'));return}
   const b=e.target.closest('[data-centro],[data-mesa],[data-volver],[data-cat],[data-prod],[data-menos],[data-mas],[data-editar],[data-enviar],[data-salir],[data-verticket],[data-cerrarticket],[data-op],[data-hmenos],[data-hmas],[data-hok],[data-cerrarhoja],[data-fondo]');
   if(!b) return;
   const d=b.dataset;
   if(d.fondo!=null){ if(e.target===b) cerrarHoja(); return }
   if(d.centro){S.centro=+d.centro;S.mesa=null;S.buscar='';guardar();render();return}
-  if(d.mesa!=null){S.mesa=d.mesa;S.verTicket=false;S.buscar='';render();return}
+  if(d.mesa!=null){S.abierta=null;S.mesa=d.mesa;S.verTicket=false;S.buscar='';render();return}
   if(d.volver){S.mesa=null;S.buscar='';render();return}
   if(d.cat){S.cat=+d.cat;S.buscar='';renderMesa();return}
   if(d.prod){agregarDirecto(+d.prod);return}
