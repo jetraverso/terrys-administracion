@@ -1043,7 +1043,7 @@ async function contarPendientesWeb(){
   try{
     const r=await sbc.from('reservas').select('id',{count:'exact',head:true}).eq('estado','pendiente').gte('fecha',hoyISO());
     const c=await sbc.from('eventos_consultas').select('id',{count:'exact',head:true}).eq('estado','nueva');
-    const p=await sbc.from('pedidos_take').select('id',{count:'exact',head:true}).eq('estado','nuevo').gte('dia',hoyISO());
+    const p=await sbc.from('pedidos_take').select('id',{count:'exact',head:true}).eq('estado','nuevo').is('mesa',null).is('agora_centro',null).gte('dia',hoyISO());
     const n=(r.count||0)+(c.count||0), np=p.error?0:(p.count||0);
     if(n!==webPend||np!==pedPend){ webPend=n; pedPend=np; renderTabs(); }
   }catch(_){}
@@ -1139,7 +1139,7 @@ function agoraBadge(p){
   return `<div class="ag pen" title="El programa del TPV lo carga en Ágora en unos segundos">Esperando al TPV…</div>`;
 }
 function panelPedidos(ped,hoy){
-  const cab=n=>`<div class="wcab"><h2>Pedidos take away y terraza</h2><div class="wseg"><button class="btn${pedRango==='proximos'?' primary':''}" data-p-rango="proximos">Próximos</button><button class="btn${pedRango==='anteriores'?' primary':''}" data-p-rango="anteriores">Anteriores</button><button class="btn" data-p-recargar>Actualizar</button><button class="btn${pedOcultarCanc?' primary':''}" data-p-canc title="Mostrar u ocultar los pedidos cancelados">${pedOcultarCanc?'Mostrar cancelados':'Ocultar cancelados'}</button></div></div>
+  const cab=n=>`<div class="wcab"><h2>Pedidos take away</h2><div class="wseg"><button class="btn${pedRango==='proximos'?' primary':''}" data-p-rango="proximos">Próximos</button><button class="btn${pedRango==='anteriores'?' primary':''}" data-p-rango="anteriores">Anteriores</button><button class="btn" data-p-recargar>Actualizar</button><button class="btn${pedOcultarCanc?' primary':''}" data-p-canc title="Mostrar u ocultar los pedidos cancelados">${pedOcultarCanc?'Mostrar cancelados':'Ocultar cancelados'}</button></div></div>
     <div class="sub">${pedRango==='proximos'?`Pedidos de terrysburgers.com/pedido/ para retirar en el local (se pagan al retirar)${n?` · <b>${n} ${n>1?'nuevos':'nuevo'}</b>`:''}. Entran solos a Ágora (pedidos Delivery, serie WEB): tocá <b>Preparar</b> en el TPV para que salga en cocina. Acá pasalos a Preparando, Listo y Entregado.`:'Últimos 300 pedidos de días anteriores.'}</div>`;
   if(ped.error) return `<div class="panel">${cab(0)}<div class="aviso">Falta correr la parte 12 del schema.sql en Supabase (${esc(ped.error)}).</div></div>`;
   const nuevos=ped.filter(p=>p.estado==='nuevo').length;
@@ -1331,7 +1331,7 @@ async function renderPedidosVista(){
   const hoy=hoyISO();
   let html='';
   if(pedVer==='pedidos'){
-    const q=sbc.from('pedidos_take').select('*');
+    const q=sbc.from('pedidos_take').select('*').is('mesa',null).is('agora_centro',null);   // solo take away de la web (lo de terraza y el local se ve en Ágora)
     const r=await (pedRango==='proximos'?q.gte('dia',hoy).order('dia').order('hora'):q.lt('dia',hoy).order('dia',{ascending:false}).order('hora')).limit(300);
     if(tk!==repTk||vista!=='pedidos') return;
     html=panelPedidos(r.error?{error:errMsg(r.error)}:r.data,hoy);
