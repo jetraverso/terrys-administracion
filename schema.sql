@@ -2706,3 +2706,172 @@ end;
 $$;
 revoke all on function public.agora_pendientes(text) from public;
 grant execute on function public.agora_pendientes(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 25. Quitar productos de una mesa desde la página de camareros
+-- ---------------------------------------------------------------
+-- La API de Ágora no deja borrar líneas: se manda el mismo producto (con sus extras) con
+-- cantidad negativa a la mesa y Ágora lo resta de la cuenta (probado el 2026-11-15).
+-- El pedido queda en pedidos_take con quitar = true (cantidades y total en positivo).
+alter table public.pedidos_take add column if not exists quitar boolean not null default false;
+
+-- clave de una línea de la mesa: producto | extras ordenados | precio unitario
+create or replace function public._pos_clave(l jsonb)
+returns text
+language sql
+immutable
+set search_path = public
+as $$
+  select (l ->> 'id') || '|' ||
+         coalesce((select string_agg(a ->> 'id', ',' order by (a ->> 'id')::int) from jsonb_array_elements(coalesce(l -> 'ad', '[]'::jsonb)) a), '') || '|' ||
+         to_char(round(coalesce((l ->> 'u')::numeric, 0), 2), 'FM999990.00');
+$$;
+revoke all on function public._pos_clave(jsonb) from public, anon, authenticated;
+
+-- p = {centro, mesa, clave, cant}
+create or replace function public.pos_quitar(p_token text, p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c public.pos_camareros; e public.pos_estado; v_cid int; v_mesa text; v_clave text; v_cant int;
+  v_lin jsonb; v_hay numeric; v_pend numeric; v_u numeric(8,2); v_pid bigint; v_centro text;
+begin
+  c := public._pos_sesion(p_token);
+  select * into e from public.pos_estado where id = 1;
+  begin v_cid := (p ->> 'centro')::int; v_cant := (p ->> 'cant')::int; exception when others then v_cid := null; end;
+  v_mesa := p ->> 'mesa'; v_clave := p ->> 'clave';
+  if v_cid is null or v_mesa is null or v_clave is null or v_cant is null or v_cant not between 1 and 50 then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end if;
+  -- cuántas unidades de esa línea hay en la mesa según el último dato del TPV
+  select sum((l ->> 'c')::numeric) into v_hay
+    from jsonb_array_elements(e.mesas) m, jsonb_array_elements(m -> 'lineas') l
+   where (m ->> 'centro')::int = v_cid and m ->> 'mesa' = v_mesa and l ->> 'id' is not null and public._pos_clave(l) = v_clave;
+  -- (para armar la línea se usa una positiva)
+  select l into v_lin
+    from jsonb_array_elements(e.mesas) m, jsonb_array_elements(m -> 'lineas') l
+   where (m ->> 'centro')::int = v_cid and m ->> 'mesa' = v_mesa and l ->> 'id' is not null and public._pos_clave(l) = v_clave
+     and (l ->> 'c')::numeric > 0
+   limit 1;
+  -- menos lo que ya se mandó a quitar y todavía no figura en la mesa
+  select coalesce(sum((i ->> 'cant')::int), 0) into v_pend
+    from public.pedidos_take t, jsonb_array_elements(t.items) i
+   where t.quitar and t.agora_centro = v_cid and t.agora_ubicacion = v_mesa and t.estado <> 'cancelado'
+     and t.creado > now() - interval '2 hours' and i ->> 'clave' = v_clave
+     and (t.agora_estado is distinct from 'enviado' or t.agora_enviado > coalesce(e.mesas_actualizadas, now()) - interval '10 seconds');
+  if v_lin is null or coalesce(v_hay, 0) - v_pend < v_cant then
+    raise exception 'Ese producto ya no está en la mesa (o ya se quitó)' using errcode = '22023';
+  end if;
+  v_u := (v_lin ->> 'u')::numeric;
+  select x ->> 'nombre' into v_centro from jsonb_array_elements(e.carta -> 'centros') x where (x ->> 'id')::int = v_cid;
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total,
+                                   agora_centro, agora_ubicacion, camarero, avisado, quitar)
+  values ((now() at time zone 'Europe/Madrid')::date, date_trunc('minute', (now() at time zone 'Europe/Madrid')::time),
+          left(coalesce(v_centro, 'Centro ' || v_cid) || ' · ' || v_mesa, 80), null, null,
+          jsonb_build_array(jsonb_build_object(
+            'id', v_lin ->> 'id', 'nombre', v_lin ->> 'n', 'extra', nullif(v_lin ->> 'a', ''), 'cant', v_cant, 'precio', v_u,
+            'agora_id', (v_lin ->> 'id')::int, 'clave', v_clave,
+            'addins', (select coalesce(jsonb_agg(jsonb_build_object('id', (a ->> 'id')::int, 'nombre', a ->> 'n', 'precio', coalesce((a ->> 'p')::numeric, 0))), '[]'::jsonb)
+                         from jsonb_array_elements(coalesce(v_lin -> 'ad', '[]'::jsonb)) a where a ->> 'id' is not null))),
+          v_cant, v_cant * v_u, v_cid, v_mesa, c.nombre, now(), true)
+  returning id into v_pid;
+  return jsonb_build_object('ok', true, 'id', v_pid);
+end;
+$$;
+revoke all on function public.pos_quitar(text, jsonb) from public;
+grant execute on function public.pos_quitar(text, jsonb) to anon, authenticated;
+
+-- La página ve también los «quitar» en curso.
+create or replace function public.pos_mesas(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros; e public.pos_estado;
+begin
+  c := public._pos_sesion(p_token);
+  select * into e from public.pos_estado where id = 1;
+  return jsonb_build_object(
+    'mesas', e.mesas, 'actualizadas', e.mesas_actualizadas, 'ahora', now(),
+    'pedidos', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', p.id, 'centro', p.agora_centro, 'mesa', p.agora_ubicacion, 'camarero', p.camarero, 'quitar', p.quitar,
+               'creado', p.creado, 'estado', coalesce(p.agora_estado, 'pendiente'), 'error', p.agora_error,
+               'items', (select coalesce(jsonb_agg(jsonb_build_object('nombre', i ->> 'nombre', 'extra', i ->> 'extra', 'cant', i ->> 'cant', 'nota', i ->> 'nota', 'clave', i ->> 'clave')), '[]'::jsonb)
+                           from jsonb_array_elements(p.items) i)) order by p.id)
+        from public.pedidos_take p
+       where p.agora_centro is not null and p.estado <> 'cancelado' and p.creado > now() - interval '2 hours'
+         and (p.agora_estado is null or p.agora_estado = 'error'
+              or (p.agora_estado = 'enviado' and p.agora_enviado > coalesce(e.mesas_actualizadas, now()) - interval '10 seconds'))), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.pos_mesas(text) from public;
+grant execute on function public.pos_mesas(text) to anon, authenticated;
+
+-- Al TPV le llegan los «quitar» con cantidad negativa.
+create or replace function public.agora_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r public.pedidos_take;
+  l jsonb;
+  pr public.productos;
+  v_extra text; v_var text; v_salsa text; v_agora int; v_addin int; v_addins jsonb;
+  v_lineas jsonb;
+  v_out jsonb := '[]';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.integraciones set ultimo_uso = now() where nombre = 'agora';
+  for r in select * from public.pedidos_take
+            where estado <> 'cancelado' and dia >= v_hoy
+              and (agora_estado is null or (agora_estado = 'error' and agora_intentos < 5))
+            order by (agora_centro is null), creado limit 20 loop
+    v_lineas := '[]';
+    for l in select * from jsonb_array_elements(r.items) loop
+      v_extra := coalesce(l ->> 'extra', '');
+      if l ? 'agora_id' then
+        v_agora := (l ->> 'agora_id')::int;
+        v_addins := coalesce(l -> 'addins', '[]'::jsonb);
+        v_salsa := null; v_addin := null;
+      else
+        select * into pr from public.productos where id = l ->> 'id';
+        v_var   := case when lower(v_extra) in ('simple', 'doble') then lower(v_extra) end;
+        v_salsa := case when v_extra ilike 'Salsa %' then substr(v_extra, 7) end;
+        v_agora := case when v_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+        v_addin := null;
+        if v_salsa is not null and pr.agora_salsas is not null then
+          select value::int into v_addin from jsonb_each_text(pr.agora_salsas) where lower(key) = lower(v_salsa) limit 1;
+        end if;
+        v_addins := case when v_addin is not null then jsonb_build_array(jsonb_build_object('id', v_addin, 'nombre', v_salsa, 'precio', 0)) else '[]'::jsonb end;
+      end if;
+      v_lineas := v_lineas || jsonb_build_object(
+        'id', l ->> 'id', 'nombre', l ->> 'nombre', 'extra', nullif(v_extra, ''), 'nota', l ->> 'nota',
+        'cant', (l ->> 'cant')::int * case when r.quitar then -1 else 1 end, 'precio', (l ->> 'precio')::numeric,
+        'agora_id', v_agora, 'addins', v_addins,
+        'agora_salsa', v_addin, 'salsa', v_salsa);
+    end loop;
+    v_out := v_out || jsonb_build_object(
+      'id', r.id, 'creado', r.creado, 'dia', r.dia, 'hora', to_char(r.hora, 'HH24:MI'),
+      'nombre', r.nombre, 'telefono', r.telefono, 'comentario', r.comentario,
+      'total', case when r.quitar then -r.total else r.total end, 'pagado', false, 'lineas', v_lineas, 'intentos', r.agora_intentos,
+      'mesa', r.mesa, 'agora_mesa', (select m.agora_mesa from public.terraza_mesas m where m.numero = r.mesa),
+      'agora_centro', r.agora_centro, 'agora_ubicacion', r.agora_ubicacion, 'camarero', r.camarero, 'quitar', r.quitar,
+      'centro_nombre', (select x ->> 'nombre' from public.pos_estado e, jsonb_array_elements(e.carta -> 'centros') x
+                         where e.id = 1 and (x ->> 'id')::int = r.agora_centro));
+  end loop;
+  return v_out;
+end;
+$$;
+revoke all on function public.agora_pendientes(text) from public;
+grant execute on function public.agora_pendientes(text) to anon, authenticated;

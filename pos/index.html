@@ -107,6 +107,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline
 .borrarFila{position:absolute;top:0;right:0;bottom:1px;width:104px;background:var(--danger);color:#fff;font-weight:700;font-size:15px}
 .desliza.fuera{transition:height .2s ease,opacity .2s ease;opacity:0}
 .ayuda{color:var(--muted);font-size:12px;padding:8px 0 0}
+.desliza .tLin.agora{background:var(--surface)}
+.btnEnviar.btnQuitar{background:var(--danger);color:#fff}
+.quitarTxt{color:var(--ink-2);font-size:14px;margin:14px 0 4px}
 .toastBtn{margin-left:14px;padding:4px 10px;border-radius:8px;background:var(--paper);color:var(--ink);font-weight:700}
 .tPie{border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
 .tPie .tot{display:flex;justify-content:space-between;font-size:15px;color:var(--ink-2)}
@@ -389,13 +392,16 @@ function renderTicket(){
   const el=$('#ticket'); if(!el) return;
   const a=abiertaDe(S.mesa), peds=pedidosDe(S.centro,S.mesa), car=carrito();
   const total=car.reduce((s,l)=>s+l.cant*precioLinea(l),0), unid=car.reduce((s,l)=>s+l.cant,0);
-  const lAg=a?(a.lineas||[]).map(l=>`<div class="tLin agora"><span class="c">${num(l.c)}</span><span class="n">${esc(l.n)}${l.a?`<small>${esc(l.a)}</small>`:''}${l.nota?`<small class="nota">${esc(l.nota)}</small>`:''}</span><span class="p">${eur(l.t)}</span></div>`).join(''):'';
+  const lAg=gruposAgora(a).map(g=>{const k='a:'+g.clave;
+    const fila=`<div class="tLin agora"><span class="c">${num(g.c)}</span><span class="n">${esc(g.n)}${g.a?`<small>${esc(g.a)}</small>`:''}${g.nota?`<small class="nota">${esc(g.nota)}</small>`:''}</span><span class="p">${eur(g.t)}</span></div>`;
+    return g.id?`<div class="desliza${S.abierta===k?' abierta':''}" data-k="${esc(k)}"><button class="borrarFila" data-quitar="${esc(g.clave)}" tabindex="-1">Quitar</button>${fila}</div>`:fila}).join('');
   const lPed=peds.map(p=>{
     const cl=p.estado==='enviado'?'ok':p.estado==='error'?'err':'';
-    const tit=p.estado==='enviado'?'✓ Entró en Ágora':p.estado==='error'?'No entró en Ágora, se reintenta solo':'Enviando a Ágora…';
-    return `<div class="envio ${cl}"><b>${tit}</b>${(p.items||[]).map(i=>`${esc(i.cant)} × ${esc(i.nombre)}${i.extra?' ('+esc(i.extra)+')':''}`).join(' · ')}${p.error?`<br><small>${esc(p.error)}</small>`:''}<br><small>${esc(p.camarero||'')} · ${new Date(p.creado).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></div>`}).join('');
+    const tit=p.quitar?(p.estado==='enviado'?'✓ Quitado de Ágora':p.estado==='error'?'No se pudo quitar en Ágora, se reintenta solo':'Quitando de Ágora…')
+      :(p.estado==='enviado'?'✓ Entró en Ágora':p.estado==='error'?'No entró en Ágora, se reintenta solo':'Enviando a Ágora…');
+    return `<div class="envio ${cl}"><b>${tit}</b>${(p.items||[]).map(i=>`${p.quitar?'−':''}${esc(i.cant)} × ${esc(i.nombre)}${i.extra?' ('+esc(i.extra)+')':''}`).join(' · ')}${p.error?`<br><small>${esc(p.error)}</small>`:''}<br><small>${esc(p.camarero||'')} · ${new Date(p.creado).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></div>`}).join('');
   const lNue=car.map((l,i)=>{const p=prod(l.id);const o=textoOps(l);
-    return `<div class="desliza${S.abierta===i?' abierta':''}" data-fila="${i}"><button class="borrarFila" data-borrar="${i}" tabindex="-1">Eliminar</button><div class="tLin nuevo"><div class="paso"><button data-menos="${i}" aria-label="Uno menos">−</button><span>${l.cant}</span><button data-mas="${i}" aria-label="Uno más">+</button></div>
+    return `<div class="desliza${S.abierta==='n:'+i?' abierta':''}" data-k="n:${i}"><button class="borrarFila" data-borrar="${i}" tabindex="-1">Eliminar</button><div class="tLin nuevo"><div class="paso"><button data-menos="${i}" aria-label="Uno menos">−</button><span>${l.cant}</span><button data-mas="${i}" aria-label="Uno más">+</button></div>
       <span class="info n" data-editar="${i}">${esc(p?p.nombre:'Producto '+l.id)}${o?`<small>${esc(o)}</small>`:''}${l.nota?`<small class="nota">${esc(l.nota)}</small>`:''}</span><span class="p">${eur(l.cant*precioLinea(l))}</span></div></div>`}).join('');
   el.innerHTML=`<div class="scroll">
       <div class="tCab">${esc(centroAct()?.nombre||'')} · ${esc(S.mesa)}</div>
@@ -404,7 +410,8 @@ function renderTicket(){
       ${a?`<div class="tLin agora"><span></span><span class="n">Total de la mesa</span><span class="p"><b>${eur(a.total)}</b></span></div>`:''}
       ${lPed}
       <div class="tSec"><span>Pedido nuevo</span><span>${unid?unid+' u.':''}</span></div>
-      ${lNue?lNue+'<div class="ayuda">Deslizá un producto hacia la izquierda para eliminarlo.</div>':'<div class="vacio">Tocá los productos para agregarlos.</div>'}
+      ${lNue||'<div class="vacio">Tocá los productos para agregarlos.</div>'}
+      ${lNue||lAg?'<div class="ayuda">Deslizá un producto hacia la izquierda para eliminarlo (lo que ya está en Ágora se resta de la cuenta).</div>':''}
     </div>
     <div class="tPie">
       <div class="tot"><span>Nuevo</span><b>${eur(total)}</b></div>
@@ -462,7 +469,7 @@ function tocarOpcion(id,ri,menos){
   else if(k){H.ops=H.ops.filter(x=>x!==id)} // lleno: tocar una elegida la saca
   else toast(`En ${r.nombre.toLowerCase()} van hasta ${max}`,true);
 }
-function cerrarHoja(){H=null;$('#capa').innerHTML=''}
+function cerrarHoja(){H=null;Q=null;$('#capa').innerHTML=''}
 function confirmarHoja(){
   if(faltan().length) return;
   const nota=($('#notaIn')?.value||'').trim().slice(0,120);
@@ -480,7 +487,54 @@ function agregarDirecto(id){
   guardar(); renderProds(); renderTicket();
 }
 
-// ---------- deslizar para eliminar (pedido nuevo) ----------
+// ---------- lo que hay en Ágora, agrupado (una línea y su «−1» se compensan) ----------
+const claveLinea=l=>`${l.id}|${(l.ad||[]).map(x=>x.id).filter(x=>x!=null).sort((x,y)=>x-y).join(',')}|${(Math.round((+l.u||0)*100)/100).toFixed(2)}`;
+function gruposAgora(a){
+  if(!a) return [];
+  const m=new Map();
+  for(const l of a.lineas||[]){
+    const k=l.id!=null?claveLinea(l):'x|'+l.n+'|'+(l.a||'')+'|'+(l.nota||'');
+    const g=m.get(k)||{clave:k,id:l.id,n:l.n,a:l.a,nota:'',c:0,t:0};
+    g.c+=+l.c||0; g.t+=+l.t||0; if(l.nota&&+l.c>0) g.nota=l.nota;
+    m.set(k,g);
+  }
+  return [...m.values()].filter(g=>Math.round(g.c*1000)!==0);
+}
+function pendienteQuitar(clave){
+  return pedidosDe(S.centro,S.mesa).filter(p=>p.quitar).flatMap(p=>p.items||[]).filter(i=>i.clave===clave).reduce((s,i)=>s+(+i.cant||0),0);
+}
+let Q=null; // {clave, nombre, extra, max, cant}
+function abrirQuitar(clave){
+  const g=gruposAgora(abiertaDe(S.mesa)).find(g=>g.clave===clave); cerrarAbierta();
+  if(!g) return toast('Ese producto ya no está en la mesa.',true);
+  const max=Math.floor(g.c-pendienteQuitar(clave));
+  if(max<1) return toast('Ya se está quitando.',true);
+  Q={clave,nombre:g.n,extra:g.a,max,cant:1,unit:g.t/g.c};
+  dibujarQuitar();
+}
+function dibujarQuitar(){
+  $('#capa').innerHTML=`<div class="fondo" data-fondo="1"><div class="hoja" role="dialog" aria-modal="true" aria-label="Quitar de la mesa">
+    <header><h2>Quitar de ${esc(centroAct()?.nombre||'')} · ${esc(S.mesa)}<small>${esc(Q.nombre)}${Q.extra?' · '+esc(Q.extra):''}</small></h2><button class="cerrar" data-cerrarhoja="1" aria-label="Cerrar">×</button></header>
+    <div class="scroll"><p class="quitarTxt">Se resta de la cuenta de la mesa en Ágora (en el TPV va a figurar el producto y la línea que lo descuenta).</p></div>
+    <footer><div class="paso"><button data-qmenos="1" aria-label="Uno menos">−</button><span>${Q.cant}</span><button data-qmas="1" aria-label="Uno más">+</button></div>
+      <button class="btnEnviar btnQuitar" data-qok="1" ${S.enviando?'disabled':''}>Quitar ${Q.cant} · −${eur(Q.cant*Q.unit)}</button></footer>
+  </div></div>`;
+}
+async function confirmarQuitar(){
+  if(!Q||S.enviando) return;
+  S.enviando=true; dibujarQuitar();
+  try{
+    await rpc('pos_quitar',{p_token:S.token,p:{centro:S.centro,mesa:S.mesa,clave:Q.clave,cant:Q.cant}});
+    toast(`Quitando ${Q.cant} × ${Q.nombre}…`);
+    Q=null; $('#capa').innerHTML='';
+    await cargarMesas().catch(()=>{});
+  }catch(e){
+    if(vencida(e)){S.enviando=false;Q=null;$('#capa').innerHTML='';return mostrarPin('Tu sesión venció. Poné tu PIN.')}
+    toast('No se quitó: '+e.message,true);
+  }finally{S.enviando=false; if(Q) dibujarQuitar(); if(S.mesa!=null) renderTicket()}
+}
+
+// ---------- deslizar para eliminar ----------
 let arrastre=null, sinClick=false;
 S.abierta=null;
 function cerrarAbierta(){ if(S.abierta==null) return; S.abierta=null; document.querySelectorAll('.desliza.abierta').forEach(f=>f.classList.remove('abierta')) }
@@ -494,10 +548,8 @@ function eliminarLinea(i,fila){
 }
 document.addEventListener('pointerdown',e=>{
   const fila=e.target.closest('.desliza');
-  if(!fila){ if(!e.target.closest('.borrarFila')) cerrarAbierta(); 
-    const ag=e.target.closest('.tLin.agora'); if(ag&&e.pointerType!=='mouse') arrastre={agora:true,x:e.clientX,y:e.clientY};
-    return }
-  if(S.abierta!=null&&+fila.dataset.fila!==S.abierta) cerrarAbierta();
+  if(!fila){ if(!e.target.closest('.borrarFila')) cerrarAbierta(); return }
+  if(S.abierta!=null&&fila.dataset.k!==S.abierta) cerrarAbierta();
   arrastre={fila,x:e.clientX,y:e.clientY,dx:0,base:fila.classList.contains('abierta')?-104:0,dir:null,id:e.pointerId};
 });
 document.addEventListener('pointermove',e=>{
@@ -505,7 +557,6 @@ document.addEventListener('pointermove',e=>{
   const dx=e.clientX-arrastre.x, dy=e.clientY-arrastre.y;
   if(!arrastre.dir){ if(Math.abs(dx)<8&&Math.abs(dy)<8) return; arrastre.dir=Math.abs(dx)>Math.abs(dy)?'h':'v'; }
   if(arrastre.dir!=='h'){arrastre=null;return}
-  if(arrastre.agora){ if(dx<-30){toast('Lo que ya está en Ágora se anula desde el TPV o el iPad de Ágora.');arrastre=null} return }
   sinClick=true;
   const f=arrastre.fila; f.classList.add('arrastrando');
   arrastre.dx=Math.min(0,arrastre.base+dx);
@@ -514,13 +565,15 @@ document.addEventListener('pointermove',e=>{
 function soltar(){
   if(!arrastre) return;
   const a=arrastre; arrastre=null;
-  if(a.agora||!a.dir) return;
-  const f=a.fila, tl=f.querySelector('.tLin'), i=+f.dataset.fila;
+  if(!a.dir) return;
+  const f=a.fila, tl=f.querySelector('.tLin'), k=f.dataset.k;
   f.classList.remove('arrastrando'); tl.style.transform='';
   setTimeout(()=>{sinClick=false},50);
-  if(a.dx<-Math.min(180,f.offsetWidth*0.45)){eliminarLinea(i,f);return}
-  if(a.dx<-50){S.abierta=i;f.classList.add('abierta')}
-  else{if(S.abierta===i)S.abierta=null;f.classList.remove('abierta')}
+  if(a.dx<-Math.min(180,f.offsetWidth*0.45)){
+    if(k.startsWith('n:')) eliminarLinea(+k.slice(2),f); else abrirQuitar(k.slice(2));
+    return}
+  if(a.dx<-50){S.abierta=k;f.classList.add('abierta')}
+  else{if(S.abierta===k)S.abierta=null;f.classList.remove('abierta')}
 }
 document.addEventListener('pointerup',soltar);
 document.addEventListener('pointercancel',soltar);
@@ -546,6 +599,11 @@ async function enviar(){
 document.addEventListener('click',e=>{
   const bb=e.target.closest('[data-borrar]');
   if(bb){eliminarLinea(+bb.dataset.borrar,bb.closest('.desliza'));return}
+  const bq=e.target.closest('[data-quitar]');
+  if(bq){abrirQuitar(bq.dataset.quitar);return}
+  const qq=e.target.closest('[data-qmenos],[data-qmas],[data-qok]');
+  if(qq&&Q){ if(qq.dataset.qok){confirmarQuitar();return}
+    Q.cant=Math.max(1,Math.min(Q.max,Q.cant+(qq.dataset.qmas?1:-1))); dibujarQuitar(); return }
   const b=e.target.closest('[data-centro],[data-mesa],[data-volver],[data-cat],[data-prod],[data-menos],[data-mas],[data-editar],[data-enviar],[data-salir],[data-verticket],[data-cerrarticket],[data-op],[data-hmenos],[data-hmas],[data-hok],[data-cerrarhoja],[data-fondo]');
   if(!b) return;
   const d=b.dataset;
@@ -569,7 +627,7 @@ document.addEventListener('click',e=>{
   if(d.cerrarhoja){cerrarHoja();return}
 });
 document.addEventListener('input',e=>{if(e.target.id==='buscar'){S.buscar=e.target.value;document.querySelectorAll('.cat').forEach(c=>c.classList.toggle('sel',!S.buscar&&+c.dataset.cat===S.cat));renderProds()}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&H) cerrarHoja()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&(H||Q)) cerrarHoja()});
 
 if(S.token) arrancar(); else mostrarPin();
 </script>

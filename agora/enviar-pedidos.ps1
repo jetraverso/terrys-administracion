@@ -90,7 +90,11 @@ function CargarMaestros {
   $script:M = @{
     Prod = @{}; Fam = @{}; PT = @{}; PO = @{}; Vat = @{}
   }
-  foreach ($p in (AgoraMaestro 'Products')) { $script:M.Prod[[int]$p.Id] = $p }
+  $script:M.Fmt = @{}   # formato de venta -> producto (las lineas de la base de Agora guardan el formato)
+  foreach ($p in (AgoraMaestro 'Products')) {
+    $script:M.Prod[[int]$p.Id] = $p
+    if (-not $p.DeletionDate -and $p.BaseSaleFormatId) { $script:M.Fmt[[int]$p.BaseSaleFormatId] = [int]$p.Id }
+  }
   foreach ($x in (AgoraMaestro 'Families')) { $script:M.Fam[[int]$x.Id] = $x.Name }
   foreach ($x in (AgoraMaestro 'PreparationTypes')) { $script:M.PT[[int]$x.Id] = $x.Name }
   foreach ($x in (AgoraMaestro 'PreparationOrders')) { $script:M.PO[[int]$x.Id] = $x.Name }
@@ -190,19 +194,32 @@ $huellaMesas = ''; $ultimasMesas = [datetime]::MinValue
 function SubirMesas {
   $lista = ($posCentros -join ',')
   $tk = AgoraSql "select Id, SaleCenterId, SaleLocationName, CreationDate, FriendlyName from dbo.Ticket where FrozenDate is null and CreationDate > dateadd(day, -2, getdate()) and SaleCenterId in ($lista) order by Id"
+  $abiertos = "select Id from dbo.Ticket where FrozenDate is null and CreationDate > dateadd(day, -2, getdate()) and SaleCenterId in ($lista)"
   $ln = AgoraSql @"
-select l.TicketId, l.ProductName, l.Quantity, l.TotalAmount, l.Notes,
-       stuff((select ', ' + a.ProductName from dbo.TicketLineAddin a where a.TicketLineId = l.Id order by a.AddinIndex for xml path('')), 1, 2, '') as Addins
+select l.Id, l.TicketId, l.SaleFormatId, l.ProductName, l.Quantity, l.TotalAmount, l.Notes
   from dbo.TicketLine l
- where l.IsCancelled = 0 and l.TicketId in (select Id from dbo.Ticket where FrozenDate is null and CreationDate > dateadd(day, -2, getdate()) and SaleCenterId in ($lista))
+ where l.IsCancelled = 0 and l.TicketId in ($abiertos)
  order by l.TicketId, l.TicketLineIndex
 "@
+  $adds = @{}
+  foreach ($a in (AgoraSql "select a.TicketLineId, a.SaleFormatId, a.ProductName, a.Price from dbo.TicketLineAddin a join dbo.TicketLine l on l.Id = a.TicketLineId where l.IsCancelled = 0 and l.TicketId in ($abiertos) order by a.TicketLineId, a.AddinIndex")) {
+    $k = [int]$a.TicketLineId
+    if (-not $adds.ContainsKey($k)) { $adds[$k] = New-Object System.Collections.ArrayList }
+    $fid = [int]$a.SaleFormatId
+    [void]$adds[$k].Add([ordered]@{ id = $(if ($M.Fmt.ContainsKey($fid)) { $M.Fmt[$fid] } else { $null }); n = (Txt $a.ProductName); p = [math]::Round([double]$a.Price, 2) })
+  }
   $mesas = @()
   foreach ($t in $tk) {
     $lineas = @(); $total = 0.0
     foreach ($l in ($ln | Where-Object { [int]$_.TicketId -eq [int]$t.Id })) {
       $total += [double]$l.TotalAmount
-      $lineas += [ordered]@{ n = (Txt $l.ProductName); c = [double]$l.Quantity; t = [math]::Round([double]$l.TotalAmount, 2); a = (Txt $l.Addins); nota = (Txt $l.Notes) }
+      $fid = [int]$l.SaleFormatId; $ad = @(); if ($adds.ContainsKey([int]$l.Id)) { $ad = @($adds[[int]$l.Id]) }
+      $cant = [double]$l.Quantity
+      # id = producto de Agora y ad = extras con su precio: con eso la pagina puede quitarlo (mismo producto con cantidad negativa)
+      $lineas += [ordered]@{ n = (Txt $l.ProductName); c = $cant; t = [math]::Round([double]$l.TotalAmount, 2)
+                             u = $(if ($cant -ne 0) { [math]::Round([double]$l.TotalAmount / $cant, 2) } else { 0 })
+                             id = $(if ($M.Fmt.ContainsKey($fid)) { $M.Fmt[$fid] } else { $null })
+                             a = (($ad | ForEach-Object { $_.n }) -join ', '); ad = $ad; nota = (Txt $l.Notes) }
     }
     $mesas += [ordered]@{ centro = [int]$t.SaleCenterId; mesa = (Txt $t.SaleLocationName); ticket = [int]$t.Id
                           abierta = ([datetime]$t.CreationDate).ToString('HH:mm'); nombre = (Txt $t.FriendlyName)
