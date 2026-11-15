@@ -232,6 +232,14 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .ptabla tr.p-off{opacity:.45}
 /* terraza: mesas y QR (parte 21) */
 .wmesa{display:inline-block;padding:2px 7px;border-radius:6px;background:var(--ok);color:#06210f;font-size:12px;font-weight:800;letter-spacing:.03em}
+.wmesa.wlocal{background:var(--accent);color:#07202d}
+.camlista{display:grid;gap:8px;margin-top:12px}
+.camfila{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 12px;border:1px solid var(--line-2);border-radius:10px;background:var(--surface)}
+.camfila.off{opacity:.55}
+.camfila b{flex:1;min-width:120px;font-size:16px}
+.camfila label{display:flex;align-items:center;gap:6px;font-size:14px}
+.camform{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.camform input{height:38px;border-radius:8px;border:1px solid var(--line-2);background:var(--surface-2);color:var(--ink);padding:0 10px;font:inherit}
 .qrs{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:12px}
 .mqr{border:1px solid var(--line-2);border-radius:12px;padding:12px;display:grid;gap:8px;justify-items:center;text-align:center;background:var(--surface)}
 .mqr.off{opacity:.45}
@@ -1149,6 +1157,14 @@ function panelPedidos(ped,hoy){
       const txt=p.estado==='listo'
         ?`¡Hola ${p.nombre}! Tu pedido nº ${p.id} de Terry's Burgers ya está listo para retirar. ¡Te esperamos! 🍔`
         :`¡Hola ${p.nombre}! Recibimos tu pedido nº ${p.id} en Terry's Burgers para retirar el ${fechaLargaW(p.dia)} a las ${hora}. Total: ${eurW(p.total)}, se paga al retirar. ¡Gracias! 🍔`;
+      if(p.agora_centro) return `<tr class="w-${p.estado}">
+        <td class="wh">${esc(hora)}</td>
+        <td class="wn"><span class="wmesa wlocal">${esc(p.nombre)}</span> <b>nº ${p.id} · ${esc(p.camarero||'')}</b><div class="witems">${esc(items)}</div>${agoraBadge(p)}</td>
+        <td class="wtot">${eurW(p.total)}</td>
+        <td class="wt"><small>Cargado por el camarero</small></td>
+        <td><select data-w-ped="${p.id}" aria-label="Estado del pedido">${optEst(p.estado)}</select></td>
+        <td class="wa"></td>
+      </tr>`;
       if(p.mesa) return `<tr class="w-${p.estado}">
         <td class="wh">${esc(hora)}</td>
         <td class="wn"><span class="wmesa">TERRAZA · MESA ${esc(p.mesa)}</span> <b>nº ${p.id} · ${esc(p.nombre)}</b><div class="witems">${esc(items)}</div>${p.comentario?`<small>💬 ${esc(p.comentario)}</small>`:''}${agoraBadge(p)}</td>
@@ -1191,6 +1207,57 @@ function qrSvg(txt){
   const q=qrcode(0,'M'); q.addData(txt); q.make();
   return q.createSvgTag({cellSize:4,margin:0,scalable:true});
 }
+// Página de camareros (parte 24): cada uno entra con su PIN en admin.terrysburgers.com/pos/
+function panelCamareros(cams){
+  const url=location.origin+'/pos/';
+  const cab=`<div class="wcab"><h2>Camareros</h2><div class="wseg"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">Abrir la página</a></div></div>
+    <div class="sub">En <b>${esc(url.replace(/^https?:\/\//,''))}</b> (iPad o celular) cada camarero entra con su PIN, elige Local, Terraza o Take away, ve las mesas abiertas en Ágora con lo que tienen y carga lo nuevo: el TPV lo suma a la cuenta de esa mesa en unos segundos (hace falta la jornada abierta). La carta y las mesas son las de Ágora. Desactivar un camarero o cambiarle el PIN lo saca de la página.</div>`;
+  if(cams.error) return `<div class="panel">${cab}<div class="aviso">Falta correr la parte 24 del schema.sql en Supabase (${esc(cams.error)}).</div></div>`;
+  const filas=cams.map(c=>`<div class="camfila${c.activo?'':' off'}"><b>${esc(c.nombre)}</b>
+      <label class="chk"><input type="checkbox" data-c-activo="${c.id}"${c.activo?' checked':''}> Activo</label>
+      <button class="btn" data-c-renombrar="${c.id}">Cambiar nombre</button>
+      <button class="btn" data-c-pin="${c.id}">Cambiar PIN</button>
+      <button class="btn" data-c-borrar="${c.id}">Borrar</button></div>`).join('');
+  return `<div class="panel">${cab}
+    <form class="camform" id="camForm" autocomplete="off"><input name="nombre" placeholder="Nombre" maxlength="40" required>
+      <input name="pin" placeholder="PIN (4 a 6 números)" inputmode="numeric" pattern="[0-9]{4,6}" maxlength="6" required>
+      <button class="btn primary" type="submit">+ Camarero</button></form>
+    <div class="camlista">${filas||'<div class="vacio">Todavía no hay camareros: cargá el primero con su PIN.</div>'}</div></div>`;
+}
+const camLista=()=>[...document.querySelectorAll('.camfila')];
+async function camGuardar(id,nombre,pin,activo){
+  const {error}=await sbc.rpc('pos_camarero_guardar',{p_id:id,p_nombre:nombre,p_pin:pin,p_activo:activo});
+  if(error){ toast('No se pudo: '+errMsg(error)); return false; }
+  return true;
+}
+$('reportes').addEventListener('submit',async e=>{
+  if(vista!=='pedidos'||pedVer!=='camareros'||e.target.id!=='camForm') return;
+  e.preventDefault();
+  const f=e.target;
+  if(await camGuardar(null,f.nombre.value.trim(),f.pin.value.trim(),true)){ toast('Camarero agregado'); renderPedidosVista(); }
+});
+$('reportes').addEventListener('click',async e=>{
+  if(vista!=='pedidos'||pedVer!=='camareros') return;
+  const b=e.target.closest('button'); if(!b) return;
+  const fila=b.closest('.camfila'), nombre=fila?.querySelector('b')?.textContent||'', activo=!!fila?.querySelector('[data-c-activo]')?.checked;
+  if(b.dataset.cPin){
+    const pin=(prompt(`PIN nuevo para ${nombre} (4 a 6 números):`)||'').trim(); if(!pin) return;
+    if(await camGuardar(+b.dataset.cPin,nombre,pin,activo)) toast('PIN cambiado');
+  }else if(b.dataset.cRenombrar){
+    const n=(prompt('Nombre:',nombre)||'').trim(); if(!n||n===nombre) return;
+    if(await camGuardar(+b.dataset.cRenombrar,n,null,activo)){ toast('Guardado'); renderPedidosVista(); }
+  }else if(b.dataset.cBorrar){
+    if(!confirm(`¿Borrar a ${nombre}? Sus pedidos anteriores quedan con su nombre.`)) return;
+    const {error}=await sbc.rpc('pos_camarero_borrar',{p_id:+b.dataset.cBorrar});
+    toast(error?'No se pudo: '+errMsg(error):'Borrado'); renderPedidosVista();
+  }
+});
+$('reportes').addEventListener('change',async e=>{
+  if(vista!=='pedidos'||pedVer!=='camareros'||!e.target.dataset.cActivo) return;
+  const t=e.target, fila=t.closest('.camfila');
+  if(await camGuardar(+t.dataset.cActivo,fila.querySelector('b').textContent,null,t.checked)) fila.classList.toggle('off',!t.checked);
+  else t.checked=!t.checked;
+});
 function panelMesas(mesas){
   const cab=`<div class="wcab"><h2>Mesas de la terraza</h2><div class="wseg"><button class="btn" data-m-nueva>+ Mesa</button><button class="btn primary" data-m-imprimir>Imprimir QR</button></div></div>
     <div class="sub">Cada mesa tiene su QR: el cliente lo escanea y pide desde el celular los productos con la tilde <b>Terraza</b>; el pedido aparece en Pedidos con «TERRAZA · MESA n» y entra en Ágora en esa mesa del centro TERRAZA (hace falta la jornada abierta en el TPV). Se paga al final, al camarero. <b>Cambiar código</b> invalida el QR viejo (por si alguien se lo llevó). <b>Mesa en Ágora</b> tiene que ser igual al nombre de la mesa en Ágora.</div>`;
@@ -1260,7 +1327,7 @@ async function renderPedidosVista(){
   const tk=++repTk, cont=$('reportes');
   if(!SB){ cont.innerHTML='<div class="aviso">La solapa Pedidos necesita Supabase: en modo demo no hay pedidos.</div>'; return; }
   if(!cont.querySelector('.wped')) cont.innerHTML='<div class="panel"><div class="vacio">Cargando…</div></div>';
-  const seg=`<div class="wseg" style="margin-bottom:12px"><button class="btn${pedVer==='pedidos'?' primary':''}" data-p-ver="pedidos">Pedidos</button><button class="btn${pedVer==='productos'?' primary':''}" data-p-ver="productos">Productos</button><button class="btn${pedVer==='mesas'?' primary':''}" data-p-ver="mesas">Mesas y QR</button></div>`;
+  const seg=`<div class="wseg" style="margin-bottom:12px"><button class="btn${pedVer==='pedidos'?' primary':''}" data-p-ver="pedidos">Pedidos</button><button class="btn${pedVer==='productos'?' primary':''}" data-p-ver="productos">Productos</button><button class="btn${pedVer==='mesas'?' primary':''}" data-p-ver="mesas">Mesas y QR</button><button class="btn${pedVer==='camareros'?' primary':''}" data-p-ver="camareros">Camareros</button></div>`;
   const hoy=hoyISO();
   let html='';
   if(pedVer==='pedidos'){
@@ -1268,6 +1335,10 @@ async function renderPedidosVista(){
     const r=await (pedRango==='proximos'?q.gte('dia',hoy).order('dia').order('hora'):q.lt('dia',hoy).order('dia',{ascending:false}).order('hora')).limit(300);
     if(tk!==repTk||vista!=='pedidos') return;
     html=panelPedidos(r.error?{error:errMsg(r.error)}:r.data,hoy);
+  }else if(pedVer==='camareros'){
+    const r=await sbc.from('pos_camareros').select('id,nombre,activo,creado').order('nombre');
+    if(tk!==repTk||vista!=='pedidos') return;
+    html=panelCamareros(r.error?{error:errMsg(r.error)}:r.data);
   }else if(pedVer==='mesas'){
     const [r]=await Promise.all([sbc.from('terraza_mesas').select('*').order('numero'),cargarQR()]);
     if(tk!==repTk||vista!=='pedidos') return;

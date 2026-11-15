@@ -12,6 +12,8 @@
 # Usa config.json (tokens: al lado del script o en Documents\Terrys Admin) y pedidos-agora.json
 # (serie, cliente, TPV, centro de venta: sin secretos). Registro en enviar-pedidos.log.
 # En Agora: sin pago el pedido entra Pendiente (tocar Preparar); pagado entra solo a cocina.
+# Pagina de camareros (admin.terrysburgers.com/pos/): sube la carta de cada centro y las mesas
+# abiertas (leidas de la base de Agora) y carga los pedidos en la mesa elegida (Type = Table).
 
 param([switch]$UnaVez, [switch]$Simular)
 $ErrorActionPreference = 'Stop'
@@ -96,6 +98,7 @@ function CargarMaestros {
   $script:maestrosHora = Get-Date
   Escribir ("Datos de Agora cargados: {0} productos." -f $script:M.Prod.Count)
   try { SubirCatalogo } catch { Escribir "Catalogo: $($_.Exception.Message)" }
+  try { SubirCartaPos } catch { Escribir "Carta del local: $($_.Exception.Message)" }
 }
 
 # Catalogo para la web (parte 18): productos vendibles con precio en la tarifa del centro TAKE AWAY
@@ -134,6 +137,84 @@ function SubirCatalogo {
   Escribir "Catalogo de Agora subido a la web: $n productos."
 }
 function N($id, $tabla) { if ($null -ne $id -and $tabla.ContainsKey([int]$id)) { $tabla[[int]$id] } else { '' } }
+
+# ---------- pagina de camareros (parte 24): carta por centro y mesas abiertas ----------
+# Se leen de la base de Agora en este TPV (SOLO LECTURA): la API no da las mesas abiertas.
+$posCentros = @(if ($opc.posCentros) { $opc.posCentros | ForEach-Object { [int]$_ } } else { 7, 13, 12 })
+function AgoraSql($sql) {
+  $cn = New-Object System.Data.SqlClient.SqlConnection ([string]$(if ($opc.agoraSql) { $opc.agoraSql } else { 'Server=localhost\AGORA;Database=igtpos;Integrated Security=True;Connect Timeout=8;ApplicationIntent=ReadOnly' }))
+  $cn.Open()
+  try {
+    $cmd = $cn.CreateCommand(); $cmd.CommandText = $sql; $cmd.CommandTimeout = 20
+    $tab = New-Object System.Data.DataTable; $tab.Load($cmd.ExecuteReader()); return ,$tab
+  } finally { $cn.Close() }
+}
+function Txt($v) { if ($v -is [DBNull] -or $null -eq $v) { return '' } return [string]$v }
+function ColorAgora($v) { $s = Txt $v; if ($s -match '([0-9A-Fa-f]{6})$') { return '#' + $Matches[1].ToLower() } return $null }
+$huellaCartaPos = ''
+function SubirCartaPos {
+  $lista = ($posCentros -join ',')
+  $centros = AgoraSql "select Id, Name, StyleBackColor from dbo.SaleCenter where DeletionDate is null and Id in ($lista)"
+  $ubic = AgoraSql "select SaleCenterId, Name from dbo.SaleLocation where SaleCenterId in ($lista) order by SaleCenterId, SaleLocationIndex"
+  $cs = AgoraSql "select CategoryId, SaleCenterId from dbo.CategorySaleCenters where SaleCenterId in ($lista)"
+  $cats = @{}; foreach ($c in (AgoraSql 'select Id, Name, StyleBackColor from dbo.Category where DeletionDate is null and ShowInPos = 1')) { $cats[[int]$c.Id] = $c }
+  $prodCat = @{}
+  foreach ($x in (AgoraSql 'select CategoryId, ProductId from dbo.ProductCategory')) {
+    $k = [int]$x.CategoryId; $prodId = [int]$x.ProductId
+    $pr = $M.Prod[$prodId]
+    if (-not $pr -or $pr.DeletionDate -or -not $pr.SaleableAsMain) { continue }
+    if (-not $prodCat.ContainsKey($k)) { $prodCat[$k] = New-Object System.Collections.ArrayList }
+    if (-not $prodCat[$k].Contains($prodId)) { [void]$prodCat[$k].Add($prodId) }
+  }
+  $salida = @()
+  foreach ($id in $posCentros) {
+    $c = $centros | Where-Object { [int]$_.Id -eq $id } | Select-Object -First 1
+    if (-not $c) { continue }
+    $categorias = @()
+    foreach ($r in ($cs | Where-Object { [int]$_.SaleCenterId -eq $id })) {
+      $k = [int]$r.CategoryId
+      if (-not $cats.ContainsKey($k) -or -not $prodCat.ContainsKey($k)) { continue }
+      $categorias += [ordered]@{ id = $k; nombre = (Txt $cats[$k].Name); color = (ColorAgora $cats[$k].StyleBackColor); productos = @($prodCat[$k] | Sort-Object) }
+    }
+    $mesas = @($ubic | Where-Object { [int]$_.SaleCenterId -eq $id } | ForEach-Object { Txt $_.Name })
+    $salida += [ordered]@{ id = $id; nombre = (Txt $c.Name); color = (ColorAgora $c.StyleBackColor); mesas = $mesas; categorias = $categorias }
+  }
+  $carta = [ordered]@{ centros = $salida }
+  $json = $carta | ConvertTo-Json -Depth 8 -Compress
+  if ($json -eq $script:huellaCartaPos -or $Simular) { return }
+  Supabase 'tpv_subir_carta' @{ p_token = $cfg.integracionToken; p_carta = $carta } | Out-Null
+  $script:huellaCartaPos = $json
+  Escribir ("Carta del local subida: {0} centros." -f $salida.Count)
+}
+$huellaMesas = ''; $ultimasMesas = [datetime]::MinValue
+function SubirMesas {
+  $lista = ($posCentros -join ',')
+  $tk = AgoraSql "select Id, SaleCenterId, SaleLocationName, CreationDate, FriendlyName from dbo.Ticket where FrozenDate is null and CreationDate > dateadd(day, -2, getdate()) and SaleCenterId in ($lista) order by Id"
+  $ln = AgoraSql @"
+select l.TicketId, l.ProductName, l.Quantity, l.TotalAmount, l.Notes,
+       stuff((select ', ' + a.ProductName from dbo.TicketLineAddin a where a.TicketLineId = l.Id order by a.AddinIndex for xml path('')), 1, 2, '') as Addins
+  from dbo.TicketLine l
+ where l.IsCancelled = 0 and l.TicketId in (select Id from dbo.Ticket where FrozenDate is null and CreationDate > dateadd(day, -2, getdate()) and SaleCenterId in ($lista))
+ order by l.TicketId, l.TicketLineIndex
+"@
+  $mesas = @()
+  foreach ($t in $tk) {
+    $lineas = @(); $total = 0.0
+    foreach ($l in ($ln | Where-Object { [int]$_.TicketId -eq [int]$t.Id })) {
+      $total += [double]$l.TotalAmount
+      $lineas += [ordered]@{ n = (Txt $l.ProductName); c = [double]$l.Quantity; t = [math]::Round([double]$l.TotalAmount, 2); a = (Txt $l.Addins); nota = (Txt $l.Notes) }
+    }
+    $mesas += [ordered]@{ centro = [int]$t.SaleCenterId; mesa = (Txt $t.SaleLocationName); ticket = [int]$t.Id
+                          abierta = ([datetime]$t.CreationDate).ToString('HH:mm'); nombre = (Txt $t.FriendlyName)
+                          total = [math]::Round($total, 2); lineas = $lineas }
+  }
+  $json = ConvertTo-Json -InputObject @($mesas) -Depth 6 -Compress
+  # se sube si cambio algo, y cada 30 s igual (asi la pagina sabe que el TPV esta conectado)
+  if ($json -eq $script:huellaMesas -and ((Get-Date) - $script:ultimasMesas).TotalSeconds -lt 30) { return }
+  if ($Simular) { Escribir "SIMULADO mesas abiertas: $json"; return }
+  Supabase 'tpv_subir_mesas' @{ p_token = $cfg.integracionToken; p_mesas = @($mesas) } | Out-Null
+  $script:huellaMesas = $json; $script:ultimasMesas = Get-Date
+}
 
 # ---------- armar el pedido como lo exporta Agora ----------
 function ArmarPedido($p) {
@@ -176,6 +257,7 @@ function ArmarPedido($p) {
       }
     }
     if ($adds.Count) { $linea.Addins = $adds; $linea.ProductPrice = [math]::Round($precio - $sumaAdd, 2) }
+    if ($l.nota) { $linea.Notes = [string]$l.nota }
     $lineas += $linea; $i++
     $k = '{0}|{1}' -f $vat.VatRate, $vat.SurchargeRate
     if (-not $impuestos.ContainsKey($k)) { $impuestos[$k] = @{ VatRate = [double]$vat.VatRate; SurchargeRate = [double]$vat.SurchargeRate; Gross = 0.0 } }
@@ -197,6 +279,11 @@ function ArmarPedido($p) {
     $tipo = 'Table'
     $centro = [ordered]@{ Id = [int]$opc.terrazaCentroId; Name = [string]$opc.terrazaCentroNombre; Location = [string]$p.agora_mesa }
     $nombreCliente = ('Mesa {0} - {1} (web)' -f $p.mesa, $p.nombre)
+  }
+  if ($p.agora_centro) {   # pagina de camareros (parte 24): a la mesa elegida; Agora lo suma a la cuenta abierta
+    $tipo = 'Table'
+    $centro = [ordered]@{ Id = [int]$p.agora_centro; Name = [string]$p.centro_nombre; Location = [string]$p.agora_ubicacion }
+    $nombreCliente = ('{0} - {1}' -f $p.agora_ubicacion, $p.camarero)
   }
   $pedido = [ordered]@{
     Serie = [string]$opc.serie; Number = [int]$opc.offsetNumero + [int]$p.id; Type = $tipo
@@ -310,6 +397,10 @@ function Vuelta {
     $m = $_.Exception.Message
     if ($m -ne $script:errAviso) { Escribir "Avisos: $m"; $script:errAviso = $m }   # no repetir el mismo error cada 5 s
   }
+  try { SubirMesas; $script:errMesas = $null } catch {
+    $m = $_.Exception.Message
+    if ($m -ne $script:errMesas) { Escribir "Mesas: $m"; $script:errMesas = $m }
+  }
   # (PowerShell 5.1 devuelve el arreglo JSON como un solo objeto: el pipe lo separa en pedidos)
   $pendientes = @(Supabase 'agora_pendientes' @{ p_token = $cfg.integracionToken } | ForEach-Object { $_ })
   foreach ($p in $pendientes) {
@@ -327,7 +418,12 @@ function Vuelta {
       $err = AgoraImportar $json
       if ($err) { throw "Agora: $err" }
       Supabase 'agora_marcar' @{ p_token = $cfg.integracionToken; p_id = [long]$p.id; p_ok = $true; p_numero = $num; p_error = $null } | Out-Null
-      Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, retira $($p.dia) $($p.hora), $($pedido.Totals.GrossAmount) EUR"
+      if ($p.agora_centro) {
+        Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, $($p.centro_nombre) $($p.agora_ubicacion) ($($p.camarero)), $($pedido.Totals.GrossAmount) EUR"
+        $script:ultimasMesas = [datetime]::MinValue   # que la pagina vea enseguida la mesa actualizada
+      } else {
+        Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, retira $($p.dia) $($p.hora), $($pedido.Totals.GrossAmount) EUR"
+      }
     } catch {
       $msg = $_.Exception.Message
       Escribir "ERROR pedido $($p.id): $msg"

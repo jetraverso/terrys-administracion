@@ -2303,3 +2303,406 @@ begin
 end;
 $$;
 revoke all on function public._pedido_lineas(jsonb, boolean, date, time) from public, anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 24. Pedidos en el local (página de camareros: admin.terrysburgers.com/pos/)
+-- ---------------------------------------------------------------
+-- · Cada camarero entra con su PIN (se cargan en el admin: Pedidos → Camareros).
+-- · El TPV sube la carta de cada centro de venta tal como la muestra el iPad de Ágora
+--   (categorías y productos de LOCAL, TERRAZA, TAKE AWAY…) y, cada pocos segundos, las mesas
+--   abiertas con lo que tienen cargado (lo lee de la base de Ágora).
+-- · El pedido se guarda en pedidos_take con el centro y la mesa de Ágora; el TPV lo carga como
+--   pedido de mesa y Ágora lo suma a la cuenta abierta de esa mesa (o la abre).
+
+create table if not exists public.pos_camareros (
+  id       int generated always as identity primary key,
+  nombre   text not null check (char_length(nombre) between 2 and 40),
+  pin_hash text not null,
+  activo   boolean not null default true,
+  creado   timestamptz not null default now()
+);
+create unique index if not exists pos_camareros_pin on public.pos_camareros (pin_hash) where activo;
+alter table public.pos_camareros enable row level security;
+revoke all on public.pos_camareros from anon, authenticated;
+grant select (id, nombre, activo, creado) on public.pos_camareros to authenticated;
+drop policy if exists pos_camareros_admin on public.pos_camareros;
+create policy pos_camareros_admin on public.pos_camareros for select to authenticated using (public.es_admin());
+
+create table if not exists public.pos_sesiones (
+  token_hash  text primary key,
+  camarero_id int not null references public.pos_camareros (id) on delete cascade,
+  vence       timestamptz not null
+);
+alter table public.pos_sesiones enable row level security;
+revoke all on public.pos_sesiones from anon, authenticated;
+
+create table if not exists public.pos_intentos (creado timestamptz not null default now());
+alter table public.pos_intentos enable row level security;
+revoke all on public.pos_intentos from anon, authenticated;
+
+-- Lo que sube el TPV: carta por centro y mesas abiertas (una sola fila).
+create table if not exists public.pos_estado (
+  id                 int primary key default 1 check (id = 1),
+  carta              jsonb not null default '{"centros": []}',
+  carta_actualizada  timestamptz,
+  mesas              jsonb not null default '[]',
+  mesas_actualizadas timestamptz
+);
+insert into public.pos_estado (id) values (1) on conflict (id) do nothing;
+alter table public.pos_estado enable row level security;
+revoke all on public.pos_estado from anon, authenticated;
+
+alter table public.pedidos_take add column if not exists agora_centro int;
+alter table public.pedidos_take add column if not exists agora_ubicacion text;
+alter table public.pedidos_take add column if not exists camarero text;
+
+create or replace function public._pos_pin_hash(p_pin text)
+returns text
+language sql
+immutable
+set search_path = public
+as $$ select encode(extensions.digest('terrys-pos:' || coalesce(p_pin, ''), 'sha256'), 'hex'); $$;
+revoke all on function public._pos_pin_hash(text) from public, anon, authenticated;
+
+-- Admin: alta / cambio de nombre, PIN o activo. Devuelve el id.
+create or replace function public.pos_camarero_guardar(p_id int, p_nombre text, p_pin text, p_activo boolean default true)
+returns int
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_nombre text := btrim(coalesce(p_nombre, '')); v_hash text; v_id int;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  if char_length(v_nombre) not between 2 and 40 then raise exception 'Poné un nombre (2 a 40 letras)' using errcode = '22023'; end if;
+  if nullif(p_pin, '') is not null then
+    if p_pin !~ '^[0-9]{4,6}$' then raise exception 'El PIN tiene que ser de 4 a 6 números' using errcode = '22023'; end if;
+    v_hash := public._pos_pin_hash(p_pin);
+    if exists (select 1 from public.pos_camareros where pin_hash = v_hash and activo and id is distinct from p_id) then
+      raise exception 'Ese PIN ya lo usa otro camarero' using errcode = '22023';
+    end if;
+  end if;
+  if p_id is null then
+    if v_hash is null then raise exception 'Falta el PIN' using errcode = '22023'; end if;
+    insert into public.pos_camareros (nombre, pin_hash, activo) values (v_nombre, v_hash, coalesce(p_activo, true)) returning id into v_id;
+  else
+    if coalesce(p_activo, true) and v_hash is null and exists (
+         select 1 from public.pos_camareros a, public.pos_camareros b
+          where a.id = p_id and b.id <> a.id and b.activo and b.pin_hash = a.pin_hash) then
+      raise exception 'Ese PIN ya lo usa otro camarero' using errcode = '22023';
+    end if;
+    update public.pos_camareros set nombre = v_nombre, activo = coalesce(p_activo, true), pin_hash = coalesce(v_hash, pin_hash)
+     where id = p_id returning id into v_id;
+    if v_id is null then raise exception 'No existe ese camarero' using errcode = '22023'; end if;
+    -- PIN nuevo o desactivado: se cierran sus sesiones abiertas
+    if v_hash is not null or not coalesce(p_activo, true) then delete from public.pos_sesiones where camarero_id = v_id; end if;
+  end if;
+  return v_id;
+end;
+$$;
+revoke all on function public.pos_camarero_guardar(int, text, text, boolean) from public;
+grant execute on function public.pos_camarero_guardar(int, text, text, boolean) to authenticated;
+
+create or replace function public.pos_camarero_borrar(p_id int)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  delete from public.pos_camareros where id = p_id;
+end;
+$$;
+revoke all on function public.pos_camarero_borrar(int) from public;
+grant execute on function public.pos_camarero_borrar(int) to authenticated;
+
+-- Entrar con el PIN → token de sesión (14 h). Máximo 20 PIN equivocados cada 15 minutos.
+create or replace function public.pos_entrar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros; v_tok text;
+begin
+  delete from public.pos_intentos where creado < now() - interval '15 minutes';
+  if (select count(*) from public.pos_intentos) >= 20 then
+    return jsonb_build_object('ok', false, 'error', 'Demasiados intentos. Esperá unos minutos.');
+  end if;
+  select * into c from public.pos_camareros where activo and pin_hash = public._pos_pin_hash(left(coalesce(p_pin, ''), 10));
+  if c.id is null then
+    insert into public.pos_intentos default values;
+    return jsonb_build_object('ok', false, 'error', 'PIN incorrecto');
+  end if;
+  delete from public.pos_sesiones where vence < now();
+  v_tok := encode(extensions.gen_random_bytes(24), 'hex');
+  insert into public.pos_sesiones (token_hash, camarero_id, vence)
+  values (encode(extensions.digest(v_tok, 'sha256'), 'hex'), c.id, now() + interval '14 hours');
+  return jsonb_build_object('ok', true, 'token', v_tok, 'nombre', c.nombre);
+end;
+$$;
+revoke all on function public.pos_entrar(text) from public;
+grant execute on function public.pos_entrar(text) to anon, authenticated;
+
+create or replace function public._pos_sesion(p_token text)
+returns public.pos_camareros
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros;
+begin
+  select k.* into c from public.pos_sesiones s join public.pos_camareros k on k.id = s.camarero_id
+   where s.token_hash = encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex') and s.vence > now() and k.activo;
+  if c.id is null then raise exception 'sesión vencida' using errcode = '28000'; end if;
+  return c;
+end;
+$$;
+revoke all on function public._pos_sesion(text) from public, anon, authenticated;
+
+create or replace function public.pos_salir(p_token text)
+returns void
+language sql
+security definer
+set search_path = public
+as $$ delete from public.pos_sesiones where token_hash = encode(extensions.digest(coalesce(p_token, ''), 'sha256'), 'hex'); $$;
+revoke all on function public.pos_salir(text) from public;
+grant execute on function public.pos_salir(text) to anon, authenticated;
+
+-- Carta de cada centro + datos de los productos (precio y opciones de Ágora).
+create or replace function public.pos_datos(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros; e public.pos_estado;
+begin
+  c := public._pos_sesion(p_token);
+  select * into e from public.pos_estado where id = 1;
+  return jsonb_build_object(
+    'camarero', c.nombre,
+    'centros', coalesce(e.carta -> 'centros', '[]'::jsonb),
+    'carta_actualizada', e.carta_actualizada,
+    'productos', coalesce((
+      select jsonb_object_agg(a.id::text, jsonb_build_object('nombre', a.nombre, 'precio', a.precio, 'roles', a.roles))
+        from public.agora_catalogo a
+       where a.activo and a.id in (
+         select (pid)::int
+           from jsonb_array_elements(coalesce(e.carta -> 'centros', '[]'::jsonb)) ce,
+                jsonb_array_elements(ce -> 'categorias') ca,
+                jsonb_array_elements_text(ca -> 'productos') pid)), '{}'::jsonb));
+end;
+$$;
+revoke all on function public.pos_datos(text) from public;
+grant execute on function public.pos_datos(text) to anon, authenticated;
+
+-- Mesas abiertas en Ágora + pedidos de la página que todavía no entraron (o dieron error).
+create or replace function public.pos_mesas(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros; e public.pos_estado;
+begin
+  c := public._pos_sesion(p_token);
+  select * into e from public.pos_estado where id = 1;
+  return jsonb_build_object(
+    'mesas', e.mesas, 'actualizadas', e.mesas_actualizadas, 'ahora', now(),
+    'pedidos', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', p.id, 'centro', p.agora_centro, 'mesa', p.agora_ubicacion, 'camarero', p.camarero,
+               'creado', p.creado, 'estado', coalesce(p.agora_estado, 'pendiente'), 'error', p.agora_error,
+               'items', (select coalesce(jsonb_agg(jsonb_build_object('nombre', i ->> 'nombre', 'extra', i ->> 'extra', 'cant', i ->> 'cant', 'nota', i ->> 'nota')), '[]'::jsonb)
+                           from jsonb_array_elements(p.items) i)) order by p.id)
+        from public.pedidos_take p
+       where p.agora_centro is not null and p.estado <> 'cancelado' and p.creado > now() - interval '2 hours'
+         and (p.agora_estado is null or p.agora_estado = 'error'
+              or (p.agora_estado = 'enviado' and p.agora_enviado > coalesce(e.mesas_actualizadas, now()) - interval '10 seconds'))), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.pos_mesas(text) from public;
+grant execute on function public.pos_mesas(text) to anon, authenticated;
+
+-- Cargar un pedido en una mesa. p = {centro, mesa, items: [{id, cant, opciones: [ids], nota}], comentario}
+create or replace function public.pos_pedir(p_token text, p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c public.pos_camareros; e public.pos_estado; v_centro jsonb; v_cid int; v_mesa text;
+  v_it jsonb; v_cat public.agora_catalogo; v_cant int; v_ops int[]; v_r jsonb; v_n int; v_sel jsonb; v_precio numeric(8,2);
+  v_lineas jsonb := '[]'; v_unid int := 0; v_total numeric(8,2) := 0; v_pid bigint;
+begin
+  c := public._pos_sesion(p_token);
+  select * into e from public.pos_estado where id = 1;
+  begin v_cid := (p ->> 'centro')::int; exception when others then v_cid := null; end;
+  select x into v_centro from jsonb_array_elements(e.carta -> 'centros') x where (x ->> 'id')::int = v_cid;
+  v_mesa := p ->> 'mesa';
+  if v_centro is null or v_mesa is null or not (v_centro -> 'mesas') ? v_mesa then
+    raise exception 'mesa inválida' using errcode = '22023';
+  end if;
+  if jsonb_typeof(p -> 'items') <> 'array' or jsonb_array_length(p -> 'items') not between 1 and 60 then
+    raise exception 'pedido vacío' using errcode = '22023';
+  end if;
+  if (select count(*) from public.pedidos_take where agora_centro is not null and creado > now() - interval '1 hour') >= 200 then
+    raise exception 'demasiados pedidos' using errcode = '54000';
+  end if;
+  for v_it in select * from jsonb_array_elements(p -> 'items') loop
+    v_cat := null;
+    select a.* into v_cat from public.agora_catalogo a
+     where a.activo and a.id = (case when (v_it ->> 'id') ~ '^[0-9]{1,9}$' then (v_it ->> 'id')::int end)
+       and exists (select 1 from jsonb_array_elements(v_centro -> 'categorias') ca, jsonb_array_elements_text(ca -> 'productos') pid
+                    where pid::int = a.id);
+    begin v_cant := (v_it ->> 'cant')::int; exception when others then v_cant := null; end;
+    if v_cat.id is null or v_cat.precio is null or v_cant is null or v_cant not between 1 and 50 then
+      raise exception 'producto inválido' using errcode = '22023';
+    end if;
+    begin
+      v_ops := array(select (x)::int from jsonb_array_elements_text(coalesce(v_it -> 'opciones', '[]'::jsonb)) x);
+    exception when others then raise exception 'producto inválido' using errcode = '22023'; end;
+    if cardinality(v_ops) > 30 then raise exception 'producto inválido' using errcode = '22023'; end if;
+    -- (una opción puede ir repetida: 2 × extra medallón)
+    for v_r in select * from jsonb_array_elements(v_cat.roles) loop
+      select count(*) into v_n from unnest(v_ops) u(id)
+       where u.id in (select (o ->> 'id')::int from jsonb_array_elements(v_r -> 'opciones') o);
+      if v_n < coalesce((v_r ->> 'min')::int, 0) or (coalesce((v_r ->> 'max')::int, 0) > 0 and v_n > (v_r ->> 'max')::int) then
+        raise exception 'Revisá las opciones de %', v_cat.nombre using errcode = '22023';
+      end if;
+    end loop;
+    select coalesce(jsonb_agg(m.o order by u.n), '[]'::jsonb) into v_sel
+      from unnest(v_ops) with ordinality u(id, n)
+      cross join lateral (
+        select o from jsonb_array_elements(v_cat.roles) with ordinality r(r, ri),
+                      jsonb_array_elements(r -> 'opciones') with ordinality x(o, oi)
+         where (o ->> 'id')::int = u.id order by ri, oi limit 1) m;
+    if jsonb_array_length(v_sel) <> cardinality(v_ops) then raise exception 'producto inválido' using errcode = '22023'; end if;
+    v_precio := v_cat.precio + coalesce((select sum(coalesce((o ->> 'precio')::numeric, 0)) from jsonb_array_elements(v_sel) o), 0);
+    v_lineas := v_lineas || jsonb_build_object(
+      'id', v_cat.id::text, 'nombre', v_cat.nombre,
+      'extra', (select string_agg(case when k > 1 then k || ' × ' else '' end || nom, ', ' order by pri)
+                  from (select o ->> 'nombre' nom, count(*) k, min(n) pri from jsonb_array_elements(v_sel) with ordinality x(o, n) group by 1) g),
+      'nota', public._txt(v_it ->> 'nota', 120),
+      'cant', v_cant, 'precio', v_precio, 'agora_id', v_cat.id,
+      'addins', (select coalesce(jsonb_agg(jsonb_build_object('id', (o ->> 'id')::int, 'nombre', o ->> 'nombre', 'precio', coalesce((o ->> 'precio')::numeric, 0))), '[]'::jsonb)
+                   from jsonb_array_elements(v_sel) o));
+    v_unid := v_unid + v_cant;
+    v_total := v_total + v_cant * v_precio;
+  end loop;
+  if v_unid > 200 then raise exception 'pedido demasiado grande' using errcode = '22023'; end if;
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total,
+                                   agora_centro, agora_ubicacion, camarero, avisado)
+  values ((now() at time zone 'Europe/Madrid')::date, date_trunc('minute', (now() at time zone 'Europe/Madrid')::time),
+          left((v_centro ->> 'nombre') || ' · ' || v_mesa, 80), null, public._txt(p ->> 'comentario', 300),
+          v_lineas, v_unid, v_total, v_cid, v_mesa, c.nombre, now())   -- avisado: sin aviso al celular
+  returning id into v_pid;
+  return jsonb_build_object('ok', true, 'id', v_pid, 'total', v_total);
+end;
+$$;
+revoke all on function public.pos_pedir(text, jsonb) from public;
+grant execute on function public.pos_pedir(text, jsonb) to anon, authenticated;
+
+-- Lo que sube el TPV.
+create or replace function public.tpv_subir_carta(p_token text, p_carta jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('agora', p_token) then raise exception 'token inválido' using errcode = '28000'; end if;
+  if jsonb_typeof(p_carta -> 'centros') <> 'array' or pg_column_size(p_carta) > 400000 then
+    raise exception 'carta inválida' using errcode = '22023';
+  end if;
+  update public.pos_estado set carta = p_carta, carta_actualizada = now() where id = 1;
+end;
+$$;
+revoke all on function public.tpv_subir_carta(text, jsonb) from public;
+grant execute on function public.tpv_subir_carta(text, jsonb) to anon, authenticated;
+
+create or replace function public.tpv_subir_mesas(p_token text, p_mesas jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('agora', p_token) then raise exception 'token inválido' using errcode = '28000'; end if;
+  if jsonb_typeof(p_mesas) <> 'array' or pg_column_size(p_mesas) > 400000 then
+    raise exception 'mesas inválidas' using errcode = '22023';
+  end if;
+  update public.pos_estado set mesas = p_mesas, mesas_actualizadas = now() where id = 1;
+end;
+$$;
+revoke all on function public.tpv_subir_mesas(text, jsonb) from public;
+grant execute on function public.tpv_subir_mesas(text, jsonb) to anon, authenticated;
+
+-- El TPV recibe también el centro y la mesa de Ágora, el camarero y la nota de cada línea.
+create or replace function public.agora_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r public.pedidos_take;
+  l jsonb;
+  pr public.productos;
+  v_extra text; v_var text; v_salsa text; v_agora int; v_addin int; v_addins jsonb;
+  v_lineas jsonb;
+  v_out jsonb := '[]';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.integraciones set ultimo_uso = now() where nombre = 'agora';
+  for r in select * from public.pedidos_take
+            where estado <> 'cancelado' and dia >= v_hoy
+              and (agora_estado is null or (agora_estado = 'error' and agora_intentos < 5))
+            order by (agora_centro is null), creado limit 20 loop
+    v_lineas := '[]';
+    for l in select * from jsonb_array_elements(r.items) loop
+      v_extra := coalesce(l ->> 'extra', '');
+      if l ? 'agora_id' then
+        v_agora := (l ->> 'agora_id')::int;
+        v_addins := coalesce(l -> 'addins', '[]'::jsonb);
+        v_salsa := null; v_addin := null;
+      else
+        select * into pr from public.productos where id = l ->> 'id';
+        v_var   := case when lower(v_extra) in ('simple', 'doble') then lower(v_extra) end;
+        v_salsa := case when v_extra ilike 'Salsa %' then substr(v_extra, 7) end;
+        v_agora := case when v_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+        v_addin := null;
+        if v_salsa is not null and pr.agora_salsas is not null then
+          select value::int into v_addin from jsonb_each_text(pr.agora_salsas) where lower(key) = lower(v_salsa) limit 1;
+        end if;
+        v_addins := case when v_addin is not null then jsonb_build_array(jsonb_build_object('id', v_addin, 'nombre', v_salsa, 'precio', 0)) else '[]'::jsonb end;
+      end if;
+      v_lineas := v_lineas || jsonb_build_object(
+        'id', l ->> 'id', 'nombre', l ->> 'nombre', 'extra', nullif(v_extra, ''), 'nota', l ->> 'nota',
+        'cant', (l ->> 'cant')::int, 'precio', (l ->> 'precio')::numeric,
+        'agora_id', v_agora, 'addins', v_addins,
+        'agora_salsa', v_addin, 'salsa', v_salsa);
+    end loop;
+    v_out := v_out || jsonb_build_object(
+      'id', r.id, 'creado', r.creado, 'dia', r.dia, 'hora', to_char(r.hora, 'HH24:MI'),
+      'nombre', r.nombre, 'telefono', r.telefono, 'comentario', r.comentario,
+      'total', r.total, 'pagado', false, 'lineas', v_lineas, 'intentos', r.agora_intentos,
+      'mesa', r.mesa, 'agora_mesa', (select m.agora_mesa from public.terraza_mesas m where m.numero = r.mesa),
+      'agora_centro', r.agora_centro, 'agora_ubicacion', r.agora_ubicacion, 'camarero', r.camarero,
+      'centro_nombre', (select x ->> 'nombre' from public.pos_estado e, jsonb_array_elements(e.carta -> 'centros') x
+                         where e.id = 1 and (x ->> 'id')::int = r.agora_centro));
+  end loop;
+  return v_out;
+end;
+$$;
+revoke all on function public.agora_pendientes(text) from public;
+grant execute on function public.agora_pendientes(text) to anon, authenticated;

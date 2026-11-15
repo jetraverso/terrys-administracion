@@ -61,3 +61,12 @@ Puesta en marcha (una vez):
    (`/DELAY` deja tiempo a que Google Drive monte la unidad G:.) Para frenarlo: `schtasks /End /TN "Terrys pedidos web a Agora"`.
 
 Scripts de exploración que se usaron para armar esto (solo para diagnóstico): `explorar-api.ps1`, `buscar-pedidos.ps1`, `probar-import.ps1`, `estados-pedido.ps1`, `probar-pedido.ps1`.
+
+## Página de camareros (parte 24, `admin.terrysburgers.com/pos/`)
+
+- Cada camarero entra con su PIN (se cargan en el admin: Pedidos → Camareros), elige LOCAL, TERRAZA o TAKE AWAY (`posCentros` en `pedidos-agora.json`), ve las mesas y carga productos.
+- `enviar-pedidos.ps1` lee la **base de Ágora** del TPV (`localhost\AGORA`, base `igtpos`, usuario de Windows, solo `SELECT`) porque la API no da las mesas abiertas:
+  - carta de cada centro como en el iPad (`SaleCenter`, `SaleLocation`, `CategorySaleCenters`, `Category` con `ShowInPos`, `ProductCategory`) → `tpv_subir_carta`, al arrancar y cada hora;
+  - mesas abiertas (`Ticket` con `FrozenDate` vacío, sus `TicketLine` no anuladas y `TicketLineAddin`) → `tpv_subir_mesas`, cuando cambian y cada 30 s.
+- Los pedidos de la página se cargan con `Type = Table` en el centro y la mesa elegidos: si la mesa ya está abierta, Ágora los suma a esa cuenta (probado el 2026-11-15). Necesita la jornada abierta.
+- Diagnóstico: `ver-mesas.ps1` lista las mesas abiertas (con `-Probar "MESA 1"` manda una Coca-Cola de prueba; ojo: `probar-mesa.ps1` primero manda un pedido anulado y con la mesa abierta también se suma), `explorar-mesas.ps1` y `explorar-carta.ps1` (cómo se encontraron las tablas).

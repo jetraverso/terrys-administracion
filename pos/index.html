@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Terry's Pedidos</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#141311">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Terry's Pedidos">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  color-scheme:dark;
+  --paper:#141311; --surface:#1d1b18; --surface-2:#26231f; --surface-3:#302c27; --ink:#f1ede5; --ink-2:#c9c3b7; --muted:#8f887b;
+  --line:#332f29; --line-2:#453f37; --accent:#5c9fc4; --ok:#5cb47f; --ok-soft:#1c3326; --warn:#e29a4a; --warn-soft:#3a3010;
+  --danger:#e5665e; --danger-soft:#3d1c19; --out:#e0693f;
+  --display:"Bebas Neue","Impact","Arial Narrow",sans-serif; --body:"Barlow","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%}
+body{background:var(--paper);color:var(--ink);font-family:var(--body);font-size:15px;line-height:1.35;-webkit-font-smoothing:antialiased;overflow:hidden;
+  -webkit-user-select:none;user-select:none;overscroll-behavior:none}
+button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+input,textarea{font:inherit;color:inherit;-webkit-user-select:text;user-select:text}
+button:focus-visible,input:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.oculto{display:none!important}
+.marca{font-family:var(--display);font-size:34px;letter-spacing:.05em;line-height:1}
+.marca small{display:block;font-family:var(--body);font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);margin-top:4px}
+
+/* ---------- PIN ---------- */
+#pin{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:16px}
+.pinCard{width:100%;max-width:340px;text-align:center}
+.pinPuntos{display:flex;justify-content:center;gap:14px;margin:28px 0 10px;height:18px}
+.pinPuntos i{width:16px;height:16px;border-radius:50%;border:2px solid var(--line-2)}
+.pinPuntos i.on{background:var(--ink);border-color:var(--ink)}
+.pinError{min-height:22px;color:var(--danger);font-weight:600}
+.teclado{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:12px}
+.teclado button{height:72px;border-radius:16px;background:var(--surface-2);font-size:28px;font-weight:600}
+.teclado button:active{background:var(--surface-3)}
+.teclado .t-ok{background:var(--ok);color:#08210f;font-size:18px;font-weight:700}
+.teclado .t-borrar{font-size:18px;color:var(--ink-2)}
+
+/* ---------- app ---------- */
+#app{position:fixed;inset:0;display:grid;grid-template-columns:150px 1fr}
+.rail{background:var(--surface);border-right:1px solid var(--line);display:flex;flex-direction:column;gap:10px;padding:14px 12px calc(14px + env(safe-area-inset-bottom));overflow:auto}
+.rail .marca{font-size:26px;margin:0 2px 8px}
+.centro{display:flex;flex-direction:column;gap:4px;align-items:center;justify-content:center;text-align:center;min-height:86px;border-radius:12px;padding:8px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;
+  background:var(--c,#555);color:var(--ci,#111);opacity:.55;border:3px solid transparent}
+.centro.sel{opacity:1;border-color:var(--ink)}
+.centro small{display:block;font-size:11px;font-weight:600;opacity:.8;letter-spacing:.02em;text-transform:none}
+.rail .pie{margin-top:auto;font-size:13px;color:var(--muted)}
+.rail .pie b{display:block;color:var(--ink);font-size:15px}
+.btnSalir{margin-top:8px;padding:9px 10px;border-radius:10px;border:1px solid var(--line-2);width:100%;color:var(--ink-2)}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.barra{display:flex;align-items:center;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);min-height:64px}
+.barra h1{margin:0;font-family:var(--display);font-weight:400;font-size:30px;letter-spacing:.04em;line-height:1}
+.barra .estado{margin-left:auto;font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.estado i{width:9px;height:9px;border-radius:50%;background:var(--ok)}
+.estado.mal i{background:var(--danger)}
+.estado.mal{color:var(--danger)}
+.aviso{margin:12px 18px 0;padding:10px 14px;border-radius:10px;background:var(--danger-soft);color:#f6c4bf;font-weight:600}
+.scroll{flex:1;overflow:auto;-webkit-overflow-scrolling:touch}
+
+.mesas{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:12px;padding:18px}
+.mesaBtn{position:relative;min-height:112px;border-radius:12px;padding:12px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;
+  background:var(--surface-2);border:2px solid var(--line-2)}
+.mesaBtn b{font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.02em;line-height:1.1}
+.mesaBtn span{font-size:13px;color:var(--muted)}
+.mesaBtn.abierta{background:var(--c,#2786f7);border-color:transparent;color:var(--ci,#fff)}
+.mesaBtn.abierta span{color:inherit;opacity:.85}
+.mesaBtn .tot{font-size:20px;font-weight:700;opacity:1}
+.mesaBtn .marca-n{position:absolute;top:8px;right:8px;min-width:24px;height:24px;border-radius:12px;padding:0 7px;background:var(--warn);color:#2a1700;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center}
+.leyenda{display:flex;gap:16px;padding:0 18px 18px;color:var(--muted);font-size:13px;flex-wrap:wrap}
+.leyenda i{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:-1px;margin-right:6px;background:var(--surface-2);border:2px solid var(--line-2)}
+.leyenda i.ab{background:var(--c,#2786f7);border-color:transparent}
+
+/* ---------- mesa ---------- */
+.mesaVista{flex:1;display:grid;grid-template-columns:minmax(300px,36%) 1fr;min-height:0}
+.ticket{border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0;background:var(--surface)}
+.ticket .scroll{padding:6px 16px 16px}
+.tSec{margin-top:14px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700;display:flex;justify-content:space-between}
+.tLin{display:grid;grid-template-columns:34px 1fr auto;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);align-items:start}
+.tLin .c{font-weight:700}
+.tLin .n{font-weight:600}
+.tLin small{display:block;color:var(--muted);font-weight:500;font-size:13px}
+.tLin small.nota{color:var(--warn)}
+.tLin .p{font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.tLin.agora{color:var(--ink-2)}
+.tLin.nuevo{grid-template-columns:auto 1fr auto}
+.vacio{color:var(--muted);padding:12px 0;font-size:14px}
+.envio{margin-top:8px;padding:10px 12px;border-radius:10px;background:var(--warn-soft);color:#f3d29a;font-size:14px}
+.envio.ok{background:var(--ok-soft);color:#b5e3c5}
+.envio.err{background:var(--danger-soft);color:#f6c4bf}
+.envio b{display:block}
+.paso{display:flex;align-items:center;border:1px solid var(--line-2);border-radius:10px;overflow:hidden;height:36px}
+.paso button{width:36px;height:100%;font-size:20px;font-weight:700}
+.paso button:active{background:var(--surface-3)}
+.paso span{min-width:26px;text-align:center;font-weight:700}
+.tLin.nuevo .info{cursor:pointer}
+.tPie{border-top:1px solid var(--line);padding:12px 16px calc(12px + env(safe-area-inset-bottom));display:flex;flex-direction:column;gap:10px}
+.tPie .tot{display:flex;justify-content:space-between;font-size:15px;color:var(--ink-2)}
+.tPie .tot b{color:var(--ink);font-size:20px}
+.btnEnviar{height:56px;border-radius:12px;background:var(--ok);color:#08210f;font-size:18px;font-weight:700;letter-spacing:.02em}
+.btnEnviar:disabled{opacity:.35}
+.btnVolver{padding:8px 12px;border-radius:10px;border:1px solid var(--line-2);font-weight:600;color:var(--ink-2)}
+
+.carta{display:flex;flex-direction:column;min-height:0;min-width:0}
+.cats{display:flex;gap:8px;padding:12px 16px;overflow-x:auto;border-bottom:1px solid var(--line);flex-shrink:0;scrollbar-width:none}
+.cats::-webkit-scrollbar{display:none}
+.cat{flex-shrink:0;padding:10px 14px;border-radius:10px;background:var(--surface-2);font-weight:700;font-size:14px;letter-spacing:.03em;text-transform:uppercase;border-bottom:4px solid var(--c,transparent)}
+.cat.sel{background:var(--ink);color:var(--paper)}
+.buscar{margin:12px 16px 0;display:flex;gap:8px}
+.buscar input{flex:1;height:42px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);padding:0 12px}
+.prods{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:14px 16px 24px}
+.prod{min-height:92px;border-radius:12px;background:var(--surface-2);padding:10px 12px;text-align:left;display:flex;flex-direction:column;justify-content:space-between;border-left:5px solid var(--c,var(--line-2))}
+.prod:active{background:var(--surface-3)}
+.prod b{font-size:14px;font-weight:700;text-transform:uppercase;line-height:1.15;word-break:break-word}
+.prod span{font-size:15px;color:var(--ink-2);font-variant-numeric:tabular-nums;display:flex;justify-content:space-between;align-items:center}
+.prod span em{font-style:normal;font-size:11px;color:var(--muted);letter-spacing:.06em}
+.prod .ya{background:var(--ok);color:#08210f;border-radius:9px;min-width:22px;height:22px;padding:0 6px;font-size:13px;font-weight:800;display:inline-flex;align-items:center;justify-content:center}
+.barraMovil{display:none}
+.tCab{display:none}
+
+/* ---------- hoja de opciones ---------- */
+.fondo{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}
+.hoja{width:100%;max-width:560px;max-height:calc(100dvh - 32px);background:var(--surface);border-radius:16px;display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--line-2)}
+.hoja header{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;align-items:flex-start;gap:12px}
+.hoja header h2{margin:0;font-size:20px;text-transform:uppercase;letter-spacing:.02em;flex:1}
+.hoja header small{display:block;color:var(--muted);font-weight:500;font-size:14px;text-transform:none;letter-spacing:0;margin-top:2px}
+.cerrar{width:36px;height:36px;border-radius:50%;background:var(--surface-2);font-size:20px;flex-shrink:0}
+.hoja .scroll{padding:6px 18px 18px}
+.grupo{margin-top:14px}
+.grupo h3{margin:0 0 8px;font-size:13px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;gap:8px;align-items:center}
+.grupo h3 .req{color:var(--warn);letter-spacing:.04em}
+.grupo h3 .req.ok{color:var(--ok)}
+.ops{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px}
+.op{position:relative;min-height:54px;border-radius:10px;background:var(--surface-2);padding:8px 10px;text-align:left;border:2px solid transparent;font-weight:600;font-size:14px}
+.op small{display:block;color:var(--muted);font-weight:500}
+.op.on{border-color:var(--ok);background:var(--ok-soft)}
+.op .k{position:absolute;top:-8px;right:-6px;background:var(--ok);color:#08210f;border-radius:10px;min-width:22px;height:22px;font-size:13px;font-weight:800;display:flex;align-items:center;justify-content:center;padding:0 6px}
+.op .menos{position:absolute;bottom:4px;right:4px;width:26px;height:26px;border-radius:8px;background:var(--surface-3);font-size:16px;font-weight:800;line-height:26px;text-align:center}
+.notaIn{width:100%;height:44px;border-radius:10px;border:1px solid var(--line-2);background:var(--surface-2);padding:0 12px}
+.hoja footer{border-top:1px solid var(--line);padding:12px 18px calc(12px + env(safe-area-inset-bottom));display:flex;gap:12px;align-items:center}
+.hoja footer .paso{height:52px}
+.hoja footer .paso button{width:48px}
+.hoja footer .btnEnviar{flex:1;height:52px}
+.toast{position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--ink);color:var(--paper);padding:12px 18px;border-radius:12px;font-weight:600;z-index:30;max-width:calc(100% - 32px);text-align:center}
+.toast.err{background:var(--danger);color:#fff}
+
+/* ---------- teléfono ---------- */
+@media (max-width:760px){
+  #app{grid-template-columns:1fr;grid-template-rows:auto 1fr}
+  .rail{flex-direction:row;align-items:center;border-right:0;border-bottom:1px solid var(--line);padding:10px 16px;gap:8px;overflow-x:auto}
+  .rail .marca,.rail .pie b,.rail .pie span{display:none}
+  .centro{min-height:44px;padding:6px 12px;flex-shrink:0;font-size:13px}
+  .centro small{display:none}
+  .rail .pie{margin:0 0 0 auto;flex-shrink:0}
+  .btnSalir{margin:0;padding:8px 10px;width:auto}
+  .barra{padding:10px 16px;min-height:54px}
+  .barra h1{font-size:24px}
+  .mesas{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));padding:16px;gap:10px}
+  .mesaBtn{min-height:92px}
+  .mesaVista{grid-template-columns:1fr}
+  .ticket{position:fixed;inset:0;z-index:15;border:0}
+  .tCab{display:block;font-family:var(--display);font-size:28px;letter-spacing:.04em;padding-top:calc(8px + env(safe-area-inset-top))}
+  .mesaVista:not(.verTicket) .ticket{display:none}
+  .prods{grid-template-columns:repeat(auto-fill,minmax(130px,1fr));padding:12px 16px 90px}
+  .barraMovil{display:flex;position:fixed;left:16px;right:16px;bottom:calc(14px + env(safe-area-inset-bottom));z-index:10}
+  .barraMovil button{flex:1;height:54px;border-radius:12px;background:var(--ok);color:#08210f;font-weight:700;font-size:16px}
+  .barraMovil button.gris{background:var(--surface-3);color:var(--ink)}
+  .hoja{max-height:calc(100dvh - 16px)}
+  .fondo{align-items:flex-end;padding:8px}
+}
+</style>
+</head>
+<body>
+<div id="pin" class="oculto">
+  <div class="pinCard">
+    <div class="marca">TERRY'S<small>Pedidos en el local</small></div>
+    <div class="pinPuntos" id="pinPuntos"></div>
+    <div class="pinError" id="pinError" role="alert"></div>
+    <div class="teclado" id="teclado"></div>
+  </div>
+</div>
+<div id="app" class="oculto"></div>
+<div id="capa"></div>
+
+<script>
+'use strict';
+const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
+const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
+const CLAVE='terrys-pos-v1';
+const CADA_MS=4000;
+
+// ---------- utilidades ----------
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const eur=n=>(Math.round((+n||0)*100)/100).toLocaleString('es-ES',{minimumFractionDigits:2,maximumFractionDigits:2})+' €';
+const num=n=>{const x=+n||0;return Number.isInteger(x)?String(x):x.toLocaleString('es-ES')};
+function leer(){try{return JSON.parse(localStorage.getItem(CLAVE)||'{}')}catch(e){return{}}}
+function guardar(){try{localStorage.setItem(CLAVE,JSON.stringify({token:S.token,nombre:S.nombre,centro:S.centro,carritos:S.carritos}))}catch(e){}}
+function toast(t,err){const d=document.createElement('div');d.className='toast'+(err?' err':'');d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),err?5000:2600)}
+async function rpc(fn,args){
+  const r=await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`,{method:'POST',headers:{apikey:SUPABASE_KEY,Authorization:'Bearer '+SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify(args||{})});
+  const t=await r.text(); let j=null; try{j=t?JSON.parse(t):null}catch(e){}
+  if(!r.ok){const m=(j&&(j.message||j.hint))||('Error '+r.status);const e=new Error(m);e.code=j&&j.code;throw e}
+  return j;
+}
+function vencida(e){return e&&(e.code==='28000'||/sesi[oó]n vencida/i.test(e.message))}
+
+// ---------- estado ----------
+const guardado=leer();
+const S={
+  token:guardado.token||null, nombre:guardado.nombre||'', centro:guardado.centro||null, mesa:null,
+  carritos:guardado.carritos||{}, D:null, E:null, cat:null, buscar:'', verTicket:false, enviando:false
+};
+const carrito=()=>S.carritos[`${S.centro}|${S.mesa}`]||(S.carritos[`${S.centro}|${S.mesa}`]=[]);
+const centroAct=()=>(S.D?.centros||[]).find(c=>c.id===S.centro);
+const prod=id=>S.D?.productos?.[String(id)];
+function tintaPara(hex){ // texto negro o blanco según el color de fondo
+  const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return '#fff';
+  const n=parseInt(m[1],16),r=n>>16,g=(n>>8)&255,b=n&255;
+  return (0.299*r+0.587*g+0.114*b)>150?'#141311':'#fff';
+}
+function precioLinea(l){
+  const p=prod(l.id); if(!p) return 0;
+  let x=+p.precio||0;
+  for(const id of l.ops){for(const r of p.roles||[]){const o=(r.opciones||[]).find(o=>o.id===id);if(o){x+=+o.precio||0;break}}}
+  return x;
+}
+function textoOps(l){
+  const p=prod(l.id); if(!p) return '';
+  const cuenta=new Map();
+  for(const id of l.ops) cuenta.set(id,(cuenta.get(id)||0)+1);
+  const out=[];
+  for(const [id,k] of cuenta){let nom='';for(const r of p.roles||[]){const o=(r.opciones||[]).find(o=>o.id===id);if(o){nom=o.nombre;break}}out.push((k>1?k+' × ':'')+nom)}
+  return out.join(', ');
+}
+
+// ---------- PIN ----------
+let pinTxt='';
+function mostrarPin(msg){
+  $('#app').classList.add('oculto'); $('#pin').classList.remove('oculto');
+  pinTxt=''; $('#pinError').textContent=msg||''; dibujarPin();
+  const t=$('#teclado');
+  if(!t.childElementCount){
+    t.innerHTML=[1,2,3,4,5,6,7,8,9].map(n=>`<button data-n="${n}">${n}</button>`).join('')+
+      `<button class="t-borrar" data-b="1" aria-label="Borrar">Borrar</button><button data-n="0">0</button><button class="t-ok" data-ok="1">Entrar</button>`;
+    t.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+      if(b.dataset.n!=null&&pinTxt.length<6){pinTxt+=b.dataset.n;$('#pinError').textContent=''}
+      else if(b.dataset.b) pinTxt=pinTxt.slice(0,-1);
+      else if(b.dataset.ok) entrar();
+      dibujarPin()});
+  }
+}
+function dibujarPin(){$('#pinPuntos').innerHTML=Array.from({length:Math.max(4,pinTxt.length)},(_,i)=>`<i class="${i<pinTxt.length?'on':''}"></i>`).join('')}
+document.addEventListener('keydown',e=>{
+  if($('#pin').classList.contains('oculto')) return;
+  if(/^[0-9]$/.test(e.key)&&pinTxt.length<6){pinTxt+=e.key;dibujarPin()}
+  else if(e.key==='Backspace'){pinTxt=pinTxt.slice(0,-1);dibujarPin()}
+  else if(e.key==='Enter') entrar();
+});
+async function entrar(){
+  if(pinTxt.length<4){$('#pinError').textContent='El PIN tiene al menos 4 números';return}
+  try{
+    const r=await rpc('pos_entrar',{p_pin:pinTxt});
+    if(!r||!r.ok){pinTxt='';dibujarPin();$('#pinError').textContent=(r&&r.error)||'No se pudo entrar';return}
+    S.token=r.token; S.nombre=r.nombre; guardar(); arrancar();
+  }catch(e){$('#pinError').textContent='Sin conexión. Probá de nuevo.'}
+}
+async function salir(){
+  try{await rpc('pos_salir',{p_token:S.token})}catch(e){}
+  S.token=null;S.nombre='';S.mesa=null;guardar();mostrarPin();
+}
+
+// ---------- datos ----------
+let timer=null, cargandoMesas=false, ultimaCarta=0;
+async function arrancar(){
+  $('#pin').classList.add('oculto'); $('#app').classList.remove('oculto');
+  $('#app').innerHTML='<div style="padding:24px;color:var(--muted)">Cargando…</div>';
+  try{
+    await cargarCarta();
+    await cargarMesas();
+  }catch(e){ if(vencida(e)) return mostrarPin('Volvé a poner tu PIN'); $('#app').innerHTML=`<div style="padding:24px">No se pudo cargar: ${esc(e.message)}. <button class="btnVolver" onclick="arrancar()">Reintentar</button></div>`; return }
+  if(!centroAct()) S.centro=(S.D.centros[0]||{}).id||null;
+  render();
+  clearInterval(timer); timer=setInterval(tic,CADA_MS);
+}
+async function cargarCarta(){S.D=await rpc('pos_datos',{p_token:S.token}); ultimaCarta=Date.now()}
+async function cargarMesas(){
+  if(cargandoMesas) return; cargandoMesas=true;
+  try{S.E=await rpc('pos_mesas',{p_token:S.token})}finally{cargandoMesas=false}
+}
+async function tic(){
+  if(document.visibilityState!=='visible'||!S.token) return;
+  try{
+    if(Date.now()-ultimaCarta>10*60e3) await cargarCarta();
+    await cargarMesas(); renderVivo();
+  }catch(e){ if(vencida(e)){clearInterval(timer);mostrarPin('Tu sesión venció. Poné tu PIN.')} else marcarSinConexion() }
+}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&S.token) tic()});
+function mesasAbiertas(){return (S.E?.mesas||[]).filter(m=>m.centro===S.centro)}
+function abiertaDe(mesa){return mesasAbiertas().find(m=>m.mesa===mesa)}
+function pedidosDe(centro,mesa){return (S.E?.pedidos||[]).filter(p=>p.centro===centro&&(mesa==null||p.mesa===mesa))}
+function estadoTPV(){
+  if(!S.E?.actualizadas) return {ok:false,txt:'El TPV todavía no mandó las mesas'};
+  const seg=(new Date(S.E.ahora)-new Date(S.E.actualizadas))/1000;
+  if(seg>90){const h=new Date(S.E.actualizadas).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});return {ok:false,txt:`Sin datos del TPV desde las ${h}`}}
+  return {ok:true,txt:'Ágora al día'};
+}
+function marcarSinConexion(){const e=$('#estadoTPV');if(e){e.className='estado mal';e.innerHTML='<i></i>Sin conexión'}}
+
+// ---------- pantallas ----------
+function render(){
+  const app=$('#app');
+  const cs=S.D?.centros||[];
+  const rail=`<nav class="rail">
+      <div class="marca">TERRY'S</div>
+      ${cs.map(c=>`<button class="centro${c.id===S.centro?' sel':''}" data-centro="${c.id}" style="--c:${esc(c.color||'#555')};--ci:${tintaPara(c.color)}">${esc(c.nombre)}<small>${(S.E?.mesas||[]).filter(m=>m.centro===c.id).length||''}${(S.E?.mesas||[]).some(m=>m.centro===c.id)?' abiertas':''}</small></button>`).join('')}
+      <div class="pie"><span>Camarero</span><b>${esc(S.nombre)}</b><button class="btnSalir" data-salir="1">Salir</button></div>
+    </nav>`;
+  app.innerHTML=rail+`<section class="main" id="main"></section>`;
+  if(!cs.length){$('#main').innerHTML=`<div class="barra"><h1>Sin carta</h1></div><div class="aviso">Todavía no llegó la carta desde el TPV de Ágora. Revisá que el script de pedidos esté corriendo en el TPV.</div>`;return}
+  if(S.mesa==null) renderMesas(); else renderMesa();
+}
+function cabecera(titulo,volver){
+  const e=estadoTPV();
+  return `<div class="barra">${volver?'<button class="btnVolver" data-volver="1">← Mesas</button>':''}<h1>${titulo}</h1>
+    <span class="estado${e.ok?'':' mal'}" id="estadoTPV"><i></i>${esc(e.txt)}</span></div>`;
+}
+function renderMesas(){
+  const c=centroAct(); if(!c) return;
+  const tinta=tintaPara(c.color);
+  const html=(c.mesas||[]).map(m=>{
+    const a=abiertaDe(m), pend=pedidosDe(c.id,m).filter(p=>p.estado!=='enviado').length, nuevos=(S.carritos[`${c.id}|${m}`]||[]).reduce((s,l)=>s+l.cant,0);
+    return `<button class="mesaBtn${a?' abierta':''}" data-mesa="${esc(m)}" style="--c:${esc(c.color||'#2786f7')};--ci:${tinta}">
+      ${pend||nuevos?`<span class="marca-n" title="${pend?'Enviando a Ágora':'Sin enviar'}">${pend?'…':nuevos}</span>`:''}
+      <b>${esc(m)}</b>${a?`<span>desde ${esc(a.abierta)}</span><span class="tot">${eur(a.total)}</span>`:'<span>libre</span>'}</button>`}).join('');
+  $('#main').innerHTML=cabecera(esc(c.nombre))+(estadoTPV().ok?'':`<div class="aviso">No llegan datos del TPV: las mesas pueden no estar al día y los pedidos quedan en espera hasta que vuelva.</div>`)+
+    `<div class="scroll"><div class="mesas">${html}</div>
+     <div class="leyenda"><span><i class="ab" style="--c:${esc(c.color||'#2786f7')}"></i>Abierta en Ágora</span><span><i></i>Libre</span></div></div>`;
+}
+function renderMesa(){
+  const c=centroAct(); if(!c){S.mesa=null;return render()}
+  const cats=c.categorias||[];
+  if(!cats.some(k=>k.id===S.cat)) S.cat=(cats[0]||{}).id;
+  $('#main').innerHTML=cabecera(`${esc(c.nombre)} · ${esc(S.mesa)}`,true)+
+   `<div class="mesaVista${S.verTicket?' verTicket':''}" id="vista">
+      <aside class="ticket" id="ticket"></aside>
+      <div class="carta">
+        <div class="cats">${cats.map(k=>`<button class="cat${k.id===S.cat&&!S.buscar?' sel':''}" data-cat="${k.id}" style="--c:${esc(k.color||'transparent')}">${esc(k.nombre)}</button>`).join('')}</div>
+        <div class="buscar"><input id="buscar" type="search" placeholder="Buscar producto" value="${esc(S.buscar)}" autocomplete="off"></div>
+        <div class="scroll"><div class="prods" id="prods"></div></div>
+      </div>
+      <div class="barraMovil" id="barraMovil"></div>
+    </div>`;
+  renderProds(); renderTicket();
+}
+function renderProds(){
+  const c=centroAct(); if(!c) return;
+  let ids;
+  const q=S.buscar.trim().toLowerCase();
+  if(q){ids=[...new Set((c.categorias||[]).flatMap(k=>k.productos))].filter(id=>(prod(id)?.nombre||'').toLowerCase().includes(q))}
+  else ids=((c.categorias||[]).find(k=>k.id===S.cat)||{}).productos||[];
+  const color=q?null:((c.categorias||[]).find(k=>k.id===S.cat)||{}).color;
+  const enCarrito=new Map(); for(const l of carrito()) enCarrito.set(l.id,(enCarrito.get(l.id)||0)+l.cant);
+  const html=ids.map(id=>{const p=prod(id); if(!p||p.precio==null) return '';
+    const k=enCarrito.get(id);
+    return `<button class="prod" data-prod="${id}" style="--c:${esc(color||'var(--line-2)')}"><b>${esc(p.nombre)}</b>
+      <span>${eur(p.precio)}${k?`<i class="ya">${k}</i>`:(p.roles||[]).length?'<em>OPCIONES</em>':''}</span></button>`}).join('');
+  $('#prods').innerHTML=html||`<div class="vacio" style="grid-column:1/-1">${q?'No hay productos con ese nombre.':'Esta categoría no tiene productos.'}</div>`;
+}
+function renderTicket(){
+  const el=$('#ticket'); if(!el) return;
+  const a=abiertaDe(S.mesa), peds=pedidosDe(S.centro,S.mesa), car=carrito();
+  const total=car.reduce((s,l)=>s+l.cant*precioLinea(l),0), unid=car.reduce((s,l)=>s+l.cant,0);
+  const lAg=a?(a.lineas||[]).map(l=>`<div class="tLin agora"><span class="c">${num(l.c)}</span><span class="n">${esc(l.n)}${l.a?`<small>${esc(l.a)}</small>`:''}${l.nota?`<small class="nota">${esc(l.nota)}</small>`:''}</span><span class="p">${eur(l.t)}</span></div>`).join(''):'';
+  const lPed=peds.map(p=>{
+    const cl=p.estado==='enviado'?'ok':p.estado==='error'?'err':'';
+    const tit=p.estado==='enviado'?'✓ Entró en Ágora':p.estado==='error'?'No entró en Ágora, se reintenta solo':'Enviando a Ágora…';
+    return `<div class="envio ${cl}"><b>${tit}</b>${(p.items||[]).map(i=>`${esc(i.cant)} × ${esc(i.nombre)}${i.extra?' ('+esc(i.extra)+')':''}`).join(' · ')}${p.error?`<br><small>${esc(p.error)}</small>`:''}<br><small>${esc(p.camarero||'')} · ${new Date(p.creado).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})}</small></div>`}).join('');
+  const lNue=car.map((l,i)=>{const p=prod(l.id);const o=textoOps(l);
+    return `<div class="tLin nuevo"><div class="paso"><button data-menos="${i}" aria-label="Uno menos">−</button><span>${l.cant}</span><button data-mas="${i}" aria-label="Uno más">+</button></div>
+      <span class="info n" data-editar="${i}">${esc(p?p.nombre:'Producto '+l.id)}${o?`<small>${esc(o)}</small>`:''}${l.nota?`<small class="nota">${esc(l.nota)}</small>`:''}</span><span class="p">${eur(l.cant*precioLinea(l))}</span></div>`}).join('');
+  el.innerHTML=`<div class="scroll">
+      <div class="tCab">${esc(centroAct()?.nombre||'')} · ${esc(S.mesa)}</div>
+      <div class="tSec"><span>En Ágora</span><span>${a?'desde '+esc(a.abierta):''}</span></div>
+      ${lAg||'<div class="vacio">Mesa sin abrir en Ágora.</div>'}
+      ${a?`<div class="tLin agora"><span></span><span class="n">Total de la mesa</span><span class="p"><b>${eur(a.total)}</b></span></div>`:''}
+      ${lPed}
+      <div class="tSec"><span>Pedido nuevo</span><span>${unid?unid+' u.':''}</span></div>
+      ${lNue||'<div class="vacio">Tocá los productos para agregarlos.</div>'}
+    </div>
+    <div class="tPie">
+      <div class="tot"><span>Nuevo</span><b>${eur(total)}</b></div>
+      <button class="btnEnviar" data-enviar="1" ${!car.length||S.enviando?'disabled':''}>${S.enviando?'Enviando…':'Enviar a Ágora'}</button>
+      <button class="btnVolver movil-solo" data-cerrarticket="1" style="${S.verTicket?'':'display:none'}">Seguir agregando</button>
+    </div>`;
+  const bm=$('#barraMovil');
+  if(bm) bm.innerHTML=unid?`<button data-verticket="1">Ver pedido · ${unid} u. · ${eur(total)}</button>`:`<button class="gris" data-verticket="1">Ver la mesa${a?' · '+eur(a.total):''}</button>`;
+}
+// Con cada actualización de mesas (cada 4 s) solo se redibuja lo que cambia.
+function renderVivo(){
+  if(document.querySelector('.fondo')) return renderEstadoSolo();
+  if(S.mesa==null){render();return}
+  renderEstadoSolo(); renderTicket();
+}
+function renderEstadoSolo(){const e=estadoTPV(),el=$('#estadoTPV');if(el){el.className='estado'+(e.ok?'':' mal');el.innerHTML='<i></i>'+esc(e.txt)}}
+
+// ---------- hoja de opciones ----------
+let H=null; // {id, cant, ops:[ids], nota, idx}
+function abrirHoja(id,idx){
+  const p=prod(id); if(!p) return;
+  const l=idx!=null?carrito()[idx]:null;
+  H={id,cant:l?l.cant:1,ops:l?[...l.ops]:[],nota:l?l.nota||'':'',idx};
+  dibujarHoja();
+}
+function maxRol(r){return (+r.max>0)?+r.max:20}
+function cuentaRol(r){return H.ops.filter(id=>(r.opciones||[]).some(o=>o.id===id)).length}
+function faltan(){const p=prod(H.id);return (p.roles||[]).filter(r=>cuentaRol(r)<(+r.min||0))}
+function dibujarHoja(){
+  const p=prod(H.id);
+  const grupos=(p.roles||[]).map((r,ri)=>{
+    const n=cuentaRol(r),min=+r.min||0,max=maxRol(r);
+    const req=min>0?`<span class="req${n>=min?' ok':''}">${min===max?`elegí ${min}`:`mínimo ${min}`}</span>`:(+r.max>0&&+r.max<20?`<span>hasta ${r.max}</span>`:'');
+    return `<div class="grupo"><h3>${esc(r.nombre)} ${req}</h3><div class="ops">${(r.opciones||[]).map(o=>{
+      const k=H.ops.filter(x=>x===o.id).length;
+      return `<button class="op${k?' on':''}" data-op="${o.id}" data-rol="${ri}">${esc(o.nombre)}${+o.precio?`<small>+ ${eur(o.precio)}</small>`:''}${k>1?`<span class="k">${k}</span>`:''}${k&&max>1?`<span class="menos" data-opmenos="${o.id}" aria-label="Quitar uno">−</span>`:''}</button>`}).join('')}</div></div>`}).join('');
+  const precio=precioLinea(H), falta=faltan();
+  $('#capa').innerHTML=`<div class="fondo" data-fondo="1"><div class="hoja" role="dialog" aria-modal="true" aria-label="${esc(p.nombre)}">
+    <header><h2>${esc(p.nombre)}<small>${eur(p.precio)}</small></h2><button class="cerrar" data-cerrarhoja="1" aria-label="Cerrar">×</button></header>
+    <div class="scroll">${grupos}
+      <div class="grupo"><h3>Nota para cocina</h3><input class="notaIn" id="notaIn" maxlength="120" placeholder="Ej.: bien cocida, sin sal…" value="${esc(H.nota)}"></div>
+    </div>
+    <footer><div class="paso"><button data-hmenos="1" aria-label="Uno menos">−</button><span>${H.cant}</span><button data-hmas="1" aria-label="Uno más">+</button></div>
+      <button class="btnEnviar" data-hok="1" ${falta.length?'disabled':''}>${falta.length?'Falta: '+esc(falta.map(r=>r.nombre.toLowerCase()).join(', ')):(H.idx!=null?'Guardar':'Agregar')+' · '+eur(H.cant*precio)}</button></footer>
+  </div></div>`;
+}
+function tocarOpcion(id,ri,menos){
+  const p=prod(H.id), r=p.roles[ri], max=maxRol(r), k=H.ops.filter(x=>x===id).length, n=cuentaRol(r);
+  if(menos){const i=H.ops.lastIndexOf(id); if(i>=0) H.ops.splice(i,1); return}
+  if(max===1){ // una sola opción en el grupo: reemplaza
+    H.ops=H.ops.filter(x=>!(r.opciones||[]).some(o=>o.id===x));
+    if(!k) H.ops.push(id); return;
+  }
+  if(n<max) H.ops.push(id);
+  else if(k){H.ops=H.ops.filter(x=>x!==id)} // lleno: tocar una elegida la saca
+  else toast(`En ${r.nombre.toLowerCase()} van hasta ${max}`,true);
+}
+function cerrarHoja(){H=null;$('#capa').innerHTML=''}
+function confirmarHoja(){
+  if(faltan().length) return;
+  const nota=($('#notaIn')?.value||'').trim().slice(0,120);
+  const linea={id:H.id,cant:H.cant,ops:[...H.ops].sort((a,b)=>a-b),nota};
+  const car=carrito();
+  if(H.idx!=null) car[H.idx]=linea;
+  else{const igual=car.find(l=>l.id===linea.id&&l.nota===linea.nota&&l.ops.join()===linea.ops.join()); if(igual) igual.cant=Math.min(50,igual.cant+linea.cant); else car.push(linea)}
+  guardar(); cerrarHoja(); renderProds(); renderTicket();
+}
+function agregarDirecto(id){
+  const p=prod(id); if(!p) return;
+  if((p.roles||[]).length) return abrirHoja(id);
+  const car=carrito(), l=car.find(l=>l.id===id&&!l.ops.length&&!l.nota);
+  if(l) l.cant=Math.min(50,l.cant+1); else car.push({id,cant:1,ops:[],nota:''});
+  guardar(); renderProds(); renderTicket();
+}
+
+// ---------- enviar ----------
+async function enviar(){
+  const car=carrito(); if(!car.length||S.enviando) return;
+  S.enviando=true; renderTicket();
+  try{
+    await rpc('pos_pedir',{p_token:S.token,p:{centro:S.centro,mesa:S.mesa,items:car.map(l=>({id:l.id,cant:l.cant,opciones:l.ops,nota:l.nota||null}))}});
+    S.carritos[`${S.centro}|${S.mesa}`]=[]; guardar();
+    toast(`Enviado a ${S.mesa}. Entra en Ágora en unos segundos.`);
+    S.verTicket=false;
+    await cargarMesas().catch(()=>{});
+  }catch(e){
+    if(vencida(e)){S.enviando=false;return mostrarPin('Tu sesión venció. Poné tu PIN y volvé a enviar (el pedido quedó guardado).')}
+    toast('No se envió: '+e.message,true);
+  }finally{S.enviando=false; if(S.mesa!=null){renderMesa()}}
+}
+
+// ---------- clics ----------
+document.addEventListener('click',e=>{
+  const b=e.target.closest('[data-centro],[data-mesa],[data-volver],[data-cat],[data-prod],[data-menos],[data-mas],[data-editar],[data-enviar],[data-salir],[data-verticket],[data-cerrarticket],[data-op],[data-hmenos],[data-hmas],[data-hok],[data-cerrarhoja],[data-fondo]');
+  if(!b) return;
+  const d=b.dataset;
+  if(d.fondo!=null){ if(e.target===b) cerrarHoja(); return }
+  if(d.centro){S.centro=+d.centro;S.mesa=null;S.buscar='';guardar();render();return}
+  if(d.mesa!=null){S.mesa=d.mesa;S.verTicket=false;S.buscar='';render();return}
+  if(d.volver){S.mesa=null;S.buscar='';render();return}
+  if(d.cat){S.cat=+d.cat;S.buscar='';renderMesa();return}
+  if(d.prod){agregarDirecto(+d.prod);return}
+  if(d.menos!=null){const car=carrito(),l=car[+d.menos];if(l){l.cant--;if(l.cant<=0)car.splice(+d.menos,1)}guardar();renderProds();renderTicket();return}
+  if(d.mas!=null){const l=carrito()[+d.mas];if(l)l.cant=Math.min(50,l.cant+1);guardar();renderProds();renderTicket();return}
+  if(d.editar!=null){const l=carrito()[+d.editar];if(l)abrirHoja(l.id,+d.editar);return}
+  if(d.enviar){enviar();return}
+  if(d.salir){salir();return}
+  if(d.verticket){S.verTicket=true;$('#vista')?.classList.add('verTicket');renderTicket();return}
+  if(d.cerrarticket){S.verTicket=false;$('#vista')?.classList.remove('verTicket');renderTicket();return}
+  if(d.op){const m=e.target.closest('[data-opmenos]');H.nota=$('#notaIn')?.value||H.nota;tocarOpcion(+d.op,+d.rol,!!m);dibujarHoja();return}
+  if(d.hmenos){H.nota=$('#notaIn')?.value||H.nota;H.cant=Math.max(1,H.cant-1);dibujarHoja();return}
+  if(d.hmas){H.nota=$('#notaIn')?.value||H.nota;H.cant=Math.min(50,H.cant+1);dibujarHoja();return}
+  if(d.hok){confirmarHoja();return}
+  if(d.cerrarhoja){cerrarHoja();return}
+});
+document.addEventListener('input',e=>{if(e.target.id==='buscar'){S.buscar=e.target.value;document.querySelectorAll('.cat').forEach(c=>c.classList.toggle('sel',!S.buscar&&+c.dataset.cat===S.cat));renderProds()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&H) cerrarHoja()});
+
+if(S.token) arrancar(); else mostrarPin();
+</script>
+</body>
+</html>
