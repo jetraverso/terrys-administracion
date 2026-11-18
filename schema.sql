@@ -3103,3 +3103,475 @@ end;
 $$;
 revoke all on function public.pos_datos(text) from public;
 grant execute on function public.pos_datos(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 28. Pago online con tarjeta (TPV virtual de CaixaBank / Redsys)
+-- ---------------------------------------------------------------
+-- Take away (terrysburgers.com/pedido/) y terraza (terrysburgers.com/terraza/): el cliente puede
+-- pagar online o seguir pagando al retirar / al camarero.
+--   1. web_pagar() valida el pedido igual que web_pedir / web_pedir_mesa, lo guarda en pagos_web
+--      (todavía NO es un pedido) y devuelve el formulario firmado para ir a la página de Redsys.
+--   2. Redsys avisa el resultado a redsys_notificacion() (POST directo a Supabase). Si la firma es
+--      buena y el pago está autorizado, recién ahí se crea el pedido en pedidos_take con pagado = true:
+--      el TPV lo carga en Ágora como pagado y entra solo a cocina. Los pagos abandonados no dejan pedido.
+--   3. El cliente vuelve a la web y web_pago_estado() le dice cómo salió.
+-- La clave secreta vive solo en pago_redsys (nadie la puede leer desde la web ni desde el admin).
+
+-- Configuración (una sola fila). La clave y el código de prueba se cargan aparte, fuera del repo.
+create table if not exists public.pago_redsys (
+  id            int primary key default 1 check (id = 1),
+  activo        boolean not null default false,
+  entorno       text not null default 'pruebas' check (entorno in ('pruebas', 'real')),
+  comercio      text not null,
+  terminal      text not null default '1',
+  moneda        text not null default '978',
+  clave         text,
+  nombre        text not null default 'TERRYS BURGERS',
+  web           text not null default 'https://terrysburgers.com',
+  notificacion  text not null,
+  codigo_prueba text          -- en pruebas, solo se ofrece con ?pago-prueba=<código> en la dirección
+);
+alter table public.pago_redsys enable row level security;
+revoke all on public.pago_redsys from anon, authenticated;
+insert into public.pago_redsys (id, comercio, notificacion)
+values (1, '369781448',
+        'https://cgkpklimplpedgxbgzvu.supabase.co/rest/v1/rpc/redsys_notificacion?apikey=sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC')
+on conflict (id) do nothing;
+
+-- Cada intento de pago (un pedido puede tener varios si el primero se rechaza).
+create table if not exists public.pagos_web (
+  id            bigint generated always as identity primary key,
+  creado        timestamptz not null default now(),
+  orden         text unique,                 -- Ds_Merchant_Order (12: 8 números + 4 letras/números)
+  token         text not null unique,        -- para que la página consulte cómo salió
+  tipo          text not null check (tipo in ('take', 'mesa')),
+  entorno       text not null,
+  datos         jsonb not null,              -- el pedido ya validado y cobrado
+  telefono      text,
+  importe       numeric(8,2) not null check (importe > 0),
+  estado        text not null default 'esperando' check (estado in ('esperando', 'pagado', 'denegado', 'error')),
+  respuesta     text,                        -- Ds_Response
+  autorizacion  text,                        -- Ds_AuthorisationCode
+  notificacion  jsonb,
+  notificado    timestamptz,
+  pedido_id     bigint references public.pedidos_take (id) on delete set null
+);
+alter table public.pagos_web enable row level security;
+revoke all on public.pagos_web from anon, authenticated;
+grant select on public.pagos_web to authenticated;
+drop policy if exists pagos_web_admin on public.pagos_web;
+create policy pagos_web_admin on public.pagos_web for select to authenticated using (public.es_admin());
+
+alter table public.pedidos_take add column if not exists pagado boolean not null default false;
+alter table public.pedidos_take add column if not exists pago_ref text;   -- pagos_web.orden
+
+-- ---------- Firma de Redsys (HMAC_SHA256_V1) ----------
+-- clave del pedido = 3DES-CBC (IV en ceros) del número de pedido con la clave secreta;
+-- firma = HMAC-SHA256 de Ds_MerchantParameters (tal cual, en base64) con esa clave, en base64.
+create or replace function public._b64(b bytea)
+returns text language sql immutable
+as $$ select translate(encode(b, 'base64'), E'\n\r', ''); $$;
+revoke all on function public._b64(bytea) from public, anon, authenticated;
+
+create or replace function public._redsys_firma(p_params text, p_orden text, p_clave text)
+returns text
+language plpgsql
+immutable
+set search_path = public
+as $$
+declare v_o bytea := convert_to(p_orden, 'UTF8');
+begin
+  -- el número de pedido se completa con ceros hasta múltiplo de 8 bytes
+  if length(v_o) % 8 <> 0 then
+    v_o := v_o || decode(repeat('00', 8 - length(v_o) % 8), 'hex');
+  end if;
+  return public._b64(extensions.hmac(convert_to(p_params, 'UTF8'),
+           extensions.encrypt_iv(v_o, decode(p_clave, 'base64'), decode('0000000000000000', 'hex'), '3des-cbc/pad:none'),
+           'sha256'));
+end;
+$$;
+revoke all on function public._redsys_firma(text, text, text) from public, anon, authenticated;
+
+-- ---------- Validación compartida (pedido normal y pedido con pago) ----------
+-- Take away: {dia, hora, nombre, telefono, comentario, items} → pedido listo para guardar
+create or replace function public._pedido_take_datos(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
+  v_dia date; v_hora time;
+  v_tel text := public._txt(p ->> 'telefono', 30);
+  v_l jsonb;
+begin
+  begin
+    v_dia  := (p ->> 'dia')::date;
+    v_hora := (p ->> 'hora')::time;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_dia is null or v_dia < v_hoy or v_dia > v_hoy + 1 then
+    raise exception 'día fuera de rango' using errcode = '22023';
+  end if;
+  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
+     or not (v_hora between time '13:15' and time '15:30' or v_hora between time '20:15' and time '23:00') then
+    raise exception 'horario sin pedidos' using errcode = '22023';
+  end if;
+  if v_dia = v_hoy and v_hora < v_ahora + interval '30 minutes' then
+    raise exception 'horario pasado' using errcode = '22023';
+  end if;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if public._txt(p ->> 'nombre', 80) is null or char_length(public._txt(p ->> 'nombre', 80)) < 2 then
+    raise exception 'falta el nombre' using errcode = '22023';
+  end if;
+  v_l := public._pedido_lineas(p -> 'items', false, v_dia, v_hora);
+  if (select count(*) from public.pedidos_take where telefono = v_tel and creado > now() - interval '1 day') >= 5
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
+  end if;
+  return jsonb_build_object(
+    'dia', v_dia, 'hora', to_char(v_hora, 'HH24:MI'), 'nombre', public._txt(p ->> 'nombre', 80), 'telefono', v_tel,
+    'comentario', public._txt(p ->> 'comentario', 500), 'lineas', v_l -> 'lineas',
+    'unidades', (v_l ->> 'unidades')::int, 'total', (v_l ->> 'total')::numeric, 'mesa', null);
+end;
+$$;
+revoke all on function public._pedido_take_datos(jsonb) from public, anon, authenticated;
+
+-- Terraza: {mesa, codigo, nombre?, comentario?, items}
+create or replace function public._pedido_mesa_datos(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_dia  date := (now() at time zone 'Europe/Madrid')::date;
+  v_hora time := date_trunc('minute', (now() at time zone 'Europe/Madrid')::time);
+  v_m public.terraza_mesas;
+  v_l jsonb;
+begin
+  begin
+    select * into v_m from public.terraza_mesas
+     where numero = (p ->> 'mesa')::int and codigo = coalesce(p ->> 'codigo', '') and activa;
+  exception when others then v_m := null; end;
+  if v_m.numero is null then raise exception 'mesa inválida' using errcode = '22023'; end if;
+  if not (v_hora between time '12:00' and time '16:30' or v_hora >= time '19:00') then
+    raise exception 'terraza cerrada' using errcode = '22023';
+  end if;
+  if (select count(*) from public.pedidos_take where mesa = v_m.numero and creado > now() - interval '3 hours') >= 15
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamá al camarero' using errcode = '54000';
+  end if;
+  v_l := public._pedido_lineas(p -> 'items', true, v_dia, v_hora);
+  return jsonb_build_object(
+    'dia', v_dia, 'hora', to_char(v_hora, 'HH24:MI'),
+    'nombre', coalesce(case when char_length(public._txt(p ->> 'nombre', 80)) >= 2 then public._txt(p ->> 'nombre', 80) end, v_m.nombre),
+    'telefono', null, 'comentario', public._txt(p ->> 'comentario', 500), 'lineas', v_l -> 'lineas',
+    'unidades', (v_l ->> 'unidades')::int, 'total', (v_l ->> 'total')::numeric,
+    'mesa', v_m.numero, 'mesa_nombre', v_m.nombre, 'codigo', v_m.codigo);
+end;
+$$;
+revoke all on function public._pedido_mesa_datos(jsonb) from public, anon, authenticated;
+
+create or replace function public._pedido_guardar(d jsonb, p_pagado boolean, p_ref text)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_pid bigint;
+begin
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total, mesa, pagado, pago_ref)
+  values ((d ->> 'dia')::date, (d ->> 'hora')::time, d ->> 'nombre', d ->> 'telefono', d ->> 'comentario',
+          d -> 'lineas', (d ->> 'unidades')::int, (d ->> 'total')::numeric, (d ->> 'mesa')::int, p_pagado, p_ref)
+  returning id into v_pid;
+  return v_pid;
+end;
+$$;
+revoke all on function public._pedido_guardar(jsonb, boolean, text) from public, anon, authenticated;
+
+-- Pedido para pagar al retirar (misma respuesta que antes).
+create or replace function public.web_pedir(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare d jsonb; v_pid bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then return jsonb_build_object('ok', true); end if;   -- trampa para bots
+  d := public._pedido_take_datos(p);
+  v_pid := public._pedido_guardar(d, false, null);
+  return jsonb_build_object('ok', true, 'id', v_pid, 'total', (d ->> 'total')::numeric);
+end;
+$$;
+revoke all on function public.web_pedir(jsonb) from public;
+grant execute on function public.web_pedir(jsonb) to anon, authenticated;
+
+-- Pedido de mesa para pagar al camarero (misma respuesta que antes).
+create or replace function public.web_pedir_mesa(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare d jsonb; v_pid bigint;
+begin
+  if public._txt(p ->> 'web', 200) is not null then return jsonb_build_object('ok', true); end if;
+  d := public._pedido_mesa_datos(p);
+  v_pid := public._pedido_guardar(d, false, null);
+  return jsonb_build_object('ok', true, 'id', v_pid, 'total', (d ->> 'total')::numeric, 'mesa', d ->> 'mesa_nombre');
+end;
+$$;
+revoke all on function public.web_pedir_mesa(jsonb) from public;
+grant execute on function public.web_pedir_mesa(jsonb) to anon, authenticated;
+
+-- ¿Se ofrece pagar online? (en pruebas, solo con el código de prueba en la dirección)
+create or replace function public.web_pago_info(p_prueba text default null)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object('online', coalesce((
+    select c.activo and c.clave is not null
+           and (c.entorno = 'real' or (c.codigo_prueba is not null and p_prueba = c.codigo_prueba))
+      from public.pago_redsys c where c.id = 1), false));
+$$;
+revoke all on function public.web_pago_info(text) from public;
+grant execute on function public.web_pago_info(text) to anon, authenticated;
+
+-- Arranca un pago: p = el mismo pedido que web_pedir / web_pedir_mesa (+ prueba).
+-- → {ok, url, params: {Ds_SignatureVersion, Ds_MerchantParameters, Ds_Signature}, token, total}
+create or replace function public.web_pagar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c public.pago_redsys; d jsonb; v_tipo text; v_id bigint; v_orden text; v_token text;
+  v_volver text; v_params text; v_json jsonb;
+begin
+  if public._txt(p ->> 'web', 200) is not null then raise exception 'datos inválidos' using errcode = '22023'; end if;
+  select * into c from public.pago_redsys where id = 1;
+  if c.id is null or not c.activo or c.clave is null
+     or (c.entorno = 'pruebas' and (c.codigo_prueba is null or coalesce(p ->> 'prueba', '') <> c.codigo_prueba)) then
+    raise exception 'pago online no disponible' using errcode = '22023';
+  end if;
+  v_tipo := case when p ? 'mesa' then 'mesa' else 'take' end;
+  d := case when v_tipo = 'mesa' then public._pedido_mesa_datos(p) else public._pedido_take_datos(p) end;
+  -- freno: intentos de pago por teléfono (take away) o por mesa, y en total
+  if (v_tipo = 'take' and (select count(*) from public.pagos_web where telefono = d ->> 'telefono' and creado > now() - interval '1 day') >= 10)
+     or (v_tipo = 'mesa' and (select count(*) from public.pagos_web where tipo = 'mesa' and (datos ->> 'mesa')::int = (d ->> 'mesa')::int and creado > now() - interval '3 hours') >= 20)
+     or (select count(*) from public.pagos_web where creado > now() - interval '1 day') >= 500 then
+    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
+  end if;
+
+  v_token := encode(extensions.gen_random_bytes(16), 'hex');
+  insert into public.pagos_web (token, tipo, entorno, datos, telefono, importe)
+  values (v_token, v_tipo, c.entorno, d - 'codigo', d ->> 'telefono', (d ->> 'total')::numeric)
+  returning id into v_id;
+  -- número de pedido para Redsys: 4 a 12 caracteres, los 4 primeros números, único
+  v_orden := lpad((v_id % 100000000)::text, 8, '0') || upper(substr(v_token, 1, 4));
+  update public.pagos_web set orden = v_orden where id = v_id;
+
+  v_volver := case when v_tipo = 'mesa'
+                   then c.web || '/terraza/?m=' || (d ->> 'mesa') || '&c=' || (d ->> 'codigo') || '&pago=' || v_token
+                   else c.web || '/pedido/?pago=' || v_token end;
+  v_json := jsonb_build_object(
+    'DS_MERCHANT_AMOUNT', (round((d ->> 'total')::numeric * 100))::bigint::text,
+    'DS_MERCHANT_ORDER', v_orden,
+    'DS_MERCHANT_MERCHANTCODE', c.comercio,
+    'DS_MERCHANT_CURRENCY', c.moneda,
+    'DS_MERCHANT_TRANSACTIONTYPE', '0',
+    'DS_MERCHANT_TERMINAL', c.terminal,
+    'DS_MERCHANT_MERCHANTURL', c.notificacion,
+    'DS_MERCHANT_URLOK', v_volver,
+    'DS_MERCHANT_URLKO', v_volver || '&ko=1',
+    'DS_MERCHANT_MERCHANTNAME', c.nombre,
+    'DS_MERCHANT_PRODUCTDESCRIPTION', case when v_tipo = 'mesa' then 'Pedido terraza ' else 'Pedido take away ' end || v_id,
+    'DS_MERCHANT_CONSUMERLANGUAGE', '001');
+  v_params := public._b64(convert_to(v_json::text, 'UTF8'));
+  return jsonb_build_object('ok', true, 'token', v_token, 'total', (d ->> 'total')::numeric,
+    'url', case when c.entorno = 'real' then 'https://sis.redsys.es/sis/realizarPago'
+                else 'https://sis-t.redsys.es:25443/sis/realizarPago' end,
+    'params', jsonb_build_object('Ds_SignatureVersion', 'HMAC_SHA256_V1', 'Ds_MerchantParameters', v_params,
+                                 'Ds_Signature', public._redsys_firma(v_params, v_orden, c.clave)));
+end;
+$$;
+revoke all on function public.web_pagar(jsonb) from public;
+grant execute on function public.web_pagar(jsonb) to anon, authenticated;
+
+-- Aviso de Redsys (POST con Ds_SignatureVersion, Ds_MerchantParameters y Ds_Signature).
+-- Se puede llamar desde cualquier lado: sin la clave secreta no hay firma válida.
+-- La página también lo llama con lo que Redsys le agrega a la dirección de vuelta (si lo agrega).
+create or replace function public.redsys_notificacion("Ds_SignatureVersion" text default null,
+                                                     "Ds_MerchantParameters" text default null,
+                                                     "Ds_Signature" text default null)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c public.pago_redsys; v_json jsonb; v_orden text; v_pw public.pagos_web; v_resp int; v_amount bigint; v_pid bigint;
+  v_p text := "Ds_MerchantParameters";
+begin
+  select * into c from public.pago_redsys where id = 1;
+  if c.clave is null or v_p is null or "Ds_Signature" is null or length(v_p) > 20000 then return 'KO'; end if;
+  begin
+    v_json := convert_from(decode(rpad(translate(v_p, '-_', '+/'), ((length(v_p) + 3) / 4) * 4, '='), 'base64'), 'UTF8')::jsonb;
+    select jsonb_object_agg(lower(key), value) into v_json from jsonb_each(v_json);   -- Ds_Order / DS_ORDER
+  exception when others then return 'KO'; end;
+  v_orden := v_json ->> 'ds_order';
+  if v_orden is null or v_orden !~ '^[0-9A-Za-z]{4,12}$' then return 'KO'; end if;
+  if rtrim(translate(public._redsys_firma(v_p, v_orden, c.clave), '+/', '-_'), '=')
+     <> rtrim(translate("Ds_Signature", '+/', '-_'), '=') then
+    return 'KO';
+  end if;
+
+  select * into v_pw from public.pagos_web where orden = v_orden for update;
+  if v_pw.id is null then return 'KO'; end if;
+  if v_pw.estado = 'pagado' then return 'OK'; end if;       -- el aviso puede llegar dos veces
+  begin
+    v_resp := nullif(regexp_replace(coalesce(v_json ->> 'ds_response', ''), '\D', '', 'g'), '')::int;
+    v_amount := (v_json ->> 'ds_amount')::bigint;
+  exception when others then v_resp := null; end;
+
+  if v_resp between 0 and 99 and v_amount = round(v_pw.importe * 100) and v_json ->> 'ds_merchantcode' = c.comercio then
+    v_pid := public._pedido_guardar(v_pw.datos, true, v_orden);
+    update public.pagos_web set estado = 'pagado', pedido_id = v_pid, respuesta = v_json ->> 'ds_response',
+           autorizacion = nullif(btrim(v_json ->> 'ds_authorisationcode'), ''), notificacion = v_json, notificado = now()
+     where id = v_pw.id;
+  else
+    update public.pagos_web set estado = case when v_resp between 0 and 99 then 'error' else 'denegado' end,
+           respuesta = v_json ->> 'ds_response', notificacion = v_json, notificado = now()
+     where id = v_pw.id;
+  end if;
+  return 'OK';
+end;
+$$;
+revoke all on function public.redsys_notificacion(text, text, text) from public;
+grant execute on function public.redsys_notificacion(text, text, text) to anon, authenticated;
+
+-- La página, al volver de Redsys: ¿cómo salió? (solo con el token de ese pago)
+create or replace function public.web_pago_estado(p_token text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+           'estado', case when w.estado = 'esperando' and w.creado < now() - interval '40 minutes' then 'vencido' else w.estado end,
+           'pedido', w.pedido_id, 'total', w.importe, 'tipo', w.tipo,
+           'dia', w.datos ->> 'dia', 'hora', w.datos ->> 'hora', 'mesa', w.datos ->> 'mesa_nombre')
+    from public.pagos_web w
+   where w.token = left(coalesce(p_token, ''), 64);
+$$;
+revoke all on function public.web_pago_estado(text) from public;
+grant execute on function public.web_pago_estado(text) to anon, authenticated;
+
+-- El aviso al celular dice si ya está pagado.
+create or replace function public.tpv_avisos_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a public.web_avisos;
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  select * into a from public.web_avisos where id = 1;
+  if a.ntfy_tema is null or not coalesce(a.pedidos, true) then
+    return jsonb_build_object('tema', null, 'avisos', '[]'::jsonb);
+  end if;
+  -- Datos sueltos: el texto lo arma el TPV (sin nombre ni teléfono del cliente).
+  return jsonb_build_object('tema', a.ntfy_tema, 'avisos', coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', p.id, 'dia', to_char(p.dia, 'DD/MM'), 'hora', to_char(p.hora, 'HH24:MI'),
+      'cuando', case when p.dia = v_hoy then 'hoy' when p.dia = v_hoy + 1 then 'manana' else 'otro' end,
+      'unidades', p.unidades, 'total', p.total, 'comentario', p.comentario is not null, 'mesa', p.mesa, 'pagado', p.pagado,
+      'items', (select coalesce(jsonb_agg(jsonb_build_object('cant', i ->> 'cant', 'nombre', i ->> 'nombre', 'extra', i ->> 'extra')), '[]'::jsonb)
+                  from jsonb_array_elements(p.items) i)) order by p.creado)
+    from public.pedidos_take p
+    where p.avisado is null and p.estado <> 'cancelado' and p.creado > now() - interval '6 hours'), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.tpv_avisos_pendientes(text) from public;
+grant execute on function public.tpv_avisos_pendientes(text) to anon, authenticated;
+
+-- Al TPV le llega «pagado»: Ágora lo registra con la forma de pago de la web y lo pasa solo a cocina.
+create or replace function public.agora_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r public.pedidos_take;
+  l jsonb;
+  pr public.productos;
+  v_extra text; v_var text; v_salsa text; v_agora int; v_addin int; v_addins jsonb;
+  v_lineas jsonb;
+  v_out jsonb := '[]';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.integraciones set ultimo_uso = now() where nombre = 'agora';
+  for r in select * from public.pedidos_take
+            where estado <> 'cancelado' and dia >= v_hoy
+              and (agora_estado is null or (agora_estado = 'error' and agora_intentos < 5))
+            order by (agora_centro is null), creado limit 20 loop
+    v_lineas := '[]';
+    for l in select * from jsonb_array_elements(r.items) loop
+      v_extra := coalesce(l ->> 'extra', '');
+      if l ? 'agora_id' then
+        v_agora := (l ->> 'agora_id')::int;
+        v_addins := coalesce(l -> 'addins', '[]'::jsonb);
+        v_salsa := null; v_addin := null;
+      else
+        select * into pr from public.productos where id = l ->> 'id';
+        v_var   := case when lower(v_extra) in ('simple', 'doble') then lower(v_extra) end;
+        v_salsa := case when v_extra ilike 'Salsa %' then substr(v_extra, 7) end;
+        v_agora := case when v_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+        v_addin := null;
+        if v_salsa is not null and pr.agora_salsas is not null then
+          select value::int into v_addin from jsonb_each_text(pr.agora_salsas) where lower(key) = lower(v_salsa) limit 1;
+        end if;
+        v_addins := case when v_addin is not null then jsonb_build_array(jsonb_build_object('id', v_addin, 'nombre', v_salsa, 'precio', 0)) else '[]'::jsonb end;
+      end if;
+      v_lineas := v_lineas || jsonb_build_object(
+        'id', l ->> 'id', 'nombre', l ->> 'nombre', 'extra', nullif(v_extra, ''), 'nota', l ->> 'nota',
+        'cant', (l ->> 'cant')::int * case when r.quitar then -1 else 1 end, 'precio', (l ->> 'precio')::numeric,
+        'agora_id', v_agora, 'addins', v_addins,
+        'agora_salsa', v_addin, 'salsa', v_salsa);
+    end loop;
+    v_out := v_out || jsonb_build_object(
+      'id', r.id, 'creado', r.creado, 'dia', r.dia, 'hora', to_char(r.hora, 'HH24:MI'),
+      'nombre', r.nombre, 'telefono', r.telefono, 'comentario', r.comentario,
+      'total', case when r.quitar then -r.total else r.total end, 'pagado', r.pagado, 'pago_ref', r.pago_ref,
+      'lineas', v_lineas, 'intentos', r.agora_intentos,
+      'mesa', r.mesa, 'agora_mesa', (select m.agora_mesa from public.terraza_mesas m where m.numero = r.mesa),
+      'agora_centro', r.agora_centro, 'agora_ubicacion', r.agora_ubicacion, 'camarero', r.camarero, 'quitar', r.quitar,
+      'centro_nombre', (select x ->> 'nombre' from public.pos_estado e, jsonb_array_elements(e.carta -> 'centros') x
+                         where e.id = 1 and (x ->> 'id')::int = r.agora_centro));
+  end loop;
+  return v_out;
+end;
+$$;
+revoke all on function public.agora_pendientes(text) from public;
+grant execute on function public.agora_pendientes(text) to anon, authenticated;

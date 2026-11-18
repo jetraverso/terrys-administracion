@@ -319,8 +319,11 @@ function ArmarPedido($p) {
     Totals = [ordered]@{ GrossAmount = $g; NetAmount = $n; VatAmount = [math]::Round($g - $n, 2); SurchargeAmount = 0.0; Taxes = $taxes }
     ScheduledPreparation = $false
   }
-  if ($p.pagado) {   # pagado online: Agora lo pasa solo a En Preparacion (imprime y va a cocina)
-    $pedido.Payments = @([ordered]@{ MethodId = [int]$opc.formaPagoTarjetaId; MethodName = [string]$opc.formaPagoTarjetaNombre; Amount = $g; PaidAmount = $g; ChangeAmount = 0.0; TipAmount = 0.0; Date = $fecha; PosId = [int]$opc.posId; IsPrepayment = $true; ExtraInformation = ('Web ' + $p.id) })
+  if ($p.pagado) {   # pagado online (parte 28, Redsys): Agora lo pasa solo a En Preparacion (imprime y va a cocina)
+    # forma de pago propia de la web si esta en pedidos-agora.json (formaPagoWebId), si no la de tarjeta
+    $fpId = if ($opc.formaPagoWebId) { [int]$opc.formaPagoWebId } else { [int]$opc.formaPagoTarjetaId }
+    $fpNom = if ($opc.formaPagoWebId) { [string]$opc.formaPagoWebNombre } else { [string]$opc.formaPagoTarjetaNombre }
+    $pedido.Payments = @([ordered]@{ MethodId = $fpId; MethodName = $fpNom; Amount = $g; PaidAmount = $g; ChangeAmount = 0.0; TipAmount = 0.0; Date = $fecha; PosId = [int]$opc.posId; IsPrepayment = $true; ExtraInformation = ('Web {0} Redsys {1}' -f $p.id, $p.pago_ref) })
   }
   return $pedido
 }
@@ -344,7 +347,7 @@ function TextoAviso($a) {
     $lineas += ('{0}{1} {2}{3}' -f $it.cant, $C.por, $it.nombre, $(if ($it.extra) { ' (' + ([string]$it.extra).ToLower() + ')' } else { '' }))
   }
   $total = ([double]$a.total).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
-  $lineas += ('Total {0} {1} {2} {3}' -f $total, $C.eur, $C.punto, $(if ($a.mesa) { 'se paga en la mesa' } else { 'se paga al retirar' }))
+  $lineas += ('Total {0} {1} {2} {3}' -f $total, $C.eur, $C.punto, $(if ($a.pagado) { 'PAGADO online con tarjeta' } elseif ($a.mesa) { 'se paga en la mesa' } else { 'se paga al retirar' }))
   if ($a.comentario) { $lineas += 'Tiene comentario (ver en el admin)' }
   return @{ titulo = $titulo; mensaje = ($lineas -join "`n") }
 }

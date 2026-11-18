@@ -685,7 +685,7 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.26';
+const VERSION='3.27';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1171,7 +1171,7 @@ function panelPedidos(ped,hoy){
       const items=(p.items||[]).map(i=>`${i.cant}× ${i.nombre}${i.extra?` (${i.extra.toLowerCase()})`:''}`).join(' · ');
       const txt=p.estado==='listo'
         ?`¡Hola ${p.nombre}! Tu pedido nº ${p.id} de Terry's Burgers ya está listo para retirar. ¡Te esperamos! 🍔`
-        :`¡Hola ${p.nombre}! Recibimos tu pedido nº ${p.id} en Terry's Burgers para retirar el ${fechaLargaW(p.dia)} a las ${hora}. Total: ${eurW(p.total)}, se paga al retirar. ¡Gracias! 🍔`;
+        :`¡Hola ${p.nombre}! Recibimos tu pedido nº ${p.id} en Terry's Burgers para retirar el ${fechaLargaW(p.dia)} a las ${hora}. Total: ${eurW(p.total)}, ${p.pagado?'ya está pagado':'se paga al retirar'}. ¡Gracias! 🍔`;
       if(p.agora_centro) return `<tr class="w-${p.estado}">
         <td class="wh">${esc(hora)}</td>
         <td class="wn"><span class="wmesa wlocal">${esc(p.nombre)}</span>${p.quitar?' <span class="wmesa" style="background:var(--danger);color:#fff">QUITADO</span>':''} <b>nº ${p.id} · ${esc(p.camarero||'')}</b><div class="witems">${esc(p.quitar?'−'+items:items)}</div>${agoraBadge(p)}</td>
@@ -1190,8 +1190,8 @@ function panelPedidos(ped,hoy){
       </tr>`;
       return `<tr class="w-${p.estado}">
         <td class="wh">${esc(hora)}</td>
-        <td class="wn"><b>nº ${p.id} · ${esc(p.nombre)}</b><div class="witems">${esc(items)}</div>${p.comentario?`<small>💬 ${esc(p.comentario)}</small>`:''}${agoraBadge(p)}</td>
-        <td class="wtot">${eurW(p.total)}</td>
+        <td class="wn">${p.pagado?'<span class="wmesa" title="Pagado online con tarjeta (Redsys)">PAGADO</span> ':''}<b>nº ${p.id} · ${esc(p.nombre)}</b><div class="witems">${esc(items)}</div>${p.comentario?`<small>💬 ${esc(p.comentario)}</small>`:''}${agoraBadge(p)}</td>
+        <td class="wtot">${eurW(p.total)}${p.pagado?'<br><small>con tarjeta</small>':''}</td>
         <td class="wt"><a href="tel:${esc(p.telefono)}">${esc(p.telefono)}</a></td>
         <td><select data-w-ped="${p.id}" aria-label="Estado del pedido">${optEst(p.estado)}</select></td>
         <td class="wa"><a class="btn" href="${esc(waLink(p.telefono,txt))}" target="_blank" rel="noopener" title="Abre WhatsApp con un mensaje para el cliente">WhatsApp</a></td>
