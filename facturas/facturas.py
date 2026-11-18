@@ -7,6 +7,9 @@ Lo usa Claude (no hace falta correrlo a mano):
   python3 facturas/facturas.py pedidos                 pedidos pendientes del botón "Actualizar facturas" de la página
   python3 facturas/facturas.py pedido 12 listo '{...}' marca un pedido (en curso / listo / error) con un resumen
   python3 facturas/facturas.py pedir 2026-10           crea un pedido (igual que el botón)
+  python3 facturas/facturas.py novedades               chequeo diario: archivos sin cargar del mes en curso y del anterior
+  python3 facturas/facturas.py omitir '<ruta>' '<motivo>'   anota un archivo que no se carga (no vuelve a salir como pendiente)
+  python3 facturas/facturas.py omitidos                lista de archivos omitidos
   python3 facturas/facturas.py subir '<json>'          sube una factura leída; el json lleva:
         {"ruta": "2026/10_Octubre/archivo.pdf", "fecha": "2026-10-01", "total": 138.59,
          "proveedor": "Europastry", "detalle": "Reposicion panes", "nota": "Factura 24015086 · vence 06/10 · giro"}
@@ -17,13 +20,31 @@ La carpeta de Drive tiene que estar sincronizada en esta Mac (Google Drive para 
 el id de cada archivo se lee del atributo que le pone Drive, y con ese id se arma el link
 y se evita cargar dos veces la misma factura aunque se renombre o se mueva.
 La configuración (URL, clave pública y token) está en facturas/config.json, que no se sube al repositorio.
+Los archivos que no se cargan (mensual de Ruibal, Harmonia, duplicados, cargados a mano…) se anotan en
+facturas/omitidos.json (tampoco se sube) para no volver a leerlos en cada chequeo.
 """
-import json, os, subprocess, sys, urllib.request, urllib.error
+import datetime, json, os, subprocess, sys, urllib.request, urllib.error
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
 CFG = json.load(open(os.path.join(AQUI, 'config.json'), encoding='utf-8'))
 CARPETA = os.path.expanduser(CFG['carpeta'])
 EXT = ('.pdf', '.jpg', '.jpeg', '.png', '.heic', '.webp')
+OMITIDOS = os.path.join(AQUI, 'omitidos.json')
+
+
+def leer_omitidos():
+    try:
+        return json.load(open(OMITIDOS, encoding='utf-8'))
+    except FileNotFoundError:
+        return []
+
+
+def motivo_omitido(a, om):
+    """Motivo si el archivo está anotado como omitido (por id de Drive o por ruta), si no None."""
+    for o in om:
+        if (a.get('id') and o.get('id') == a['id']) or o.get('ruta') == a['ruta']:
+            return o.get('motivo') or 'omitido'
+    return None
 
 
 def drive_id(ruta):
@@ -62,16 +83,49 @@ def archivos(mes=None):
     return sorted(out, key=lambda x: x['ruta'])
 
 
-def listar(mes=None):
+def con_estado(mes=None):
     l = archivos(mes)
     ids = [a['id'] for a in l if a['id']]
     estado = rpc('facturas_estado', {'p_token': CFG['token'], 'p_archivos': ids, 'p_empresa': CFG['empresa']}) if ids else {}
+    om = leer_omitidos()
     for a in l:
-        e = estado.get(a['id']) if a['id'] else None
-        a['cargada'] = e
+        a['cargada'] = estado.get(a['id']) if a['id'] else None   # también trae {'descartada': true} si alguien borró su fila
+        m = motivo_omitido(a, om)
+        if m and not a['cargada']:
+            a['omitida'] = m
+    return l
+
+
+def listar(mes=None):
+    l = con_estado(mes)
     print(json.dumps(l, ensure_ascii=False, indent=1))
-    pend = [a for a in l if a['id'] and not a['cargada']]   # 'cargada' también trae {'descartada': true} si alguien borró su fila
-    print(f"\n{len(l)} archivos · {len(l) - len(pend)} cargados · {len(pend)} pendientes", file=sys.stderr)
+    om = [a for a in l if a.get('omitida')]
+    pend = [a for a in l if a['id'] and not a['cargada'] and not a.get('omitida')]
+    print(f"\n{len(l)} archivos · {len(l) - len(pend) - len(om)} cargados · {len(om)} omitidos · {len(pend)} pendientes", file=sys.stderr)
+
+
+def novedades():
+    """Chequeo diario: lo que falta cargar del mes en curso y del anterior (por si algo llegó tarde)."""
+    hoy = datetime.date.today()
+    ant = hoy.replace(day=1) - datetime.timedelta(days=1)
+    out = []
+    for per in (f'{ant:%Y-%m}', f'{hoy:%Y-%m}'):
+        l = [a for a in con_estado(per) if not a['cargada'] and not a.get('omitida')]
+        out.append({'periodo': per,
+                    'pendientes': [a['ruta'] for a in l if a['id']],
+                    'sin_sincronizar': [a['ruta'] for a in l if not a['id']]})   # Drive todavía no les puso id: se reintenta mañana
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+
+
+def omitir(rel, motivo):
+    ruta = os.path.join(CARPETA, rel)
+    if not os.path.isfile(ruta):
+        sys.exit('No existe el archivo: ' + ruta)
+    om = [o for o in leer_omitidos() if o.get('ruta') != rel]
+    om.append({'ruta': rel, 'id': drive_id(ruta), 'motivo': motivo, 'fecha': f'{datetime.date.today():%Y-%m-%d}'})
+    with open(OMITIDOS, 'w', encoding='utf-8') as f:
+        json.dump(sorted(om, key=lambda o: o['ruta']), f, ensure_ascii=False, indent=1)
+    print(json.dumps({'ruta': rel, 'omitida': motivo}, ensure_ascii=False))
 
 
 def subir(datos):
@@ -110,6 +164,12 @@ if __name__ == '__main__':
         pedido(sys.argv[2], sys.argv[3], sys.argv[4] if len(sys.argv) > 4 else None)
     elif len(sys.argv) == 3 and sys.argv[1] == 'pedir':          # pedir 2026-10  (crea un pedido como desde el botón)
         pedir(sys.argv[2])
+    elif len(sys.argv) == 2 and sys.argv[1] == 'novedades':      # chequeo diario (mes en curso y anterior)
+        novedades()
+    elif len(sys.argv) == 4 and sys.argv[1] == 'omitir':         # omitir '<ruta>' '<motivo>'
+        omitir(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 2 and sys.argv[1] == 'omitidos':
+        print(json.dumps(leer_omitidos(), ensure_ascii=False, indent=1))
     elif len(sys.argv) >= 2 and sys.argv[1] == 'listar':
         listar(sys.argv[2] if len(sys.argv) > 2 else None)
     elif len(sys.argv) == 3 and sys.argv[1] == 'subir':

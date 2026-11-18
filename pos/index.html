@@ -251,6 +251,9 @@ const S={
 const carrito=()=>S.carritos[`${S.centro}|${S.mesa}`]||(S.carritos[`${S.centro}|${S.mesa}`]=[]);
 const centroAct=()=>(S.D?.centros||[]).find(c=>c.id===S.centro);
 const prod=id=>S.D?.productos?.[String(id)];
+// Productos de una categoría en el orden elegido en el admin (Pedidos → Camareros); los que no están en esa lista van al final, como en Ágora
+const prodsDe=k=>{const ps=(k&&k.productos)||[], o=k&&(S.D?.orden||{})[String(k.id)]; if(!o||!o.length) return ps;
+  const pos=new Map(o.map((id,i)=>[+id,i])); return ps.map((id,i)=>[id,pos.has(+id)?pos.get(+id):1e6+i]).sort((a,b)=>a[1]-b[1]).map(x=>x[0])};
 function tintaPara(hex){ // texto negro o blanco según el color de fondo
   const m=/^#?([0-9a-f]{6})$/i.exec(hex||''); if(!m) return '#fff';
   const n=parseInt(m[1],16),r=n>>16,g=(n>>8)&255,b=n&255;
@@ -425,8 +428,8 @@ function renderProds(){
   const c=centroAct(); if(!c) return;
   let ids;
   const q=S.buscar.trim().toLowerCase();
-  if(q){ids=[...new Set((c.categorias||[]).flatMap(k=>k.productos))].filter(id=>(prod(id)?.nombre||'').toLowerCase().includes(q))}
-  else ids=((c.categorias||[]).find(k=>k.id===S.cat)||{}).productos||[];
+  if(q){ids=[...new Set((c.categorias||[]).flatMap(prodsDe))].filter(id=>(prod(id)?.nombre||'').toLowerCase().includes(q))}
+  else ids=prodsDe((c.categorias||[]).find(k=>k.id===S.cat));
   const color=q?null:((c.categorias||[]).find(k=>k.id===S.cat)||{}).color;
   const enCarrito=new Map(); for(const l of carrito()) enCarrito.set(l.id,(enCarrito.get(l.id)||0)+l.cant);
   const html=ids.map(id=>{const p=prod(id); if(!p||p.precio==null) return '';

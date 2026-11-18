@@ -31,6 +31,10 @@ Los archivos se llaman `MMDD_Proveedor_Detalle.pdf|jpg` (ej. `0918_Europastry_Re
 - **Harmonia** (recogida de aceite usado: autofacturas y hojas manuscritas): no se sube. Lo que paga Harmonia se imputa en Ágora, así que ya entra con las ventas diarias.
 - **Albarán + factura del mismo envío** (pasa con Crusat: la factura dice "Nº alb. APxxxxx" y tiene el mismo importe que un albarán de días antes): es UN solo gasto. Si el albarán ya está cargado, no subir la factura: avisar del duplicado.
 
+Cuando un archivo NO se carga por alguna de estas reglas (o porque Juan avisó que ya lo cargó a mano), anotarlo para que no vuelva a salir como pendiente:
+`/Users/juan_traverso/.claude/terrys-facturas omitir '<ruta del listado>' '<motivo corto>'`
+Queda en `facturas/omitidos.json` (local) y en el listado aparece con `"omitida": "<motivo>"`: esos no se abren, no se suben y no se mencionan en el resumen. NO omitir un archivo solo porque no se pudo leer o porque hay dudas: ese se deja pendiente y se avisa en el resumen.
+
 ## Qué va como ingreso (`"ingreso": true`)
 
 - **Abonos / devoluciones a favor** (ej. Discer devolución de envase, importe negativo): ingreso por el valor absoluto.

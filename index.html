@@ -238,6 +238,18 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .camfila.off{opacity:.55}
 .camfila b{flex:1;min-width:120px;font-size:16px}
 .camfila label{display:flex;align-items:center;gap:6px;font-size:14px}
+/* orden de los productos de la página de camareros (parte 27) */
+.ordchips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.ordchips .btn{box-shadow:inset 0 -3px 0 var(--c,transparent)}
+.ordlista{display:grid;gap:6px;margin-top:12px;max-width:620px}
+.ordfila{display:grid;grid-template-columns:30px 26px minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:4px 8px 4px 4px;border:1px solid var(--line-2);border-left:4px solid var(--c,var(--line-2));border-radius:10px;background:var(--surface)}
+.ordfila .on{color:var(--muted);font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.ordfila b{font-size:15px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ordfila .op{font-variant-numeric:tabular-nums;color:var(--ink-2);font-size:14px;white-space:nowrap}
+.ordfila .oflechas{display:flex;gap:4px}
+.ordfila .oflechas button{width:38px;height:34px;border:1px solid var(--line-2);border-radius:8px;background:none;color:var(--ink);font-size:12px;cursor:pointer}
+.ordfila .oflechas button:disabled{opacity:.3;cursor:default}
+.ordfila.p-arrastra{background:var(--surface-2);box-shadow:0 6px 18px rgba(0,0,0,.35);position:relative;z-index:2}
 .camfila b small{display:block;font-weight:500;font-size:12px;color:var(--muted)}
 .camfila.dpend{border-color:var(--warn);background:var(--warn-soft)}
 .dcod{font-family:var(--display);font-size:24px;letter-spacing:.12em;color:var(--warn);min-width:64px}
@@ -673,7 +685,7 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.7';
+const VERSION='3.26';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1294,6 +1306,89 @@ $('reportes').addEventListener('change',async e=>{
   if(await camGuardar(+t.dataset.cActivo,fila.querySelector('b').textContent,null,t.checked)) fila.classList.toggle('off',!t.checked);
   else t.checked=!t.checked;
 });
+// Orden de los productos en la página de camareros (parte 27). La carta (categorías y productos) llega de
+// Ágora; acá se elige en qué orden se ven los productos de cada categoría. Se guarda aparte de la carta,
+// así la subida del TPV no lo pisa. ordDatos = lo que devuelve pos_carta_admin().
+let ordDatos=null, ordCentro=null, ordCat=null, arrO=null;
+const ICONO_MOVER='<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true"><path d="M4 6h12M4 10h12M4 14h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+// Los productos de una categoría como los ve el camarero: primero los ordenados acá, después el resto como en Ágora
+function ordProds(k){
+  const ps=(k&&k.productos)||[], o=(ordDatos.orden||{})[String(k.id)]||[], pos=new Map(o.map((id,i)=>[+id,i]));
+  return ps.map((id,i)=>[id,pos.has(+id)?pos.get(+id):1e6+i]).sort((a,b)=>a[1]-b[1]).map(x=>x[0])
+    .filter(id=>{ const p=ordDatos.productos[String(id)]; return p&&p.precio!=null; });   // sin precio no se muestran en la página
+}
+function panelOrden(o){
+  if(o) ordDatos=o;
+  o=ordDatos;
+  const cab=`<div class="wcab"><h2>Orden de los productos</h2></div>
+    <div class="sub">Así ven los productos los camareros en cada categoría. Arrastrá un producto con las rayitas <b>≡</b> o usá las flechas para subirlo o bajarlo: se guarda solo y los camareros lo ven en unos minutos (o al volver a entrar). El orden de una categoría vale en todos los centros donde aparece. Un producto nuevo de Ágora entra al final.</div>`;
+  if(!o||o.error) return `<div class="panel" id="ordPanel">${cab}<div class="aviso">Falta correr la parte 27 del schema.sql en Supabase (${esc(o?o.error:'sin datos')}).</div></div>`;
+  const cs=o.centros||[];
+  if(!cs.length) return `<div class="panel" id="ordPanel">${cab}<div class="vacio">Todavía no llegó la carta desde el TPV de Ágora.</div></div>`;
+  const c=cs.find(x=>String(x.id)===String(ordCentro))||cs[0]; ordCentro=c.id;
+  const cats=c.categorias||[], k=cats.find(x=>String(x.id)===String(ordCat))||cats[0]; ordCat=k?k.id:null;
+  const propio=x=>((o.orden||{})[String(x.id)]||[]).length>0;
+  const ids=k?ordProds(k):[];
+  const filas=ids.map((id,i)=>{ const p=o.productos[String(id)];
+    return `<div class="ordfila" data-o-id="${id}" style="--c:${esc(k.color||'var(--line-2)')}">
+      <button type="button" class="pmover" data-o-mover="1" title="Arrastrá para cambiar el orden" aria-label="Mover ${esc(p.nombre)}">${ICONO_MOVER}</button>
+      <span class="on">${i+1}</span><b>${esc(p.nombre)}</b><span class="op">${precioTxt(p.precio)} €</span>
+      <span class="oflechas"><button type="button" data-o-sube="1" aria-label="Subir ${esc(p.nombre)}"${i?'':' disabled'}>▲</button><button type="button" data-o-baja="1" aria-label="Bajar ${esc(p.nombre)}"${i<ids.length-1?'':' disabled'}>▼</button></span></div>`; }).join('');
+  return `<div class="panel" id="ordPanel">${cab}
+    <div class="wseg" style="margin-top:12px;flex-wrap:wrap">${cs.map(x=>`<button class="btn${x.id===c.id?' primary':''}" data-o-centro="${esc(x.id)}">${esc(x.nombre)}</button>`).join('')}</div>
+    <div class="ordchips">${cats.map(x=>`<button class="btn${k&&x.id===k.id?' primary':''}" data-o-cat="${esc(x.id)}" style="--c:${esc(x.color||'transparent')}"${propio(x)?' title="Con orden propio"':''}>${esc(x.nombre)}${propio(x)?' •':''}</button>`).join('')||'<span class="sub">Este centro no tiene categorías.</span>'}</div>
+    ${k?`<div class="ordlista">${filas||'<div class="vacio">Esta categoría no tiene productos.</div>'}</div>
+      <div class="sub" style="margin-top:10px">${propio(k)?`Esta categoría tiene orden propio. <button type="button" class="linkbtn" data-o-agora="1">Volver al orden de Ágora</button>`:'Esta categoría está en el orden de Ágora.'}</div>`:''}</div>`;
+}
+const ordPintar=()=>{ const p=$('ordPanel'); if(p) p.outerHTML=panelOrden(); };
+const ordIds=()=>[...document.querySelectorAll('#ordPanel .ordfila')].map(x=>+x.dataset.oId);
+async function ordGuardar(ids){
+  const cat=ordCat, {error}=await sbc.rpc('pos_orden_guardar',{p_categoria:+cat,p_orden:ids});
+  if(error) toast('No se pudo guardar el orden: '+errMsg(error));
+  else{ ordDatos.orden=ordDatos.orden||{}; if(ids.length) ordDatos.orden[String(cat)]=ids; else delete ordDatos.orden[String(cat)];
+    toast(ids.length?'Orden guardado: así lo ven los camareros':'Vuelve al orden de Ágora'); }
+  if(String(cat)===String(ordCat)) ordPintar();   // con error vuelve a como estaba guardado
+}
+$('reportes').addEventListener('click',e=>{
+  if(vista!=='pedidos'||pedVer!=='camareros') return;
+  const b=e.target.closest('#ordPanel button'); if(!b) return;
+  if(b.dataset.oCentro){ ordCentro=b.dataset.oCentro; ordCat=null; ordPintar(); }
+  else if(b.dataset.oCat){ ordCat=b.dataset.oCat; ordPintar(); }
+  else if(b.dataset.oSube||b.dataset.oBaja){
+    const f=b.closest('.ordfila'), otro=b.dataset.oSube?f.previousElementSibling:f.nextElementSibling; if(!otro) return;
+    if(b.dataset.oSube) otro.before(f); else otro.after(f);
+    ordGuardar(ordIds());
+  }else if(b.dataset.oAgora){
+    if(confirm('¿Volver esta categoría al orden de Ágora? Se pierde el orden que armaste acá.')) ordGuardar([]);
+  }
+});
+$('reportes').addEventListener('pointerdown',e=>{
+  if(vista!=='pedidos'||pedVer!=='camareros') return;
+  const h=e.target.closest('[data-o-mover]'); if(!h) return;
+  e.preventDefault();
+  const f=h.closest('.ordfila');
+  arrO={f,antes:ordIds().join(',')};
+  f.classList.add('p-arrastra'); document.body.classList.add('p-arrastrando');
+  try{ h.setPointerCapture(e.pointerId); }catch(_){}
+});
+document.addEventListener('pointermove',e=>{
+  if(!arrO) return;
+  e.preventDefault();
+  const f=arrO.f, otros=[...f.parentNode.querySelectorAll('.ordfila')].filter(x=>x!==f);
+  if(!otros.length) return;
+  const sig=otros.find(x=>{ const r=x.getBoundingClientRect(); return e.clientY<r.top+r.height/2; });
+  if(sig){ if(f.nextElementSibling!==sig) sig.before(f); }
+  else { const ult=otros[otros.length-1]; if(ult.nextElementSibling!==f) ult.after(f); }
+  if(e.clientY<70) window.scrollBy(0,-12); else if(e.clientY>window.innerHeight-70) window.scrollBy(0,12);
+},{passive:false});
+function soltarOrden(){
+  if(!arrO) return;
+  const {f,antes}=arrO; arrO=null;
+  f.classList.remove('p-arrastra'); document.body.classList.remove('p-arrastrando');
+  const ids=ordIds(); if(ids.join(',')!==antes) ordGuardar(ids);
+}
+document.addEventListener('pointerup',soltarOrden);
+document.addEventListener('pointercancel',soltarOrden);
 function panelMesas(mesas){
   const cab=`<div class="wcab"><h2>Mesas de la terraza</h2><div class="wseg"><button class="btn" data-m-nueva>+ Mesa</button><button class="btn primary" data-m-imprimir>Imprimir QR</button></div></div>
     <div class="sub">Cada mesa tiene su QR: el cliente lo escanea y pide desde el celular los productos con la tilde <b>Terraza</b>; el pedido aparece en Pedidos con «TERRAZA · MESA n» y entra en Ágora en esa mesa del centro TERRAZA (hace falta la jornada abierta en el TPV). Se paga al final, al camarero. <b>Cambiar código</b> invalida el QR viejo (por si alguien se lo llevó). <b>Mesa en Ágora</b> tiene que ser igual al nombre de la mesa en Ágora.</div>`;
@@ -1372,10 +1467,11 @@ async function renderPedidosVista(){
     if(tk!==repTk||vista!=='pedidos') return;
     html=panelPedidos(r.error?{error:errMsg(r.error)}:r.data,hoy);
   }else if(pedVer==='camareros'){
-    const [r,d]=await Promise.all([sbc.from('pos_camareros').select('id,nombre,activo,creado').order('nombre'),
-      sbc.from('pos_dispositivos').select('id,codigo,nombre,estado,pedido_por,agente,creado,aceptado,ultimo_uso').order('creado',{ascending:false})]);
+    const [r,d,o]=await Promise.all([sbc.from('pos_camareros').select('id,nombre,activo,creado').order('nombre'),
+      sbc.from('pos_dispositivos').select('id,codigo,nombre,estado,pedido_por,agente,creado,aceptado,ultimo_uso').order('creado',{ascending:false}),
+      sbc.rpc('pos_carta_admin')]);
     if(tk!==repTk||vista!=='pedidos') return;
-    html=panelCamareros(r.error?{error:errMsg(r.error)}:r.data)+panelDispositivos(d.error?{error:errMsg(d.error)}:d.data);
+    html=panelCamareros(r.error?{error:errMsg(r.error)}:r.data)+panelDispositivos(d.error?{error:errMsg(d.error)}:d.data)+panelOrden(o.error?{error:errMsg(o.error)}:(o.data||{error:'sin datos'}));
   }else if(pedVer==='mesas'){
     const [r]=await Promise.all([sbc.from('terraza_mesas').select('*').order('numero'),cargarQR()]);
     if(tk!==repTk||vista!=='pedidos') return;

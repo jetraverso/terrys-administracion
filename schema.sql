@@ -3006,3 +3006,100 @@ end;
 $$;
 revoke all on function public.pos_dispositivo_borrar(int) from public;
 grant execute on function public.pos_dispositivo_borrar(int) to authenticated;
+
+-- ---------------------------------------------------------------
+-- 27. Página de camareros: orden de los productos elegido en el admin
+-- ---------------------------------------------------------------
+-- La carta de la página de camareros la sube el TPV desde Ágora (categorías y productos, cada hora).
+-- El orden de los productos dentro de cada categoría se guarda aparte, para que esa subida no lo pise:
+--   pos_estado.orden = {"<id de categoría>": [id de producto, id de producto, …]}
+-- Vale para esa categoría en todos los centros donde aparece. Los productos que no están en la
+-- lista (nuevos en Ágora) van al final, en el orden de Ágora. Se edita en Pedidos → Camareros.
+alter table public.pos_estado add column if not exists orden jsonb not null default '{}'::jsonb;
+
+-- Lo que necesita el admin para mostrar la carta y ordenarla.
+create or replace function public.pos_carta_admin()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare e public.pos_estado;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  select * into e from public.pos_estado where id = 1;
+  return jsonb_build_object(
+    'centros', coalesce(e.carta -> 'centros', '[]'::jsonb),
+    'carta_actualizada', e.carta_actualizada,
+    'orden', coalesce(e.orden, '{}'::jsonb),
+    'productos', coalesce((
+      select jsonb_object_agg(a.id::text, jsonb_build_object('nombre', a.nombre, 'precio', a.precio))
+        from public.agora_catalogo a
+       where a.activo and a.id in (
+         select (pid)::int
+           from jsonb_array_elements(coalesce(e.carta -> 'centros', '[]'::jsonb)) ce,
+                jsonb_array_elements(ce -> 'categorias') ca,
+                jsonb_array_elements_text(ca -> 'productos') pid)), '{}'::jsonb));
+end;
+$$;
+revoke all on function public.pos_carta_admin() from public, anon;
+grant execute on function public.pos_carta_admin() to authenticated;
+
+-- Guarda el orden de una categoría. Lista vacía (o null) = volver al orden de Ágora.
+create or replace function public.pos_orden_guardar(p_categoria int, p_orden jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v jsonb;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  if p_categoria is null then raise exception 'falta la categoría' using errcode = '22023'; end if;
+  if p_orden is null or jsonb_typeof(p_orden) <> 'array' or jsonb_array_length(p_orden) = 0 then
+    update public.pos_estado set orden = coalesce(orden, '{}'::jsonb) - p_categoria::text where id = 1;
+    return;
+  end if;
+  if jsonb_array_length(p_orden) > 500 then raise exception 'demasiados productos' using errcode = '22023'; end if;
+  -- solo números enteros, sin repetir, en el orden recibido
+  select coalesce(jsonb_agg(id order by pos), '[]'::jsonb) into v
+    from (select (x #>> '{}')::int as id, min(n) as pos
+            from jsonb_array_elements(p_orden) with ordinality as t(x, n)
+           where jsonb_typeof(x) in ('number', 'string') and (x #>> '{}') ~ '^[0-9]{1,9}$'
+           group by 1) s;
+  update public.pos_estado set orden = jsonb_set(coalesce(orden, '{}'::jsonb), array[p_categoria::text], v, true) where id = 1;
+end;
+$$;
+revoke all on function public.pos_orden_guardar(int, jsonb) from public, anon;
+grant execute on function public.pos_orden_guardar(int, jsonb) to authenticated;
+
+-- La página de camareros recibe también el orden (lo aplica al mostrar los productos).
+create or replace function public.pos_datos(p_token text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare c public.pos_camareros; e public.pos_estado;
+begin
+  c := public._pos_sesion(p_token);
+  select * into e from public.pos_estado where id = 1;
+  return jsonb_build_object(
+    'camarero', c.nombre,
+    'centros', coalesce(e.carta -> 'centros', '[]'::jsonb),
+    'carta_actualizada', e.carta_actualizada,
+    'orden', coalesce(e.orden, '{}'::jsonb),
+    'productos', coalesce((
+      select jsonb_object_agg(a.id::text, jsonb_build_object('nombre', a.nombre, 'precio', a.precio, 'roles', a.roles))
+        from public.agora_catalogo a
+       where a.activo and a.id in (
+         select (pid)::int
+           from jsonb_array_elements(coalesce(e.carta -> 'centros', '[]'::jsonb)) ce,
+                jsonb_array_elements(ce -> 'categorias') ca,
+                jsonb_array_elements_text(ca -> 'productos') pid)), '{}'::jsonb));
+end;
+$$;
+revoke all on function public.pos_datos(text) from public;
+grant execute on function public.pos_datos(text) to anon, authenticated;
