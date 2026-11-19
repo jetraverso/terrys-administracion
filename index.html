@@ -685,7 +685,7 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.27';
+const VERSION='3.28';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -925,8 +925,46 @@ async function abrirApp(u){
   user=u; mfaUser=null;
   $('login').hidden=true; $('app').hidden=false;
   $('who').textContent=u.email; $('demoBar').hidden=SB; $('ver').textContent='v'+VERSION;
-  vista='planilla'; renderTabs(); aplicarVista(); pintarCopia(); await cargar(); vigilarPedido(); contarPendientesWeb();
+  vista='planilla';
+  const lugar=leerLugar(); if(lugar) volverAlLugar(lugar);
+  renderTabs(); aplicarVista(); pintarCopia(); await cargar(); vigilarPedido(); contarPendientesWeb();
+  if(lugar&&lugar.y>0) volverAltura(lugar.y);
 }
+
+/* ---------- recordar el lugar ----------
+   Al actualizar la página (o si el navegador la recarga solo) se vuelve a donde se estaba: solapa,
+   subvista (Pedidos / Productos / Mesas / Camareros…), mes o año y altura de la pantalla.
+   Se guarda al salir, en sessionStorage: vale para esta pestaña. Abrir la página de nuevo en otra
+   pestaña, o salir con «Salir», arranca en Compras como siempre. */
+const LUGAR='terrys_admin_lugar';
+function guardarLugar(){
+  if(!user||$('app').hidden) return;
+  try{ sessionStorage.setItem(LUGAR,JSON.stringify({vista,tab:tab.id,year,month,pedVer,pedRango,webVer,ordCentro,ordCat,y:Math.round(window.scrollY)})); }catch(_){}
+}
+function leerLugar(){ try{ const l=JSON.parse(sessionStorage.getItem(LUGAR)||'null'); return l&&typeof l==='object'?l:null; }catch(_){ return null; } }
+function volverAlLugar(l){
+  const uno=(v,lista)=>lista.includes(v);
+  const t=TABS.find(x=>x.id===l.tab); if(t) tab=t;
+  if(uno(l.vista,['planilla','ventas','reportes','proyeccion','web','pedidos'])) vista=l.vista;
+  if(Number.isInteger(l.year)&&l.year>=2000&&l.year<=2100&&Number.isInteger(l.month)&&l.month>=-1&&l.month<=11){ year=l.year; month=l.month; }
+  if(uno(l.pedVer,['pedidos','productos','mesas','camareros'])) pedVer=l.pedVer;
+  if(uno(l.pedRango,['proximos','anteriores'])) pedRango=l.pedRango;
+  if(uno(l.webVer,['proximas','anteriores'])) webVer=l.webVer;
+  if(l.ordCentro!=null) ordCentro=l.ordCentro;
+  if(l.ordCat!=null) ordCat=l.ordCat;
+}
+// La altura se recupera cuando el contenido ya cargó (hasta 4 s); si la persona se mueve antes, no se la arrastra.
+function volverAltura(y){
+  let n=0;
+  const fin=()=>{ clearInterval(t); for(const ev of ['wheel','touchstart','keydown','pointerdown']) removeEventListener(ev,fin); };
+  const t=setInterval(()=>{
+    const max=document.documentElement.scrollHeight-window.innerHeight;
+    if(max>=y-2||++n>=40){ window.scrollTo(0,Math.max(0,Math.min(y,max))); fin(); }
+  },100);
+  for(const ev of ['wheel','touchstart','keydown','pointerdown']) addEventListener(ev,fin,{passive:true});
+}
+addEventListener('pagehide',guardarLugar);
+document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='hidden') guardarLugar(); });
 
 /* ---------- verificación en dos pasos (TOTP) ----------
    La base también lo exige: es_admin() pide sesión de nivel aal2,
@@ -987,6 +1025,7 @@ $('loginForm').addEventListener('submit',async e=>{
   }finally{ $('lgBtn').disabled=false; $('lgBtn').textContent='Entrar'; }
 });
 $('btnSalir').onclick=async()=>{
+  try{ sessionStorage.removeItem(LUGAR); }catch(_){}
   if(SB) await sbc.auth.signOut(); else { try{ sessionStorage.removeItem('terrys_admin_demo_user'); }catch(_){} }
   showLogin();
 };

@@ -63,6 +63,10 @@ Solapa **Ventas**: reportes de las ventas del local que llegan solas desde Ágor
 
 Mientras `SUPABASE_URL` esté vacío la página funciona en **modo demo**: entra con cualquier email y contraseña `1234`, y guarda solo en ese navegador. Sirve para probarla, no para trabajar.
 
+## Actualizar sin perder el lugar
+
+Al actualizar la página (o si el navegador la recarga solo) se vuelve a donde se estaba: solapa, subvista de Pedidos y Reservas, mes o año y altura de la pantalla. Se guarda al salir en `sessionStorage` (`terrys_admin_lugar`), así que vale para esa pestaña: abrir la página en otra pestaña, o salir con «Salir», arranca en Compras.
+
 ## Página de camareros: orden de los productos
 
 La carta de `pos/` (categorías y productos por centro) la sube el TPV desde Ágora cada hora. En **Pedidos → Camareros → Orden de los productos** se elige el orden de los productos dentro de cada categoría: se elige centro y categoría, y se arrastra cada producto con las rayitas ≡ o se sube/baja con las flechas; se guarda solo. El orden queda en `pos_estado.orden` (`schema.sql` parte 27, funciones `pos_carta_admin` y `pos_orden_guardar`), aparte de la carta, así la subida del TPV no lo pisa; vale para esa categoría en todos los centros donde aparece y los productos nuevos de Ágora entran al final. «Volver al orden de Ágora» lo borra.
