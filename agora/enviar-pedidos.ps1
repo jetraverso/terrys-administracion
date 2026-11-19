@@ -153,6 +153,26 @@ function AgoraSql($sql) {
     $tab = New-Object System.Data.DataTable; $tab.Load($cmd.ExecuteReader()); return ,$tab
   } finally { $cn.Close() }
 }
+# Primera mesa del centro TAKE AWAY sin cuenta abierta (en el orden del TPV). Las que se usaron hace
+# menos de 2 minutos se saltan, por si Agora todavia no muestra la cuenta nueva.
+$mesasTomadas = @{}
+function MesaTakeAwayLibre {
+  try {
+    $c = [int]$opc.centroId
+    # (AgoraSql devuelve la tabla entera: se recorren sus filas, si no PowerShell junta todos los nombres)
+    $tu = AgoraSql "select Name from dbo.SaleLocation where SaleCenterId = $c order by SaleLocationIndex"
+    $to = AgoraSql "select SaleLocationName from dbo.Ticket where FrozenDate is null and CreationDate > dateadd(day, -2, getdate()) and SaleCenterId = $c"
+    $ubs = @(foreach ($r in $tu.Rows) { Txt $r.Name })
+    $ocup = @(foreach ($r in $to.Rows) { (Txt $r.SaleLocationName).ToLower() })
+    foreach ($u in $ubs) {
+      $k = $u.ToLower()
+      if ($ocup -contains $k) { continue }
+      if ($script:mesasTomadas.ContainsKey($k) -and ((Get-Date) - $script:mesasTomadas[$k]).TotalSeconds -lt 120) { continue }
+      return $u
+    }
+  } catch { Escribir "No se pudieron leer las mesas de take away: $($_.Exception.Message -replace '\s+', ' ')" }
+  return $null
+}
 function Txt($v) { if ($v -is [DBNull] -or $null -eq $v) { return '' } return [string]$v }
 function ColorAgora($v) { $s = Txt $v; if ($s -match '([0-9A-Fa-f]{6})$') { return '#' + $Matches[1].ToLower() } return $null }
 $huellaCartaPos = ''
@@ -292,15 +312,40 @@ function ArmarPedido($p) {
   # Terraza (parte 21): pedido de mesa (Type = Table) en la mesa del centro TERRAZA; necesita la jornada abierta
   $tipo = 'TakeAway'
   $centro = [ordered]@{ Id = [int]$opc.centroId; Name = [string]$opc.centroNombre; Location = [string]$opc.centroUbicacion }
+  # Pagados online (parte 28): van sin el pago y se cobran en la mesa como tarjeta; se imprime un comprobante.
+  $sinPago = $false
   if ($p.mesa) {
     $tipo = 'Table'
     $centro = [ordered]@{ Id = [int]$opc.terrazaCentroId; Name = [string]$opc.terrazaCentroNombre; Location = [string]$p.agora_mesa }
     $nombreCliente = ('Mesa {0} - {1} (web)' -f $p.mesa, $p.nombre)
+    if ($p.pagado -and $opc.terrazaPagadoSinPago -ne $false) {
+      $sinPago = $true
+      $nombreCliente = ('Mesa {0} - {1} - PAGADO WEB {2} EUR' -f $p.mesa, $p.nombre, ([double]$p.total).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture))
+      $script:mesaComprobante = ('{0} / {1}' -f $opc.terrazaCentroNombre, $p.agora_mesa)
+    }
   }
   if ($p.agora_centro) {   # pagina de camareros (parte 24): a la mesa elegida; Agora lo suma a la cuenta abierta
     $tipo = 'Table'
     $centro = [ordered]@{ Id = [int]$p.agora_centro; Name = [string]$p.centro_nombre; Location = [string]$p.agora_ubicacion }
     $nombreCliente = ('{0} - {1}' -f $p.agora_ubicacion, $p.camarero)
+  }
+  # Take away pagado online (parte 28): a una "mesa" propia del centro TAKE AWAY, sin el pago, para cobrarlo
+  # ahi como tarjeta. Agora acepta cualquier nombre de ubicacion: se usa "PAGADO RETIRA 13:15 - Juan #67"
+  # (sale asi en el TPV y en la pantalla de cocina; el numero evita que dos pedidos se junten).
+  # Con takeAwayMesaLibre: true va en cambio a la primera mesa libre (Take away, Take away 2, ...).
+  $aMesa = $false
+  if ($p.pagado -and -not $p.mesa -and -not $p.agora_centro -and $opc.takeAwayPagadoAMesa -ne $false) {
+    $diaRet = if (([string]$p.dia).StartsWith((Get-Date).ToString('yyyy-MM-dd'))) { '' } else { 'MANANA ' }
+    $ub = if ($opc.takeAwayMesaLibre) { MesaTakeAwayLibre } else { ('PAGADO RETIRA {0}{1} - {2} #{3}' -f $diaRet, $p.hora, $p.nombre, $p.id) }
+    if ($ub -and $ub.Length -gt 60) { $ub = $ub.Substring(0, 60) }
+    if ($ub) {
+      $aMesa = $true; $tipo = 'Table'
+      $centro = [ordered]@{ Id = [int]$opc.centroId; Name = [string]$opc.centroNombre; Location = $ub }
+      $nombreCliente = ('RETIRA {0}{1} - {2} - PAGADO WEB' -f $diaRet, $p.hora, $p.nombre)
+      $script:mesaElegida = $ub
+      $sinPago = $true
+      $script:mesaComprobante = ('{0} / {1}' -f $opc.centroNombre, $ub)
+    }
   }
   $pedido = [ordered]@{
     Serie = [string]$opc.serie; Number = [int]$opc.offsetNumero + [int]$p.id; Type = $tipo
@@ -319,13 +364,76 @@ function ArmarPedido($p) {
     Totals = [ordered]@{ GrossAmount = $g; NetAmount = $n; VatAmount = [math]::Round($g - $n, 2); SurchargeAmount = 0.0; Taxes = $taxes }
     ScheduledPreparation = $false
   }
-  if ($p.pagado) {   # pagado online (parte 28, Redsys): Agora lo pasa solo a En Preparacion (imprime y va a cocina)
+  if ($p.pagado -and -not $sinPago) {   # pagado online (parte 28, Redsys): Agora lo pasa solo a En Preparacion (imprime y va a cocina)
     # forma de pago propia de la web si esta en pedidos-agora.json (formaPagoWebId), si no la de tarjeta
     $fpId = if ($opc.formaPagoWebId) { [int]$opc.formaPagoWebId } else { [int]$opc.formaPagoTarjetaId }
     $fpNom = if ($opc.formaPagoWebId) { [string]$opc.formaPagoWebNombre } else { [string]$opc.formaPagoTarjetaNombre }
     $pedido.Payments = @([ordered]@{ MethodId = $fpId; MethodName = $fpNom; Amount = $g; PaidAmount = $g; ChangeAmount = 0.0; TipAmount = 0.0; Date = $fecha; PosId = [int]$opc.posId; IsPrepayment = $true; ExtraInformation = ('Web {0} Redsys {1}' -f $p.id, $p.pago_ref) })
   }
   return $pedido
+}
+
+# ---------- comprobante impreso del pedido pagado (impresora de Windows, no pasa por Agora) ----------
+# impresoraComprobante en pedidos-agora.json (por defecto 'Impresora Barra'; vacio = no imprime).
+function TextoComprobante($p, $mesa, $num) {
+  $eur = [char]0x20AC
+  $hoy = ([string]$p.dia).StartsWith((Get-Date).ToString('yyyy-MM-dd'))
+  $t = New-Object System.Collections.ArrayList
+  [void]$t.Add('!TERRY''S BURGERS')
+  [void]$t.Add('Pedido web n' + [char]0x00BA + ' ' + $p.id + '  (' + $opc.serie + '-' + $num + ')')
+  [void]$t.Add('')
+  [void]$t.Add('!PAGADO ONLINE')
+  if ($p.mesa) { [void]$t.Add('!TERRAZA ' + [string]$p.agora_mesa) }
+  else { [void]$t.Add('!RETIRA ' + $(if ($hoy) { 'HOY ' } else { 'MA' + [char]0x00D1 + 'ANA ' }) + $p.hora) }
+  [void]$t.Add('Cliente: ' + $p.nombre)
+  if ($p.telefono) { [void]$t.Add('Tel: ' + $p.telefono) }
+  [void]$t.Add('Mesa: ' + $mesa)
+  [void]$t.Add('--------------------------------')
+  foreach ($l in @($p.lineas | ForEach-Object { $_ })) {
+    if (-not $l) { continue }
+    $imp = ([double]$l.cant * [double]$l.precio).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
+    $nom = ('{0} x {1}' -f $l.cant, $l.nombre)
+    if ($nom.Length -gt 24) { [void]$t.Add($nom.Substring(0, 24) + $imp.PadLeft(8)); [void]$t.Add('   ' + $nom.Substring(24)) }
+    else { [void]$t.Add($nom.PadRight(24) + $imp.PadLeft(8)) }
+    if ($l.extra) { [void]$t.Add('   ' + [string]$l.extra) }
+    if ($l.nota) { [void]$t.Add('   Nota: ' + [string]$l.nota) }
+  }
+  [void]$t.Add('--------------------------------')
+  $tot = ([double]$p.total).ToString('0.00', [Globalization.CultureInfo]::InvariantCulture).Replace('.', ',')
+  [void]$t.Add('!TOTAL ' + $tot + ' ' + $eur)
+  if ($p.comentario) { [void]$t.Add(''); [void]$t.Add('Comentario: ' + [string]$p.comentario) }
+  [void]$t.Add('')
+  [void]$t.Add('Pagado con tarjeta en la web.')
+  if ($p.mesa) { [void]$t.Add('Cobrar ESTE importe en la mesa'); [void]$t.Add('como TARJETA (el resto de la'); [void]$t.Add('cuenta, como paguen).') }
+  else { [void]$t.Add('Cobrar en Agora como TARJETA.') }
+  return ,$t
+}
+function ImprimirComprobante($p, $mesa, $num) {
+  $nombreImp = if ($null -ne $opc.impresoraComprobante) { [string]$opc.impresoraComprobante } else { 'Impresora Barra' }
+  if (-not $nombreImp) { return $null }
+  Add-Type -AssemblyName System.Drawing
+  $script:lineasImp = TextoComprobante $p $mesa $num
+  $doc = New-Object System.Drawing.Printing.PrintDocument
+  $doc.PrinterSettings.PrinterName = $nombreImp
+  if (-not $doc.PrinterSettings.IsValid) { throw "No existe la impresora '$nombreImp' en este TPV." }
+  $doc.DocumentName = "Pedido web $($p.id)"
+  $doc.DefaultPageSettings.Margins = New-Object System.Drawing.Printing.Margins(4, 4, 4, 4)
+  $doc.add_PrintPage({
+    param($emisor, $e)
+    $chica = New-Object System.Drawing.Font('Consolas', 9)
+    $grande = New-Object System.Drawing.Font('Consolas', 13, [System.Drawing.FontStyle]::Bold)
+    $ancho = $e.MarginBounds.Width; $x = $e.MarginBounds.Left; $y = $e.MarginBounds.Top
+    foreach ($l in $script:lineasImp) {
+      $f = if ($l.StartsWith('!')) { $grande } else { $chica }
+      $txt = $l.TrimStart('!'); if (-not $txt) { $txt = ' ' }
+      $alto = $e.Graphics.MeasureString($txt, $f, $ancho).Height
+      $e.Graphics.DrawString($txt, $f, [System.Drawing.Brushes]::Black, (New-Object System.Drawing.RectangleF($x, $y, $ancho, $alto)))
+      $y += $alto
+    }
+    $e.HasMorePages = $false
+  })
+  $doc.Print()
+  return $nombreImp
 }
 
 # ---------- aviso al celular (ntfy) desde la conexion del local ----------
@@ -426,6 +534,14 @@ function Vuelta {
   foreach ($p in $pendientes) {
     if (-not $p) { continue }
     $num = [int]$opc.offsetNumero + [int]$p.id
+    # take away pagado: entra a la mesa apenas se paga; con takeAwayMinutosAntes > 0 espera hasta
+    # esos minutos antes de la hora de retiro
+    $antes = [int]$opc.takeAwayMinutosAntes
+    if ($antes -gt 0 -and $p.pagado -and -not $p.mesa -and -not $p.agora_centro -and $opc.takeAwayPagadoAMesa -ne $false) {
+      try { $retira = [datetime]::ParseExact(('{0} {1}' -f ([string]$p.dia).Substring(0, 10), $p.hora), 'yyyy-MM-dd HH:mm', $null) } catch { $retira = Get-Date }
+      if ($retira.AddMinutes(-$antes) -gt (Get-Date)) { continue }
+    }
+    $script:mesaElegida = $null; $script:mesaComprobante = $null
     try {
       $pedido = ArmarPedido $p
       $json = @{ SalesOrders = @($pedido) } | ConvertTo-Json -Depth 10
@@ -441,8 +557,18 @@ function Vuelta {
       if ($p.agora_centro) {
         Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, $($p.centro_nombre) $($p.agora_ubicacion) ($($p.camarero)), $($pedido.Totals.GrossAmount) EUR"
         $script:ultimasMesas = [datetime]::MinValue   # que la pagina vea enseguida la mesa actualizada
+      } elseif ($script:mesaElegida) {
+        $script:mesasTomadas[$script:mesaElegida.ToLower()] = Get-Date
+        $script:ultimasMesas = [datetime]::MinValue
+        Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, a TAKE AWAY / $($script:mesaElegida), retira $($p.hora), $($pedido.Totals.GrossAmount) EUR"
+      } elseif ($p.mesa) {
+        Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, TERRAZA $($p.agora_mesa)$(if ($p.pagado) { ' (PAGADO online)' }), $($pedido.Totals.GrossAmount) EUR"
       } else {
         Escribir "OK  pedido $($p.id) -> Agora $($opc.serie)-$num, retira $($p.dia) $($p.hora), $($pedido.Totals.GrossAmount) EUR"
+      }
+      if ($script:mesaComprobante) {
+        try { $imp = ImprimirComprobante $p $script:mesaComprobante $num; if ($imp) { Escribir "Comprobante del pedido $($p.id) impreso en '$imp'." } }
+        catch { Escribir "No se pudo imprimir el comprobante del pedido $($p.id): $($_.Exception.Message -replace '\s+', ' ')" }
       }
     } catch {
       $msg = $_.Exception.Message

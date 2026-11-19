@@ -18,6 +18,10 @@
   "tarifaId": 2,
   "formaPagoTarjetaId": 2,
   "formaPagoTarjetaNombre": "Tarjeta de crédito",
+  "takeAwayPagadoAMesa": true,
+  "takeAwayMesaLibre": true,
+  "takeAwayMinutosAntes": 0,
+  "impresoraComprobante": "Barra sin cajon",
   "cadaSegundos": 5,
   "cadaSegundosFuera": 60,
   "horarios": [
