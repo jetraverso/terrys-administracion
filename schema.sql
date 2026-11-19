@@ -3575,3 +3575,105 @@ end;
 $$;
 revoke all on function public.agora_pendientes(text) from public;
 grant execute on function public.agora_pendientes(text) to anon, authenticated;
+
+-- ---------------------------------------------------------------
+-- 29. Pedidos que llegan con la jornada de Ágora cerrada
+-- ---------------------------------------------------------------
+-- Antes: 5 intentos seguidos (uno cada 5 s) y quedaba en error. Ahora, si Ágora contesta que la
+-- jornada no está abierta, el intento no cuenta y se vuelve a probar cada minuto (durante 6 horas
+-- desde que se hizo el pedido): apenas se abre la jornada, entra solo.
+alter table public.pedidos_take add column if not exists agora_reintento timestamptz;
+
+create or replace function public.agora_marcar(p_token text, p_id bigint, p_ok boolean, p_numero int default null, p_error text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_jornada boolean := not p_ok and coalesce(p_error, '') ilike '%jornada%';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.pedidos_take set
+    agora_estado    = case when p_ok then 'enviado' else 'error' end,
+    agora_numero    = case when p_ok then p_numero else agora_numero end,
+    agora_error     = case when p_ok then null
+                           when v_jornada then 'Esperando que se abra la jornada en Ágora (se reintenta cada minuto)'
+                           else left(p_error, 500) end,
+    agora_enviado   = case when p_ok then now() else agora_enviado end,
+    agora_intentos  = agora_intentos + case when p_ok or (v_jornada and creado > now() - interval '6 hours') then 0 else 1 end,
+    agora_reintento = case when v_jornada then now() + interval '1 minute' else null end
+  where id = p_id;
+end;
+$$;
+revoke all on function public.agora_marcar(text, bigint, boolean, int, text) from public;
+grant execute on function public.agora_marcar(text, bigint, boolean, int, text) to anon, authenticated;
+
+-- Igual que en la parte 28, pero respeta agora_reintento.
+create or replace function public.agora_pendientes(p_token text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r public.pedidos_take;
+  l jsonb;
+  pr public.productos;
+  v_extra text; v_var text; v_salsa text; v_agora int; v_addin int; v_addins jsonb;
+  v_lineas jsonb;
+  v_out jsonb := '[]';
+begin
+  if not public._token_valido('agora', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  update public.integraciones set ultimo_uso = now() where nombre = 'agora';
+  for r in select * from public.pedidos_take
+            where estado <> 'cancelado' and dia >= v_hoy
+              and (agora_estado is null or (agora_estado = 'error' and agora_intentos < 5))
+              and (agora_reintento is null or agora_reintento <= now())
+            order by (agora_centro is null), creado limit 20 loop
+    v_lineas := '[]';
+    for l in select * from jsonb_array_elements(r.items) loop
+      v_extra := coalesce(l ->> 'extra', '');
+      if l ? 'agora_id' then
+        v_agora := (l ->> 'agora_id')::int;
+        v_addins := coalesce(l -> 'addins', '[]'::jsonb);
+        v_salsa := null; v_addin := null;
+      else
+        select * into pr from public.productos where id = l ->> 'id';
+        v_var   := case when lower(v_extra) in ('simple', 'doble') then lower(v_extra) end;
+        v_salsa := case when v_extra ilike 'Salsa %' then substr(v_extra, 7) end;
+        v_agora := case when v_var = 'doble' then pr.agora_id_doble else pr.agora_id end;
+        v_addin := null;
+        if v_salsa is not null and pr.agora_salsas is not null then
+          select value::int into v_addin from jsonb_each_text(pr.agora_salsas) where lower(key) = lower(v_salsa) limit 1;
+        end if;
+        v_addins := case when v_addin is not null then jsonb_build_array(jsonb_build_object('id', v_addin, 'nombre', v_salsa, 'precio', 0)) else '[]'::jsonb end;
+      end if;
+      v_lineas := v_lineas || jsonb_build_object(
+        'id', l ->> 'id', 'nombre', l ->> 'nombre', 'extra', nullif(v_extra, ''), 'nota', l ->> 'nota',
+        'cant', (l ->> 'cant')::int * case when r.quitar then -1 else 1 end, 'precio', (l ->> 'precio')::numeric,
+        'agora_id', v_agora, 'addins', v_addins,
+        'agora_salsa', v_addin, 'salsa', v_salsa);
+    end loop;
+    v_out := v_out || jsonb_build_object(
+      'id', r.id, 'creado', r.creado, 'dia', r.dia, 'hora', to_char(r.hora, 'HH24:MI'),
+      'nombre', r.nombre, 'telefono', r.telefono, 'comentario', r.comentario,
+      'total', case when r.quitar then -r.total else r.total end, 'pagado', r.pagado, 'pago_ref', r.pago_ref,
+      'lineas', v_lineas, 'intentos', r.agora_intentos,
+      'mesa', r.mesa, 'agora_mesa', (select m.agora_mesa from public.terraza_mesas m where m.numero = r.mesa),
+      'agora_centro', r.agora_centro, 'agora_ubicacion', r.agora_ubicacion, 'camarero', r.camarero, 'quitar', r.quitar,
+      'centro_nombre', (select x ->> 'nombre' from public.pos_estado e, jsonb_array_elements(e.carta -> 'centros') x
+                         where e.id = 1 and (x ->> 'id')::int = r.agora_centro));
+  end loop;
+  return v_out;
+end;
+$$;
+revoke all on function public.agora_pendientes(text) from public;
+grant execute on function public.agora_pendientes(text) to anon, authenticated;
+
+-- (Opcional, aparte) Volver a mandar un pedido que ya se quedó sin intentos, por ejemplo el 42:
+-- update public.pedidos_take set agora_intentos = 0, agora_reintento = null where id = 42 and agora_estado = 'error';
