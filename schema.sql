@@ -3677,3 +3677,292 @@ grant execute on function public.agora_pendientes(text) to anon, authenticated;
 
 -- (Opcional, aparte) Volver a mandar un pedido que ya se quedó sin intentos, por ejemplo el 42:
 -- update public.pedidos_take set agora_intentos = 0, agora_reintento = null where id = 42 and agora_estado = 'error';
+
+-- =====================================================================
+-- PARTE 30 · Comprobante del pedido por mail (Resend)
+-- El cliente puede dejar su email (opcional) al pedir por la web (take away o terraza).
+-- Cuando el pedido queda guardado —si paga con tarjeta, recién cuando el banco lo autoriza—
+-- Supabase le manda un mail con el pedido, el total y, si pagó online, los datos del pago.
+-- No es una factura: la factura simplificada sigue saliendo de Ágora.
+-- La clave de Resend vive solo en mail_config (nadie la puede leer desde la web ni el admin).
+-- =====================================================================
+
+alter table public.pedidos_take add column if not exists email text;
+
+create table if not exists public.mail_config (
+  id          int primary key default 1 check (id = 1),
+  activo      boolean not null default false,
+  resend_key  text,
+  remitente   text not null default 'Terry''s Burgers <pedidos@terrysburgers.com>',
+  responder_a text,          -- a dónde va si el cliente contesta el mail (vacío = no contesta a nadie)
+  copia       text           -- copia oculta de cada comprobante (opcional)
+);
+alter table public.mail_config enable row level security;
+revoke all on public.mail_config from anon, authenticated;
+insert into public.mail_config (id) values (1) on conflict (id) do nothing;
+
+-- Registro de cada mail mandado (para revisar si algo no llegó).
+create table if not exists public.mails_enviados (
+  id        bigint generated always as identity primary key,
+  creado    timestamptz not null default now(),
+  pedido_id bigint,
+  para      text,
+  req       bigint,       -- id de la llamada en pg_net (la respuesta de Resend queda en net._http_response)
+  error     text
+);
+alter table public.mails_enviados enable row level security;
+revoke all on public.mails_enviados from anon, authenticated;
+grant select on public.mails_enviados to authenticated;
+drop policy if exists mails_enviados_admin on public.mails_enviados;
+create policy mails_enviados_admin on public.mails_enviados for select to authenticated using (public.es_admin());
+
+-- Email opcional: vacío → null; si está mal escrito, el pedido no se guarda.
+create or replace function public._email(p text)
+returns text
+language plpgsql
+immutable
+as $$
+declare v text := lower(btrim(coalesce(p, '')));
+begin
+  if v = '' then return null; end if;
+  if length(v) > 120 or v !~ '^[a-z0-9._%+''-]+@[a-z0-9.-]+\.[a-z]{2,}$' or v like '%..%' then
+    raise exception 'email inválido' using errcode = '22023';
+  end if;
+  return v;
+end;
+$$;
+revoke all on function public._email(text) from public, anon, authenticated;
+
+create or replace function public._html(t text)
+returns text
+language sql
+immutable
+as $$
+  select replace(replace(replace(replace(coalesce(t, ''), '&', '&amp;'), '<', '&lt;'), '>', '&gt;'), '"', '&quot;');
+$$;
+revoke all on function public._html(text) from public, anon, authenticated;
+
+-- ---------- El pedido guarda el email ----------
+create or replace function public._pedido_take_datos(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  v_ahora time := (now() at time zone 'Europe/Madrid')::time;
+  v_dia date; v_hora time;
+  v_tel text := public._txt(p ->> 'telefono', 30);
+  v_l jsonb;
+begin
+  begin
+    v_dia  := (p ->> 'dia')::date;
+    v_hora := (p ->> 'hora')::time;
+  exception when others then
+    raise exception 'datos inválidos' using errcode = '22023';
+  end;
+  if v_dia is null or v_dia < v_hoy or v_dia > v_hoy + 1 then
+    raise exception 'día fuera de rango' using errcode = '22023';
+  end if;
+  if v_hora is null or extract(minute from v_hora)::int % 15 <> 0
+     or not (v_hora between time '13:15' and time '15:30' or v_hora between time '20:15' and time '23:00') then
+    raise exception 'horario sin pedidos' using errcode = '22023';
+  end if;
+  if v_dia = v_hoy and v_hora < v_ahora + interval '30 minutes' then
+    raise exception 'horario pasado' using errcode = '22023';
+  end if;
+  if v_tel is null or v_tel !~ '^[0-9 +().-]{6,30}$' then
+    raise exception 'teléfono inválido' using errcode = '22023';
+  end if;
+  if public._txt(p ->> 'nombre', 80) is null or char_length(public._txt(p ->> 'nombre', 80)) < 2 then
+    raise exception 'falta el nombre' using errcode = '22023';
+  end if;
+  v_l := public._pedido_lineas(p -> 'items', false, v_dia, v_hora);
+  if (select count(*) from public.pedidos_take where telefono = v_tel and creado > now() - interval '1 day') >= 5
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamanos' using errcode = '54000';
+  end if;
+  return jsonb_build_object(
+    'dia', v_dia, 'hora', to_char(v_hora, 'HH24:MI'), 'nombre', public._txt(p ->> 'nombre', 80), 'telefono', v_tel,
+    'comentario', public._txt(p ->> 'comentario', 500), 'lineas', v_l -> 'lineas',
+    'unidades', (v_l ->> 'unidades')::int, 'total', (v_l ->> 'total')::numeric, 'mesa', null, 'email', public._email(p ->> 'email'));
+end;
+$$;
+revoke all on function public._pedido_take_datos(jsonb) from public, anon, authenticated;
+
+-- Terraza: {mesa, codigo, nombre?, comentario?, items}
+create or replace function public._pedido_mesa_datos(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_dia  date := (now() at time zone 'Europe/Madrid')::date;
+  v_hora time := date_trunc('minute', (now() at time zone 'Europe/Madrid')::time);
+  v_m public.terraza_mesas;
+  v_l jsonb;
+begin
+  begin
+    select * into v_m from public.terraza_mesas
+     where numero = (p ->> 'mesa')::int and codigo = coalesce(p ->> 'codigo', '') and activa;
+  exception when others then v_m := null; end;
+  if v_m.numero is null then raise exception 'mesa inválida' using errcode = '22023'; end if;
+  if not (v_hora between time '12:00' and time '16:30' or v_hora >= time '19:00') then
+    raise exception 'terraza cerrada' using errcode = '22023';
+  end if;
+  if (select count(*) from public.pedidos_take where mesa = v_m.numero and creado > now() - interval '3 hours') >= 15
+     or (select count(*) from public.pedidos_take where creado > now() - interval '1 day') >= 300 then
+    raise exception 'demasiados pedidos, llamá al camarero' using errcode = '54000';
+  end if;
+  v_l := public._pedido_lineas(p -> 'items', true, v_dia, v_hora);
+  return jsonb_build_object(
+    'dia', v_dia, 'hora', to_char(v_hora, 'HH24:MI'),
+    'nombre', coalesce(case when char_length(public._txt(p ->> 'nombre', 80)) >= 2 then public._txt(p ->> 'nombre', 80) end, v_m.nombre),
+    'telefono', null, 'comentario', public._txt(p ->> 'comentario', 500), 'lineas', v_l -> 'lineas',
+    'unidades', (v_l ->> 'unidades')::int, 'total', (v_l ->> 'total')::numeric,
+    'mesa', v_m.numero, 'mesa_nombre', v_m.nombre, 'codigo', v_m.codigo, 'email', public._email(p ->> 'email'));
+end;
+$$;
+revoke all on function public._pedido_mesa_datos(jsonb) from public, anon, authenticated;
+
+create or replace function public._pedido_guardar(d jsonb, p_pagado boolean, p_ref text)
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_pid bigint;
+begin
+  insert into public.pedidos_take (dia, hora, nombre, telefono, comentario, items, unidades, total, mesa, pagado, pago_ref, email)
+  values ((d ->> 'dia')::date, (d ->> 'hora')::time, d ->> 'nombre', d ->> 'telefono', d ->> 'comentario',
+          d -> 'lineas', (d ->> 'unidades')::int, (d ->> 'total')::numeric, (d ->> 'mesa')::int, p_pagado, p_ref,
+          nullif(d ->> 'email', ''))
+  returning id into v_pid;
+  return v_pid;
+end;
+$$;
+revoke all on function public._pedido_guardar(jsonb, boolean, text) from public, anon, authenticated;
+
+-- ---------- Armado y envío del mail ----------
+create or replace function public._euros(n numeric)
+returns text
+language sql
+immutable
+as $$ select replace(to_char(coalesce(n, 0), 'FM999990.00'), '.', ',') || ' €'; $$;
+revoke all on function public._euros(numeric) from public, anon, authenticated;
+
+-- Manda el comprobante del pedido p_id. p_para: otra dirección (para probar con un pedido viejo).
+create or replace function public._mail_pedido(p_id bigint, p_para text default null)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  c public.mail_config; r public.pedidos_take; w public.pagos_web;
+  v_para text; v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+  v_cuando text; v_lineas text := ''; v_l jsonb; v_pago text; v_html text; v_asunto text; v_mesa text; v_req bigint;
+  v_cel text := 'padding:6px 0;border-bottom:1px solid #eee;font-size:15px;vertical-align:top';
+begin
+  select * into c from public.mail_config where id = 1;
+  if c.id is null or not c.activo or c.resend_key is null then return 'mail apagado'; end if;
+  select * into r from public.pedidos_take where id = p_id;
+  if r.id is null then return 'no existe el pedido'; end if;
+  v_para := public._email(coalesce(p_para, r.email));
+  if v_para is null then return 'sin email'; end if;
+  if r.pago_ref is not null then select * into w from public.pagos_web where orden = r.pago_ref; end if;
+
+  if r.mesa is not null then
+    select nombre into v_mesa from public.terraza_mesas where numero = r.mesa;
+    v_cuando := 'Terraza · ' || public._html(coalesce(v_mesa, 'Mesa ' || r.mesa));
+  else
+    v_cuando := 'Retirás ' || case when r.dia = v_hoy then 'hoy' when r.dia = v_hoy + 1 then 'mañana' else 'el' end
+                || ' ' || to_char(r.dia, 'DD/MM') || ' a las <b>' || to_char(r.hora, 'HH24:MI') || '</b>';
+  end if;
+
+  for v_l in select * from jsonb_array_elements(r.items) loop
+    v_lineas := v_lineas || '<tr><td style="' || v_cel || ';width:34px;font-weight:bold">' || coalesce(v_l ->> 'cant', '1') || '×</td>'
+      || '<td style="' || v_cel || '">' || public._html(v_l ->> 'nombre')
+      || case when coalesce(v_l ->> 'extra', '') <> '' then '<br><span style="color:#777;font-size:13px">' || public._html(v_l ->> 'extra') || '</span>' else '' end
+      || '</td><td style="' || v_cel || ';text-align:right;white-space:nowrap">'
+      || public._euros(coalesce((v_l ->> 'cant')::numeric, 1) * coalesce((v_l ->> 'precio')::numeric, 0)) || '</td></tr>';
+  end loop;
+
+  v_pago := case
+    when r.pagado then
+      '<b style="color:#1a7f37">✓ Pagado con tarjeta</b><br><span style="color:#555;font-size:13px">'
+      || coalesce(to_char(w.notificado at time zone 'Europe/Madrid', 'DD/MM/YYYY HH24:MI') || ' · ', '')
+      || 'Operación ' || public._html(r.pago_ref)
+      || coalesce(' · Autorización ' || public._html(w.autorizacion), '') || '</span>'
+    when r.mesa is not null then '<b>Se paga al final, al camarero.</b>'
+    else '<b>Se paga al retirar, en el local.</b>' end;
+
+  v_asunto := 'Tu pedido nº ' || r.id || ' en Terry''s Burgers' || case when r.pagado then ' · Pagado' else '' end;
+  v_html :=
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="margin:0;padding:0;background:#f2f2f2;font-family:Helvetica,Arial,sans-serif;color:#111">'
+    || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f2f2;padding:24px 12px"><tr><td align="center">'
+    || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#fff;border-radius:10px;overflow:hidden">'
+    || '<tr><td style="background:#111;padding:20px;text-align:center">'
+    || '<img src="https://terrysburgers.com/assets/img/icono/icono-192.png" width="64" height="64" alt="Terry''s Burgers" style="border-radius:12px">'
+    || '<div style="color:#fff;font-size:20px;font-weight:bold;margin-top:8px;letter-spacing:1px">TERRY''S BURGERS</div></td></tr>'
+    || '<tr><td style="padding:24px 24px 8px">'
+    || '<div style="font-size:22px;font-weight:bold">¡Gracias' || coalesce(', ' || public._html(nullif(r.nombre, '')), '') || '!</div>'
+    || '<div style="font-size:15px;color:#555;margin-top:4px">Recibimos tu pedido <b style="color:#111">nº ' || r.id || '</b>.</div>'
+    || '<div style="margin-top:16px;padding:12px 14px;background:#f6f6f6;border-radius:8px;font-size:15px">' || v_cuando || '</div>'
+    || '</td></tr>'
+    || '<tr><td style="padding:8px 24px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">' || v_lineas
+    || '<tr><td></td><td style="padding:12px 0 0;font-size:17px;font-weight:bold">Total</td>'
+    || '<td style="padding:12px 0 0;font-size:17px;font-weight:bold;text-align:right;white-space:nowrap">' || public._euros(r.total) || '</td></tr>'
+    || '</table></td></tr>'
+    || '<tr><td style="padding:12px 24px;font-size:15px">' || v_pago || '</td></tr>'
+    || case when coalesce(r.comentario, '') <> '' then
+         '<tr><td style="padding:0 24px 12px;font-size:14px;color:#555">Comentario: ' || public._html(r.comentario) || '</td></tr>' else '' end
+    || '<tr><td style="padding:16px 24px 24px;font-size:13px;color:#777;border-top:1px solid #eee">'
+    || 'Terry''s Burgers · Carrer del Taquígraf Garriga 143, 08029 Barcelona<br>'
+    || 'Tel. / WhatsApp <a href="tel:+34615351131" style="color:#777">615 35 11 31</a> · '
+    || '<a href="https://terrysburgers.com/" style="color:#777">terrysburgers.com</a><br><br>'
+    || 'Este correo es el comprobante de tu pedido' || case when r.pagado then ' y de tu pago' else '' end
+    || '. No es una factura: si la necesitás, pedila en el local.</td></tr>'
+    || '</table></td></tr></table></body></html>';
+
+  select net.http_post(
+    url := 'https://api.resend.com/emails',
+    body := jsonb_strip_nulls(jsonb_build_object(
+      'from', c.remitente, 'to', jsonb_build_array(v_para), 'subject', v_asunto, 'html', v_html,
+      'reply_to', nullif(c.responder_a, ''),
+      'bcc', case when nullif(c.copia, '') is not null then jsonb_build_array(c.copia) end)),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || c.resend_key)
+  ) into v_req;
+  insert into public.mails_enviados (pedido_id, para, req) values (r.id, v_para, v_req);
+  return 'enviado';
+exception when others then
+  begin
+    insert into public.mails_enviados (pedido_id, para, error) values (p_id, v_para, sqlerrm);
+  exception when others then null; end;
+  raise warning 'mail del pedido % no enviado: %', p_id, sqlerrm;   -- nunca frena el pedido
+  return 'error: ' || sqlerrm;
+end;
+$$;
+revoke all on function public._mail_pedido(bigint, text) from public, anon, authenticated;
+
+-- Se manda al confirmar la transacción (si pagó con tarjeta, ya con los datos de la autorización).
+create or replace function public._mail_pedido_trg()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public._mail_pedido(new.id);
+  return null;
+end;
+$$;
+revoke all on function public._mail_pedido_trg() from public, anon, authenticated;
+
+drop trigger if exists pedidos_take_mail on public.pedidos_take;
+create constraint trigger pedidos_take_mail after insert on public.pedidos_take
+  deferrable initially deferred
+  for each row when (new.email is not null)
+  execute function public._mail_pedido_trg();
