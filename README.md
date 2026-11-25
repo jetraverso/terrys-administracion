@@ -65,7 +65,9 @@ Mientras `SUPABASE_URL` esté vacío la página funciona en **modo demo**: entra
 
 ## Solapa Reservas
 
-De arriba abajo: **Reservas** (pendientes y confirmadas agrupadas por día, con las personas del mediodía y de la noche; las canceladas y rechazadas quedan ocultas hasta tocar «Mostrar ocultas»), **Calendario** (este mes y el siguiente: en cada día, las personas del mediodía ☀️ y de la noche 🌙 sumando todas las reservas; antes de las 17 cuenta como mediodía; borde punteado si hay alguna sin confirmar; tocar un día lleva a sus reservas), **Agenda** (a la izquierda la carga, a la derecha las fechas), **Consultas de eventos** y **Avisos al celular**, que viene plegado y se abre con «Maximizar» (queda recordado en el navegador).
+De arriba abajo: **Reservas** (pendientes y confirmadas agrupadas por día, con las personas del mediodía y de la noche; las canceladas y rechazadas quedan ocultas hasta tocar «Mostrar ocultas»), **Calendario** (este mes y el siguiente: en cada día, las personas del mediodía ☀️ y de la noche 🌙 sumando todas las reservas; antes de las 17 cuenta como mediodía; borde punteado si hay alguna sin confirmar; tocar un día lleva a sus reservas), **Agenda** (a la izquierda la carga, a la derecha las fechas), **Consultas de eventos** y **Avisos al celular y por mail**, que viene plegado y se abre con «Maximizar» (queda recordado en el navegador).
+
+**Mail con cada reserva** (`schema.sql` parte 31): además del aviso al celular, cada reserva nueva se manda por mail a la dirección que se guarda en ese recuadro (`web_avisos.mail_reservas`; nunca en el repo), con todos los datos y, si el cliente dejó su email, con la respuesta dirigida a él. Usa el mismo envío que los comprobantes de pedidos (Resend, `mail_config`). «Probar mail» manda uno de prueba y avisa si el servicio lo rechazó; cada envío queda en `mails_enviados`.
 
 ## Actualizar sin perder el lugar
 

@@ -3966,3 +3966,168 @@ create constraint trigger pedidos_take_mail after insert on public.pedidos_take
   deferrable initially deferred
   for each row when (new.email is not null)
   execute function public._mail_pedido_trg();
+
+-- =====================================================================
+-- PARTE 31 · Mail al local con cada reserva nueva
+-- Además del aviso al celular (ntfy, parte 10), cada reserva que entra por la web se manda
+-- por mail a la dirección que se guarda en Reservas → Avisos (web_avisos.mail_reservas;
+-- nunca en este archivo, que es público). Usa el mismo envío que los comprobantes de pedidos
+-- (Resend, mail_config de la parte 30). A diferencia del aviso al celular, el mail sí lleva
+-- los datos completos: nombre, teléfono, email y comentario. Si el mail falla, la reserva
+-- se guarda igual.
+-- =====================================================================
+
+alter table public.web_avisos add column if not exists mail_reservas text;
+alter table public.web_avisos drop constraint if exists web_avisos_mail_chk;
+alter table public.web_avisos add constraint web_avisos_mail_chk
+  check (mail_reservas is null or (char_length(mail_reservas) <= 120
+         and mail_reservas ~ '^[A-Za-z0-9._%+''-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$'));
+
+alter table public.mails_enviados add column if not exists reserva_id bigint;
+alter table public.mails_enviados add column if not exists asunto text;
+
+-- Manda un mail a la dirección de avisos del local. Devuelve 'enviado', 'mail apagado',
+-- 'sin destinatario' o 'error: …'. Nunca lanza un error.
+create or replace function public._mail_local(p_asunto text, p_html text, p_responder text default null, p_reserva bigint default null)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare c public.mail_config; v_para text; v_req bigint;
+begin
+  select * into c from public.mail_config where id = 1;
+  if c.id is null or not c.activo or c.resend_key is null then return 'mail apagado'; end if;
+  select mail_reservas into v_para from public.web_avisos where id = 1;
+  if v_para is null then return 'sin destinatario'; end if;
+  select net.http_post(
+    url := 'https://api.resend.com/emails',
+    body := jsonb_strip_nulls(jsonb_build_object(
+      'from', c.remitente, 'to', jsonb_build_array(v_para), 'subject', p_asunto, 'html', p_html,
+      'reply_to', nullif(p_responder, ''))),
+    headers := jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || c.resend_key)
+  ) into v_req;
+  insert into public.mails_enviados (reserva_id, para, req, asunto) values (p_reserva, v_para, v_req, left(p_asunto, 200));
+  return 'enviado';
+exception when others then
+  begin
+    insert into public.mails_enviados (reserva_id, para, error, asunto) values (p_reserva, v_para, sqlerrm, left(p_asunto, 200));
+  exception when others then null; end;
+  raise warning 'mail al local no enviado: %', sqlerrm;
+  return 'error: ' || sqlerrm;
+end;
+$$;
+revoke all on function public._mail_local(text, text, text, bigint) from public, anon, authenticated;
+
+-- El mail de una reserva.
+create or replace function public._mail_reserva(r public.reservas)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_hoy  date := (now() at time zone 'Europe/Madrid')::date;
+  v_dia  text := (array['domingo','lunes','martes','miércoles','jueves','viernes','sábado'])[extract(dow from r.fecha)::int + 1]
+                 || ' ' || extract(day from r.fecha)::int || ' de '
+                 || (array['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'])[extract(month from r.fecha)::int];
+  v_pers text := r.personas || case when r.personas = 1 then ' persona' else ' personas' end;
+  v_tel  text := regexp_replace(coalesce(r.telefono, ''), '[^0-9]', '', 'g');
+  v_mail text := nullif(btrim(coalesce(r.email, '')), '');
+  v_fila text := 'padding:7px 0;border-bottom:1px solid #eee;font-size:15px;vertical-align:top';
+  v_asunto text; v_html text;
+begin
+  if v_tel like '00%' then v_tel := substr(v_tel, 3); end if;
+  if length(v_tel) = 9 then v_tel := '34' || v_tel; end if;
+  v_asunto := case when r.fecha = v_hoy then 'Reserva nueva para HOY' else 'Reserva nueva' end
+              || ' · ' || public._dia_corto(r.fecha) || ' ' || to_char(r.hora, 'HH24:MI') || ' · ' || v_pers || ' · ' || r.nombre;
+  v_html :=
+    '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head><body style="margin:0;padding:0;background:#f2f2f2;font-family:Helvetica,Arial,sans-serif;color:#111">'
+    || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f2f2f2;padding:24px 12px"><tr><td align="center">'
+    || '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:#fff;border-radius:10px;overflow:hidden">'
+    || '<tr><td style="background:#111;padding:16px 24px;color:#fff;font-size:18px;font-weight:bold;letter-spacing:1px">TERRY''S BURGERS · RESERVA NUEVA</td></tr>'
+    || '<tr><td style="padding:22px 24px 6px">'
+    || '<div style="font-size:22px;font-weight:bold;text-transform:capitalize">' || public._html(v_dia) || case when r.fecha = v_hoy then ' · HOY' else '' end || '</div>'
+    || '<div style="font-size:20px;margin-top:4px">' || to_char(r.hora, 'HH24:MI') || ' · <b>' || v_pers || '</b></div>'
+    || '</td></tr>'
+    || '<tr><td style="padding:10px 24px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0">'
+    || '<tr><td style="' || v_fila || ';width:110px;color:#777">Nombre</td><td style="' || v_fila || '"><b>' || public._html(r.nombre) || '</b></td></tr>'
+    || '<tr><td style="' || v_fila || ';color:#777">Teléfono</td><td style="' || v_fila || '"><a href="tel:' || public._html(r.telefono) || '" style="color:#111">' || public._html(r.telefono) || '</a>'
+    || case when length(v_tel) >= 9 then ' · <a href="https://wa.me/' || v_tel || '" style="color:#1a7f37">WhatsApp</a>' else '' end || '</td></tr>'
+    || case when v_mail is not null then '<tr><td style="' || v_fila || ';color:#777">Email</td><td style="' || v_fila || '"><a href="mailto:' || public._html(v_mail) || '" style="color:#111">' || public._html(v_mail) || '</a></td></tr>' else '' end
+    || case when coalesce(r.comentario, '') <> '' then '<tr><td style="' || v_fila || ';color:#777">Comentario</td><td style="' || v_fila || '">' || public._html(r.comentario) || '</td></tr>' else '' end
+    || '<tr><td style="' || v_fila || ';color:#777;border-bottom:0">Estado</td><td style="' || v_fila || ';border-bottom:0">' || public._html(initcap(r.estado)) || '</td></tr>'
+    || '</table></td></tr>'
+    || '<tr><td style="padding:8px 24px 24px"><a href="https://admin.terrysburgers.com/" style="display:inline-block;background:#111;color:#fff;text-decoration:none;font-weight:bold;font-size:15px;padding:11px 18px;border-radius:8px">Abrir Reservas en el admin</a></td></tr>'
+    || '<tr><td style="padding:14px 24px 20px;font-size:12.5px;color:#777;border-top:1px solid #eee">Reserva nº ' || r.id || ' hecha desde terrysburgers.com. Para confirmarla o rechazarla, cambiale el estado en el admin.'
+    || case when v_mail is not null then ' Si respondés este mail, la respuesta le llega al cliente.' else '' end || '</td></tr>'
+    || '</table></td></tr></table></body></html>';
+  return public._mail_local(v_asunto, v_html, v_mail, r.id);
+exception when others then
+  raise warning 'mail de la reserva % no armado: %', r.id, sqlerrm;
+  return 'error: ' || sqlerrm;
+end;
+$$;
+revoke all on function public._mail_reserva(public.reservas) from public, anon, authenticated;
+
+create or replace function public._mail_reserva_trg()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public._mail_reserva(new);
+  return null;
+exception when others then
+  return null;   -- nunca frena la reserva
+end;
+$$;
+revoke all on function public._mail_reserva_trg() from public, anon, authenticated;
+
+drop trigger if exists reservas_mail on public.reservas;
+create trigger reservas_mail after insert on public.reservas
+  for each row execute function public._mail_reserva_trg();
+
+-- Botón «Probar mail» del admin: manda uno de prueba a la dirección guardada.
+create or replace function public.web_probar_mail()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v text;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  v := public._mail_local('Prueba de Terry''s Administración',
+    '<div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;color:#111;padding:20px">Si ves este mail, las reservas nuevas te van a llegar a esta dirección. 🍔</div>');
+  return jsonb_build_object('estado', v);
+end;
+$$;
+revoke all on function public.web_probar_mail() from public, anon;
+grant execute on function public.web_probar_mail() to authenticated;
+
+-- Cómo salió el último mail al local (para avisar en el admin si Resend lo rechazó).
+create or replace function public.web_mail_ultimo()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, net
+as $$
+declare m public.mails_enviados; v_cod int; v_resp text; v_err text;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  select * into m from public.mails_enviados
+   where pedido_id is null and (reserva_id is not null or asunto is not null) order by id desc limit 1;
+  if m.id is null then return null; end if;
+  if m.req is not null then
+    begin
+      select status_code, left(content, 300), error_msg into v_cod, v_resp, v_err from net._http_response where id = m.req;
+    exception when others then null; end;
+  end if;
+  return jsonb_build_object('creado', m.creado, 'para', m.para, 'asunto', m.asunto, 'error', coalesce(m.error, v_err),
+                            'codigo', v_cod, 'respuesta', v_resp);
+end;
+$$;
+revoke all on function public.web_mail_ultimo() from public, anon;
+grant execute on function public.web_mail_ultimo() to authenticated;

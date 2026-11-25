@@ -356,6 +356,7 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .wav-t input{padding:6px 9px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;font:inherit;min-width:230px}
 .wav-t .ok{color:var(--ok);font-weight:700}.wav-t .mal{color:var(--warn);font-weight:700}
 .wav.plegado{padding-top:10px;padding-bottom:10px}
+.wav-m{border-top:1px solid var(--line);margin-top:14px;padding-top:12px} .wav-m .wav-t{margin-bottom:0}
 .wav .wseg{align-items:center} .wav-e{font-size:13px;color:var(--muted)}
 /* reservas (v3.29): calendario de dos meses, agenda en dos columnas */
 .wcal{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
@@ -713,7 +714,7 @@ button.wcal-d{cursor:pointer} button.wcal-d:hover{border-color:var(--ink-2)}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.29';
+const VERSION='3.30';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -2079,12 +2080,12 @@ $('reportes').addEventListener('submit',e=>{
 
 function panelAvisos(a){
   // Plegado por defecto (se usa poco): «Maximizar» lo abre y queda recordado en este navegador.
-  const est=a.error?'':a.ntfy_tema?'Activados'+(['reservas','consultas','pedidos'].some(k=>a[k])?': '+[a.reservas&&'reservas',a.consultas&&'consultas',a.pedidos&&'pedidos'].filter(Boolean).join(', '):''):'Apagados';
-  const tit=`<div class="wcab"><h2>Avisos al celular</h2><div class="wseg">${webAvAbierto||!est?'':`<span class="wav-e">${est}</span>`}<button class="btn" data-w-avtog aria-expanded="${webAvAbierto}" title="${webAvAbierto?'Plegar este recuadro':'Abrir este recuadro'}">${webAvAbierto?'Minimizar':'Maximizar'}</button></div></div>`;
+  const est=a.error?'':(a.ntfy_tema?'Celular: '+([a.reservas&&'reservas',a.consultas&&'consultas',a.pedidos&&'pedidos'].filter(Boolean).join(', ')||'activado'):'Celular: apagado')+(a.mail_reservas?' · Mail de reservas a '+esc(a.mail_reservas):'');
+  const tit=`<div class="wcab"><h2>Avisos al celular y por mail</h2><div class="wseg">${webAvAbierto||!est?'':`<span class="wav-e">${est}</span>`}<button class="btn" data-w-avtog aria-expanded="${webAvAbierto}" title="${webAvAbierto?'Plegar este recuadro':'Abrir este recuadro'}">${webAvAbierto?'Minimizar':'Maximizar'}</button></div></div>`;
   if(!webAvAbierto) return `<div class="panel wav plegado">${tit}</div>`;
   const cab=tit+'<div class="sub">Una notificación en el celular cada vez que entra una reserva, un pedido take away o una consulta de evento (con la app gratis <b>ntfy</b>). No lleva nombre ni teléfono del cliente: solo día, hora, personas o total; al tocarla abre este admin.</div>';
   if(a.error) return `<div class="panel wav">${cab}<div class="aviso">Falta correr la parte 10 del schema.sql en Supabase (${esc(a.error)}).</div></div>`;
-  if(!a.ntfy_tema) return `<div class="panel wav">${cab}<div class="wav-a"><button class="btn primary" data-w-av="activar">Activar avisos</button></div></div>`;
+  if(!a.ntfy_tema) return `<div class="panel wav">${cab}<div class="wav-a"><button class="btn primary" data-w-av="activar">Activar avisos</button></div>${bloqueMail(a)}</div>`;
   const url='https://ntfy.sh/'+a.ntfy_tema;
   return `<div class="panel wav">${cab}
     <ol>
@@ -2098,7 +2099,16 @@ function panelAvisos(a){
     <div class="wav-c"><label><input type="checkbox" data-w-avc="reservas"${a.reservas?' checked':''}> Reservas</label><label><input type="checkbox" data-w-avc="consultas"${a.consultas?' checked':''}> Consultas de eventos</label>${'pedidos' in a?`<label><input type="checkbox" data-w-avc="pedidos"${a.pedidos?' checked':''}> Pedidos take away</label>`:''}</div>
     <div class="wav-a"><button class="btn primary" data-w-av="probar">Probar aviso</button><button class="btn" data-w-av="cambiar" title="Crea un tema nuevo: el viejo deja de recibir avisos">Cambiar tema</button><button class="btn" data-w-av="apagar">Apagar avisos</button></div>
     <div class="sub" style="margin-top:8px">El tema funciona como una contraseña: no lo compartas fuera del equipo. Si se filtra, tocá Cambiar tema y suscribite al nuevo. También se puede ver en la compu: <a href="${esc(url)}" target="_blank" rel="noopener">${esc(url)}</a></div>
+    ${bloqueMail(a)}
   </div>`;
+}
+// Mail al local con cada reserva nueva (parte 31): la dirección se guarda en web_avisos.mail_reservas.
+function bloqueMail(a){
+  if(!('mail_reservas' in a)) return `<div class="wav-m"><b>Mail con cada reserva</b><div class="sub" style="margin:2px 0 0">Para activarlo falta correr la parte 31 del schema.sql en Supabase.</div></div>`;
+  return `<div class="wav-m"><b>Mail con cada reserva</b>
+    <div class="sub" style="margin:2px 0 8px">Cada reserva nueva de la web también llega por mail, con todos los datos (día, hora, personas, nombre, teléfono y comentario). ${a.mail_reservas?`Hoy van a <b>${esc(a.mail_reservas)}</b>.`:'Hoy está apagado: escribí la dirección y guardá.'}</div>
+    <div class="wav-t"><input id="mailRes" type="email" inputmode="email" placeholder="${a.mail_reservas?'Cambiar la dirección…':'nombre@dominio.com'}" autocomplete="off" spellcheck="false" aria-label="Dirección de mail para las reservas">
+      <button class="btn" data-w-av="mail">Guardar mail</button>${a.mail_reservas?'<button class="btn primary" data-w-av="probarmail">Probar mail</button><button class="btn" data-w-av="sinmail">Quitar</button>':''}</div></div>`;
 }
 function temaNuevo(){
   const abc='abcdefghijkmnopqrstuvwxyz23456789', b=crypto.getRandomValues(new Uint8Array(22));
@@ -2109,6 +2119,21 @@ async function webAviso(acc){
   if(acc==='probar'){
     const {error}=await sbc.rpc('web_probar_aviso');
     toast(error?'No se pudo mandar: '+errMsg(error):'Aviso de prueba enviado: fijate en el celular'); return;
+  }
+  if(acc==='mail'||acc==='sinmail'){
+    const m=acc==='mail'?($('mailRes').value||'').trim().toLowerCase():null;
+    if(acc==='mail'&&!/^[a-z0-9._%+'-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(m)){ toast('Escribí una dirección de mail válida'); return; }
+    if(acc==='sinmail'&&!confirm('¿Dejar de mandar las reservas por mail?')) return;
+    webCambiar('web_avisos',1,{mail_reservas:m,actualizado:new Date().toISOString()},m?'Mail guardado: tocá Probar mail':'Mail de reservas apagado'); return;
+  }
+  if(acc==='probarmail'){
+    const {data,error}=await sbc.rpc('web_probar_mail');
+    if(error){ toast('No se pudo mandar: '+errMsg(error)); return; }
+    const e=(data||{}).estado||'';
+    if(e!=='enviado'){ toast(e==='mail apagado'?'El envío de mails está apagado en Supabase (mail_config, parte 30)':e==='sin destinatario'?'Primero guardá la dirección':'No se pudo mandar: '+e); return; }
+    toast('Mail de prueba enviado: fijate en la bandeja de entrada (y en spam)');
+    setTimeout(async()=>{ try{ const u=(await sbc.rpc('web_mail_ultimo')).data; if(u&&(u.error||(u.codigo&&u.codigo>=300))) toast('El servicio de mail lo rechazó: '+(u.error||(u.codigo+' '+(u.respuesta||'')))); }catch(_){} },5000);
+    return;
   }
   if(acc==='token'||acc==='sintoken'){
     const t=acc==='token'?($('ntfyTok').value||'').trim():null;
