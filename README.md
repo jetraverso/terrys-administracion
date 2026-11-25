@@ -63,6 +63,10 @@ Solapa **Ventas**: reportes de las ventas del local que llegan solas desde Ágor
 
 Mientras `SUPABASE_URL` esté vacío la página funciona en **modo demo**: entra con cualquier email y contraseña `1234`, y guarda solo en ese navegador. Sirve para probarla, no para trabajar.
 
+## Solapa Reservas
+
+De arriba abajo: **Reservas** (pendientes y confirmadas agrupadas por día, con las personas del mediodía y de la noche; las canceladas y rechazadas quedan ocultas hasta tocar «Mostrar ocultas»), **Calendario** (este mes y el siguiente: en cada día, las personas del mediodía ☀️ y de la noche 🌙 sumando todas las reservas; antes de las 17 cuenta como mediodía; borde punteado si hay alguna sin confirmar; tocar un día lleva a sus reservas), **Agenda** (a la izquierda la carga, a la derecha las fechas), **Consultas de eventos** y **Avisos al celular**, que viene plegado y se abre con «Maximizar» (queda recordado en el navegador).
+
 ## Actualizar sin perder el lugar
 
 Al actualizar la página (o si el navegador la recarga solo) se vuelve a donde se estaba: solapa, subvista de Pedidos y Reservas, mes o año y altura de la pantalla. Se guarda al salir en `sessionStorage` (`terrys_admin_lugar`), así que vale para esa pestaña: abrir la página en otra pestaña, o salir con «Salir», arranca en Compras.

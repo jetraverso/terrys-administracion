@@ -355,6 +355,34 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 .wav-t{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 10px;font-size:13px}
 .wav-t input{padding:6px 9px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;font:inherit;min-width:230px}
 .wav-t .ok{color:var(--ok);font-weight:700}.wav-t .mal{color:var(--warn);font-weight:700}
+.wav.plegado{padding-top:10px;padding-bottom:10px}
+.wav .wseg{align-items:center} .wav-e{font-size:13px;color:var(--muted)}
+/* reservas (v3.29): calendario de dos meses, agenda en dos columnas */
+.wcal{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px}
+.wcal-mes h3{font-family:var(--display);font-size:19px;font-weight:400;letter-spacing:.03em;margin:0 0 8px;display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.wcal-mes h3 small{font-family:var(--body,inherit);font-size:12.5px;letter-spacing:0;color:var(--muted)}
+.wcal-sem,.wcal-g{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.wcal-sem{font-size:11px;color:var(--muted);text-align:center;margin-bottom:4px;font-weight:700}
+.wcal-d{min-height:60px;padding:4px 4px 5px;border:1px solid var(--line);border-radius:8px;background:none;color:inherit;font:inherit;text-align:left;display:flex;flex-direction:column;gap:2px;min-width:0}
+button.wcal-d{cursor:pointer} button.wcal-d:hover{border-color:var(--ink-2)}
+.wcal-d b{font-size:12px;font-weight:600;color:var(--ink-2);line-height:1.2}
+.wcal-d.pasado{opacity:.45}
+.wcal-d.con{background:var(--surface-2);border-color:var(--line-2)}
+.wcal-d.hoy{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)} .wcal-d.hoy b{color:var(--accent)}
+.wcal-d span{display:block;border-radius:5px;padding:1px 3px;font-size:11.5px;font-weight:700;white-space:nowrap;overflow:hidden;font-variant-numeric:tabular-nums;line-height:1.35}
+.wcal-d span.m{background:color-mix(in oklab,var(--warn) 30%,transparent)}
+.wcal-d span.n{background:color-mix(in oklab,var(--accent) 32%,transparent)}
+.wcal-d span.pend,.wcal-ley i.pend{outline:1px dashed var(--warn);outline-offset:-1px}
+.wcal-ley{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:12.5px;color:var(--muted);margin-top:10px}
+.wcal-ley i.pend{display:inline-block;width:16px;height:11px;border-radius:4px;vertical-align:-1px}
+.wtabla tr.wdia.wflash td{animation:wflash 1.8s}
+@keyframes wflash{0%,55%{background:color-mix(in oklab,var(--accent) 38%,var(--surface-2))}}
+.wag2{display:grid;grid-template-columns:minmax(240px,380px) minmax(0,1fr);gap:22px;align-items:start}
+.wag2 .wform{margin-bottom:0}
+.wag-l .wage:first-child{border-top:0;padding-top:0}
+.wag-l .vacio{padding:6px 0}
+@media (max-width:820px){ .wcal,.wag2{grid-template-columns:minmax(0,1fr)} }
+@media (max-width:520px){ .wcal-sem,.wcal-g{gap:3px} .wcal-d{padding:3px 2px 4px;min-height:54px} .wcal-d span{font-size:10.5px;padding:1px 2px;letter-spacing:-.03em} }
 
 /* ---------- reportes ---------- */
 .tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
@@ -685,7 +713,7 @@ body.p-arrastrando{cursor:grabbing;user-select:none;-webkit-user-select:none}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.28';
+const VERSION='3.29';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1102,20 +1130,68 @@ async function contarPendientesWeb(){
     if(n!==webPend||np!==pedPend){ webPend=n; pedPend=np; renderTabs(); }
   }catch(_){}
 }
+// Solapa Reservas, de arriba abajo: reservas (pendientes y confirmadas; las canceladas y rechazadas
+// quedan ocultas hasta tocar «Mostrar ocultas») · calendario de este mes y el siguiente con las
+// personas de cada mediodía y cada noche · agenda · consultas de eventos · avisos al celular (plegado).
+let webOcultas=false, webAvDatos=null;
+let webAvAbierto=(()=>{ try{ return localStorage.getItem('web-avisos-abierto')==='1'; }catch(_){ return false; } })();
+const resOculta=r=>r.estado==='cancelada'||r.estado==='rechazada';
+const resNoche=r=>String(r.hora).slice(0,5)>='17:00';   // antes de las 17 cuenta como mediodía
+const sumaPers=l=>l.reduce((a,r)=>a+(+r.personas||0),0);
+// Calendario: por día, personas del mediodía y de la noche (pendientes + confirmadas)
+function panelCalendario(lista,hoy){
+  const porDia={};
+  for(const r of lista){
+    if(resOculta(r)) continue;
+    const d=porDia[r.fecha]=porDia[r.fecha]||{m:0,n:0,mp:false,np:false,c:0};
+    d.c++;
+    if(resNoche(r)){ d.n+=+r.personas||0; if(r.estado==='pendiente') d.np=true; }
+    else{ d.m+=+r.personas||0; if(r.estado==='pendiente') d.mp=true; }
+  }
+  const mes=(y,m)=>{
+    const dias=new Date(y,m+1,0).getDate(), hueco=(new Date(y,m,1).getDay()+6)%7;   // la semana empieza el lunes
+    let c='<i></i>'.repeat(hueco), nRes=0, nPers=0;
+    for(let d=1;d<=dias;d++){
+      const iso=`${y}-${pad(m+1)}-${pad(d)}`, x=porDia[iso];
+      if(x){ nRes+=x.c; nPers+=x.m+x.n; }
+      const cls=`wcal-d${iso===hoy?' hoy':''}${iso<hoy?' pasado':''}${x?' con':''}`;
+      const chips=x?`${x.m?`<span class="m${x.mp?' pend':''}">☀️ ${x.m}</span>`:''}${x.n?`<span class="n${x.np?' pend':''}">🌙 ${x.n}</span>`:''}`:'';
+      const tit=x?`${fechaLargaW(iso)}: ${[x.m?`mediodía ${x.m} personas`:'',x.n?`noche ${x.n} personas`:''].filter(Boolean).join(' · ')}${x.mp||x.np?' (hay reservas sin confirmar)':''}`:'';
+      c+=x?`<button type="button" class="${cls}" data-w-cal="${iso}" title="${esc(tit)}" aria-label="${esc(tit)}"><b>${d}</b>${chips}</button>`:`<div class="${cls}"><b>${d}</b></div>`;
+    }
+    return `<div class="wcal-mes"><h3>${MESES[m]} ${y}<small>${nRes?`${nRes} reserva${nRes>1?'s':''} · ${nPers} personas`:'sin reservas'}</small></h3>
+      <div class="wcal-sem"><span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span></div><div class="wcal-g">${c}</div></div>`;
+  };
+  const d0=new Date(hoy+'T12:00:00'), y=d0.getFullYear(), m=d0.getMonth();
+  return `<div class="panel"><h2>Calendario</h2><div class="sub">Las reservas de este mes y del que viene. El número es la cantidad de personas de ese mediodía o esa noche (suma todas las reservas, sin las canceladas ni rechazadas). Tocá un día para ir a sus reservas.</div>
+    <div class="wcal">${mes(y,m)}${mes(m===11?y+1:y,(m+1)%12)}</div>
+    <div class="wcal-ley"><span>☀️ mediodía</span><span>🌙 noche</span><span><i class="pend"></i> borde punteado: hay alguna sin confirmar</span></div></div>`;
+}
+async function irADiaRes(iso){
+  const quiere=iso<hoyISO()?'anteriores':'proximas';
+  if(webVer!==quiere){ webVer=quiere; await renderWeb(); }
+  const fila=document.querySelector(`#reportes tr[data-w-dia="${iso}"]`);
+  if(!fila){ toast('Ese día no está en la lista de arriba'); return; }
+  fila.scrollIntoView({block:'center',behavior:'smooth'});
+  fila.classList.remove('wflash'); void fila.offsetWidth; fila.classList.add('wflash');
+}
 async function renderWeb(){
   const tk=++repTk, cont=$('reportes');
   if(!SB){ cont.innerHTML='<div class="aviso">La solapa Web necesita Supabase: en modo demo no hay reservas.</div>'; return; }
   if(!cont.querySelector('.wweb')) cont.innerHTML='<div class="panel"><div class="vacio">Cargando…</div></div>';
   const hoy=hoyISO();
-  let res,con,age,avisos;
+  const d0=new Date(hoy+'T12:00:00'), fin=new Date(d0.getFullYear(),d0.getMonth()+2,0);
+  const calIni=hoy.slice(0,8)+'01', calFin=`${fin.getFullYear()}-${pad(fin.getMonth()+1)}-${pad(fin.getDate())}`;
+  let res,con,age,cal,avisos;
   try{
     const q=sbc.from('reservas').select('*');
-    const [a,b,c]=await Promise.all([
+    const [a,b,c,k]=await Promise.all([
       (webVer==='proximas'?q.gte('fecha',hoy).order('fecha').order('hora'):q.lt('fecha',hoy).order('fecha',{ascending:false}).order('hora')).limit(300),
       sbc.from('eventos_consultas').select('*').order('creada',{ascending:false}).limit(100),
-      sbc.from('agenda').select('*').order('fecha',{ascending:false}).limit(100)]);
-    for(const r of [a,b,c]) if(r.error) throw r.error;
-    res=a.data; con=b.data; age=c.data;
+      sbc.from('agenda').select('*').order('fecha',{ascending:false}).limit(100),
+      sbc.from('reservas').select('fecha,hora,personas,estado').gte('fecha',calIni).lte('fecha',calFin).limit(3000)]);
+    for(const r of [a,b,c,k]) if(r.error) throw r.error;
+    res=a.data; con=b.data; age=c.data; cal=k.data;
     const v=await sbc.from('web_avisos').select('*').eq('id',1).maybeSingle();
     avisos=v.error?{error:errMsg(v.error)}:(v.data||{error:'sin fila'});
   }catch(e){
@@ -1124,13 +1200,16 @@ async function renderWeb(){
     cont.innerHTML=`<div class="aviso">No se pudieron cargar los datos de la web: ${esc(m)}${/does not exist|reservas|agenda|eventos_consultas|schema cache/i.test(m)?' (falta correr la parte 9 del schema.sql en Supabase)':''}</div>`; return;
   }
   if(tk!==repTk||vista!=='web') return;
+  webAvDatos=avisos;
   const pendR=res.filter(r=>r.estado==='pendiente').length, pendC=con.filter(c=>c.estado==='nueva').length;
+  const ocultas=res.filter(resOculta).length, ver=webOcultas?res:res.filter(r=>!resOculta(r));
   const optEst=(map,v)=>Object.entries(map).map(([k,t])=>`<option value="${k}"${k===v?' selected':''}>${t}</option>`).join('');
   // reservas agrupadas por día
-  const dias=new Map(); for(const r of res){ if(!dias.has(r.fecha)) dias.set(r.fecha,[]); dias.get(r.fecha).push(r); }
+  const dias=new Map(); for(const r of ver){ if(!dias.has(r.fecha)) dias.set(r.fecha,[]); dias.get(r.fecha).push(r); }
   const filasRes=[...dias].map(([d,l])=>{
-    const pers=l.filter(r=>r.estado!=='rechazada'&&r.estado!=='cancelada').reduce((a,r)=>a+r.personas,0);
-    return `<tr class="wdia"><td colspan="6">${esc(fechaLargaW(d))}${d===hoy?' · <b>hoy</b>':''}<span>${l.length} reserva${l.length>1?'s':''} · ${pers} personas</span></td></tr>`+l.map(r=>{
+    const act=l.filter(r=>!resOculta(r)), med=sumaPers(act.filter(r=>!resNoche(r))), noc=sumaPers(act.filter(resNoche));
+    const tot=[`${act.length} reserva${act.length===1?'':'s'}`,med?`☀️ ${med} p.`:'',noc?`🌙 ${noc} p.`:''].filter(Boolean).join(' · ');
+    return `<tr class="wdia" data-w-dia="${d}"><td colspan="6">${esc(fechaLargaW(d))}${d===hoy?' · <b>hoy</b>':''}<span>${tot}</span></td></tr>`+l.map(r=>{
       const hora=String(r.hora).slice(0,5);
       const txt=`¡Hola ${r.nombre}! Te confirmamos la reserva en Terry's Burgers para el ${fechaLargaW(r.fecha)} a las ${hora}, ${r.personas} ${r.personas>1?'personas':'persona'}. ¡Te esperamos! 🍔`;
       return `<tr class="w-${r.estado}">
@@ -1155,17 +1234,19 @@ async function renderWeb(){
       <label class="wage-p"><input type="checkbox" data-w-pub="${a.id}"${a.publicado?' checked':''}> publicada</label>
       <button class="btn" data-w-del="${a.id}" title="Borrar esta fecha">Borrar</button>
     </div>`).join('');
+  const subRes=webVer==='proximas'
+    ?`${res.length-ocultas} reserva${res.length-ocultas===1?'':'s'} desde hoy${pendR?` · <b>${pendR} por confirmar</b>`:''}. Confirmá con WhatsApp y cambiá el estado.`
+    :'Últimas 300 reservas pasadas.';
   cont.innerHTML=`<div class="wweb">
     <div class="panel">
       <div class="wcab"><h2>Reservas</h2>
-        <div class="wseg"><button class="btn${webVer==='proximas'?' primary':''}" data-w-ver="proximas">Próximas</button><button class="btn${webVer==='anteriores'?' primary':''}" data-w-ver="anteriores">Anteriores</button><button class="btn" data-w-recargar>Actualizar</button></div></div>
-      <div class="sub">${webVer==='proximas'?`${res.length} reservas desde hoy${pendR?` · <b>${pendR} por confirmar</b>`:''}. Confirmá con WhatsApp y cambiá el estado.`:'Últimas 300 reservas pasadas.'}</div>
-      ${res.length?`<div class="wscroll"><table class="wtabla"><tbody>${filasRes}</tbody></table></div>`:'<div class="vacio">No hay reservas.</div>'}
+        <div class="wseg"><button class="btn${webVer==='proximas'?' primary':''}" data-w-ver="proximas">Próximas</button><button class="btn${webVer==='anteriores'?' primary':''}" data-w-ver="anteriores">Anteriores</button><button class="btn" data-w-recargar>Actualizar</button><button class="btn${webOcultas?' primary':''}" data-w-ocultas title="Las reservas canceladas y rechazadas quedan ocultas">${webOcultas?'Esconder ocultas':`Mostrar ocultas (${ocultas})`}</button></div></div>
+      <div class="sub">${subRes}${ocultas?` ${webOcultas?`Se están mostrando ${ocultas} cancelada${ocultas===1?'':'s'} o rechazada${ocultas===1?'':'s'}.`:`${ocultas} cancelada${ocultas===1?'':'s'} o rechazada${ocultas===1?'':'s'} oculta${ocultas===1?'':'s'}.`}`:''}</div>
+      ${ver.length?`<div class="wscroll"><table class="wtabla"><tbody>${filasRes}</tbody></table></div>`:`<div class="vacio">${ocultas?'Solo hay reservas canceladas o rechazadas, que están ocultas.':'No hay reservas.'}</div>`}
     </div>
-    <div class="rep-grid">
-      <div class="panel"><h2>Consultas de eventos</h2><div class="sub">Eventos privados y catering pedidos desde la web${pendC?` · <b>${pendC} nuevas</b>`:''}.</div>
-        ${filasCon||'<div class="vacio">Todavía no llegó ninguna consulta.</div>'}</div>
-      <div class="panel"><h2>Agenda</h2><div class="sub">Lo publicado aparece en la sección Eventos de la web (solo fechas de hoy en adelante).</div>
+    ${panelCalendario(cal,hoy)}
+    <div class="panel"><h2>Agenda</h2><div class="sub">Lo publicado aparece en la sección Eventos de la web (solo fechas de hoy en adelante).</div>
+      <div class="wag2">
         <form class="wform" id="wAgForm">
           <input type="date" name="fecha" required aria-label="Fecha">
           <input type="text" name="hora" placeholder="Hora (ej. 21:00)" maxlength="40" aria-label="Hora">
@@ -1174,8 +1255,10 @@ async function renderWeb(){
           <input type="url" name="imagen_url" placeholder="Link a una imagen https://… (opcional)" aria-label="Imagen">
           <button class="btn primary" type="submit">Agregar fecha</button>
         </form>
-        ${filasAge||'<div class="vacio">Sin fechas cargadas.</div>'}</div>
-    </div>
+        <div class="wag-l">${filasAge||'<div class="vacio">Sin fechas cargadas.</div>'}</div>
+      </div></div>
+    <div class="panel"><h2>Consultas de eventos</h2><div class="sub">Eventos privados y catering pedidos desde la web${pendC?` · <b>${pendC} nuevas</b>`:''}.</div>
+      ${filasCon||'<div class="vacio">Todavía no llegó ninguna consulta.</div>'}</div>
     ${panelAvisos(avisos)}</div>`;
   contarPendientesWeb();
 }
@@ -1995,7 +2078,11 @@ $('reportes').addEventListener('submit',e=>{
 });
 
 function panelAvisos(a){
-  const cab='<h2>Avisos al celular</h2><div class="sub">Una notificación en el celular cada vez que entra una reserva, un pedido take away o una consulta de evento (con la app gratis <b>ntfy</b>). No lleva nombre ni teléfono del cliente: solo día, hora, personas o total; al tocarla abre este admin.</div>';
+  // Plegado por defecto (se usa poco): «Maximizar» lo abre y queda recordado en este navegador.
+  const est=a.error?'':a.ntfy_tema?'Activados'+(['reservas','consultas','pedidos'].some(k=>a[k])?': '+[a.reservas&&'reservas',a.consultas&&'consultas',a.pedidos&&'pedidos'].filter(Boolean).join(', '):''):'Apagados';
+  const tit=`<div class="wcab"><h2>Avisos al celular</h2><div class="wseg">${webAvAbierto||!est?'':`<span class="wav-e">${est}</span>`}<button class="btn" data-w-avtog aria-expanded="${webAvAbierto}" title="${webAvAbierto?'Plegar este recuadro':'Abrir este recuadro'}">${webAvAbierto?'Minimizar':'Maximizar'}</button></div></div>`;
+  if(!webAvAbierto) return `<div class="panel wav plegado">${tit}</div>`;
+  const cab=tit+'<div class="sub">Una notificación en el celular cada vez que entra una reserva, un pedido take away o una consulta de evento (con la app gratis <b>ntfy</b>). No lleva nombre ni teléfono del cliente: solo día, hora, personas o total; al tocarla abre este admin.</div>';
   if(a.error) return `<div class="panel wav">${cab}<div class="aviso">Falta correr la parte 10 del schema.sql en Supabase (${esc(a.error)}).</div></div>`;
   if(!a.ntfy_tema) return `<div class="panel wav">${cab}<div class="wav-a"><button class="btn primary" data-w-av="activar">Activar avisos</button></div></div>`;
   const url='https://ntfy.sh/'+a.ntfy_tema;
@@ -2049,6 +2136,13 @@ $('reportes').addEventListener('click',async e=>{
   if(vista!=='web') return;
   const v=e.target.closest('[data-w-ver]'); if(v){ webVer=v.dataset.wVer; renderWeb(); return; }
   if(e.target.closest('[data-w-recargar]')){ renderWeb(); return; }
+  if(e.target.closest('[data-w-ocultas]')){ webOcultas=!webOcultas; renderWeb(); return; }
+  if(e.target.closest('[data-w-avtog]')){
+    webAvAbierto=!webAvAbierto; try{ localStorage.setItem('web-avisos-abierto',webAvAbierto?'1':'0'); }catch(_){}
+    const pa=document.querySelector('#reportes .panel.wav'); if(pa&&webAvDatos) pa.outerHTML=panelAvisos(webAvDatos); else renderWeb();
+    return;
+  }
+  const cal=e.target.closest('[data-w-cal]'); if(cal){ irADiaRes(cal.dataset.wCal); return; }
   const av=e.target.closest('[data-w-av]'); if(av){ webAviso(av.dataset.wAv); return; }
   const d=e.target.closest('[data-w-del]');
   if(d&&confirm('¿Borrar esta fecha de la agenda?')){
