@@ -21,6 +21,7 @@ Detalle para la solapa Stock (ver facturas/LINEAS.md):
   python3 facturas/facturas.py lineas [2026-11] [todo]      sube los JSON de facturas/lineas/ que todavía no están en la base
                                                             ("todo": vuelve a subir también los que ya estaban)
   python3 facturas/facturas.py sin-detalle '<ruta>' '<motivo>'   marca un documento que no lleva renglones (luz, agua, comisiones…)
+  python3 facturas/facturas.py catalogo [proveedor]         productos ya leídos de ese proveedor (código, nombre, categoría, unidad)
   python3 facturas/facturas.py stock [2026-11]              qué archivos del mes tienen detalle, cuáles no y los proveedores que ya existen
 
 La carpeta de Drive tiene que estar sincronizada en esta Mac (Google Drive para escritorio):
@@ -160,14 +161,17 @@ LINEAS = os.path.join(AQUI, 'lineas')
 
 
 def fecha_de_ruta(rel):
-    """«2026/11_Noviembre/1103_Proveedor_Detalle.pdf» → 2026-11-03 (la fecha es la del nombre del archivo, como en Compras)."""
+    """«2026/11_Noviembre/1103_Proveedor_Detalle.pdf» → 2026-11-03 (la fecha es la del nombre del archivo, como en Compras).
+    Si el nombre no trae fecha, el día 1 del mes de la carpeta."""
     partes = rel.split(os.sep)
     n = partes[-1]
     while n and not n[0].isdigit():          # «RECLAMAR_1116_…»
         n = n.split('_', 1)[1] if '_' in n else ''
-    if len(partes) < 3 or len(n) < 4 or not n[:4].isdigit():
-        sys.exit('No se puede sacar la fecha del nombre: ' + rel)
-    return f'{partes[0]}-{n[:2]}-{n[2:4]}'
+    if len(partes) >= 3 and len(n) >= 4 and n[:4].isdigit():
+        return f'{partes[0]}-{n[:2]}-{n[2:4]}'
+    if len(partes) >= 3 and partes[1][:2].isdigit():      # sin fecha en el nombre: el día 1 del mes de la carpeta
+        return f'{partes[0]}-{partes[1][:2]}-01'
+    sys.exit('No se puede sacar la fecha del nombre: ' + rel)
 
 
 def stock_estado(ids):
@@ -258,6 +262,23 @@ def stock(mes=None):
     print(json.dumps(out, ensure_ascii=False, indent=1))
 
 
+def catalogo(prov=None):
+    """Productos ya leídos (de los JSON locales), por proveedor: para escribir igual el nombre, la categoría y la unidad."""
+    cat = {}
+    for raiz, _, nombres in os.walk(LINEAS):
+        for n in sorted(nombres):
+            if not n.endswith('.json'):
+                continue
+            d = json.load(open(os.path.join(raiz, n), encoding='utf-8'))
+            if prov and prov.lower() not in d.get('proveedor', '').lower():
+                continue
+            for l in d.get('lineas', []):
+                k = l.get('codigo') or l['descripcion']
+                cat.setdefault(d['proveedor'], {})[k] = {'codigo': l.get('codigo'), 'descripcion': l['descripcion'], 'nombre': l.get('nombre'),
+                                                         'categoria': l.get('categoria'), 'unidad': l.get('unidad'), 'iva': l.get('iva')}
+    print(json.dumps({p: list(v.values()) for p, v in sorted(cat.items())}, ensure_ascii=False, indent=1))
+
+
 def pedidos():
     print(json.dumps(rpc('pedidos_pendientes', {'p_token': CFG['token'], 'p_empresa': CFG['empresa']}), ensure_ascii=False))
 
@@ -294,6 +315,8 @@ if __name__ == '__main__':
         lineas(next((a for a in args if a != 'todo'), None), 'todo' in args)
     elif len(sys.argv) == 4 and sys.argv[1] == 'sin-detalle':    # sin-detalle '<ruta>' '<motivo>'
         sin_detalle(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'catalogo':       # catalogo [proveedor]
+        catalogo(sys.argv[2] if len(sys.argv) > 2 else None)
     elif len(sys.argv) >= 2 and sys.argv[1] == 'stock':          # stock [2026-11]
         stock(sys.argv[2] if len(sys.argv) > 2 else None)
     else:

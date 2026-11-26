@@ -38,7 +38,9 @@ Un archivo JSON por documento en `facturas/lineas/AAAA-MM/<nombre del archivo>.j
 ### Cada renglón
 
 - **codigo**: el código de artículo del proveedor, si el documento lo trae (como texto, con sus ceros). Si no, `null`.
-- **descripcion**: el texto del renglón tal cual está impreso.
+- **descripcion**: el texto del renglón tal cual está impreso, sin la cantidad que algunos tickets ponen delante
+  («3 CEBA BLANCA BUTI» → `CEBA BLANCA BUTI`, con la cantidad en su campo): cuando no hay código, el producto se
+  reconoce por este texto y tiene que salir siempre igual.
 - **nombre**: nombre corto y claro del producto, con su formato (ej. «Bacon lonchas 1 kg», «Coca-Cola Zero lata 33 cl (24 u)»).
 - **categoria**, una de: Carne · Pan · Lácteos y quesos · Verduras y frutas · Salsas y condimentos · Fritos y congelados ·
   Bebidas sin alcohol · Bebidas con alcohol · Postres · Packaging · Limpieza · Otros · Cargos y envases.
@@ -61,6 +63,16 @@ Casos:
   La categoría «Cargos y envases» cuenta en el gasto pero no entra en los cambios de precio.
 - **Devoluciones / abonos**: cantidad e importe negativos.
 - **Regalos / sin cargo**: cantidad real, precio e importe 0, con nota.
+
+### Mismo producto, mismos datos
+
+Antes de leer, mirar cómo quedaron los productos de ese proveedor en lecturas anteriores:
+`/Users/juan_traverso/.claude/terrys-facturas catalogo '<proveedor>'`. Para un código (o una descripción) que ya existe se
+usan el mismo `nombre`, la misma `categoria` y sobre todo la misma `unidad`: si la unidad cambia, el precio deja de
+poder compararse.
+
+Si una factura dice a qué albarán corresponde, se anota en `"albaran_ref": ["número", …]` (sirve para no contar dos
+veces el mismo envío cuando están el albarán y la factura).
 
 ### Comprobación obligatoria
 
