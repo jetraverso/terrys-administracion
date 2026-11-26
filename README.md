@@ -69,6 +69,10 @@ De arriba abajo: **Reservas** (pendientes y confirmadas agrupadas por día, con 
 
 **Mail con cada reserva** (`schema.sql` parte 31): además del aviso al celular, cada reserva nueva se manda por mail a la dirección que se guarda en ese recuadro (`web_avisos.mail_reservas`; nunca en el repo), con todos los datos y, si el cliente dejó su email, con la respuesta dirigida a él. Usa el mismo envío que los comprobantes de pedidos (Resend, `mail_config`). «Probar mail» manda uno de prueba y avisa si el servicio lo rechazó; cada envío queda en `mails_enviados`.
 
+**Recordatorios el día de la reserva** (`schema.sql` parte 32): el mismo día llegan por ntfy un resumen 5 minutos antes de abrir (al mediodía todas las reservas de hoy, a la noche las de esa noche) y un aviso a la hora de cada reserva, solo con hora y personas. Los manda una tarea de Supabase (pg_cron, `terrys-recordar-reservas`, cada 5 minutos → `_recordar_reservas()`); lo ya avisado queda en `reservas_recordatorios`. El interruptor y las horas de apertura (`web_avisos.recordatorios`, `abre_mediodia`, `abre_noche`) se cambian en el mismo recuadro, que también muestra si la tarea está corriendo y tiene «Probar recordatorio».
+
+**Colores de las reservas** (v3.31): en la lista y en el calendario, verde = confirmada, naranja = pendiente de confirmar, rojo = ya pasó (día anterior, o de hoy con más de 2 horas desde su hora).
+
 ## Actualizar sin perder el lugar
 
 Al actualizar la página (o si el navegador la recarga solo) se vuelve a donde se estaba: solapa, subvista de Pedidos y Reservas, mes o año y altura de la pantalla. Se guarda al salir en `sessionStorage` (`terrys_admin_lugar`), así que vale para esa pestaña: abrir la página en otra pestaña, o salir con «Salir», arranca en Compras.

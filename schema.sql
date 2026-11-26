@@ -4131,3 +4131,203 @@ end;
 $$;
 revoke all on function public.web_mail_ultimo() from public, anon;
 grant execute on function public.web_mail_ultimo() to authenticated;
+
+-- =====================================================================
+-- PARTE 32 · Recordatorios de las reservas del día (ntfy)
+-- Además del aviso cuando entra la reserva (parte 10), el mismo día llegan al celular:
+--   · 5 minutos antes de abrir al mediodía: todas las reservas de hoy (mediodía y noche);
+--   · 5 minutos antes de abrir a la noche: las reservas de esa noche;
+--   · a la hora de cada reserva: «Reserva ahora».
+-- Como los demás avisos, no llevan nombre ni teléfono: solo hora y personas.
+-- Lo dispara una tarea de Supabase (pg_cron) cada 5 minutos. Las horas de apertura y el
+-- interruptor se cambian en Reservas → Avisos (web_avisos). Cuentan las reservas
+-- pendientes y confirmadas; las canceladas y rechazadas no.
+-- =====================================================================
+
+create extension if not exists pg_cron with schema pg_catalog;
+
+alter table public.web_avisos add column if not exists recordatorios boolean not null default true;
+alter table public.web_avisos add column if not exists abre_mediodia time not null default '13:00';
+alter table public.web_avisos add column if not exists abre_noche    time not null default '20:00';
+
+-- Qué recordatorios ya salieron (para no repetirlos) y cuándo corrió la tarea por última vez.
+--   'latido'                    última pasada de la tarea
+--   'apertura:AAAA-MM-DD:m|n'   resumen de antes de abrir (mediodía / noche)
+--   'reserva:<id>'              aviso a la hora de esa reserva
+create table if not exists public.reservas_recordatorios (
+  clave   text primary key,
+  creado  timestamptz not null default now(),
+  detalle text
+);
+alter table public.reservas_recordatorios enable row level security;
+revoke all on public.reservas_recordatorios from public, anon, authenticated;
+
+-- Las reservas de un día en texto: cuántas, cuántas personas y la lista por turno
+-- (noche = desde las 17:00, igual que en el admin).
+create or replace function public._reservas_resumen(p_fecha date, p_solo_noche boolean default false)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with r as (
+    select hora, personas, estado, (hora >= time '17:00') as noche
+      from public.reservas
+     where fecha = p_fecha and estado in ('pendiente', 'confirmada')
+       and (not p_solo_noche or hora >= time '17:00')),
+  t as (
+    select noche, count(*) as n, sum(personas) as pers,
+           string_agg(to_char(hora, 'HH24:MI') || ' · ' || personas || ' p.'
+                      || case when estado = 'pendiente' then ' (sin confirmar)' else '' end, E'\n' order by hora) as lista
+      from r group by noche)
+  select jsonb_build_object(
+    'n',        coalesce((select sum(n) from t), 0),
+    'personas', coalesce((select sum(pers) from t), 0),
+    'texto',    (select string_agg(case when noche then '🌙 Noche' else '☀️ Mediodía' end || ' · ' || pers
+                                   || case when pers = 1 then ' persona' else ' personas' end || E'\n' || lista,
+                                   E'\n' order by noche) from t));
+$$;
+revoke all on function public._reservas_resumen(date, boolean) from public, anon, authenticated;
+
+-- La tarea: se llama cada 5 minutos. p_ahora existe para poder probarla con otra hora.
+create or replace function public._recordar_reservas(p_ahora timestamptz default now())
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a        public.web_avisos;
+  v_local  timestamp := p_ahora at time zone 'Europe/Madrid';
+  v_hoy    date := (p_ahora at time zone 'Europe/Madrid')::date;
+  t        record;
+  g        record;
+  v        jsonb;
+  v_abre   timestamp;
+  v_hecho  text := '';
+begin
+  insert into public.reservas_recordatorios (clave, creado) values ('latido', now())
+    on conflict (clave) do update set creado = excluded.creado;
+  select * into a from public.web_avisos where id = 1;
+  if a.ntfy_tema is null then return 'sin avisos al celular'; end if;
+  if not coalesce(a.recordatorios, true) then return 'recordatorios apagados'; end if;
+
+  -- 1) Antes de abrir: una sola vez por turno, entre 5 min antes y 10 min después de la apertura.
+  for t in select * from (values ('m', a.abre_mediodia), ('n', a.abre_noche)) as x(turno, abre) loop
+    v_abre := v_hoy + t.abre;
+    if v_local >= v_abre - interval '5 minutes' and v_local < v_abre + interval '10 minutes' then
+      insert into public.reservas_recordatorios (clave) values ('apertura:' || v_hoy || ':' || t.turno)
+        on conflict (clave) do nothing;
+      if found then
+        v := public._reservas_resumen(v_hoy, t.turno = 'n');
+        if (v ->> 'n')::int > 0 then
+          perform public._aviso_ntfy(a.ntfy_tema,
+            case when t.turno = 'n' then 'Reservas de esta noche' else 'Reservas de hoy' end
+              || ' · ' || (v ->> 'n') || case when (v ->> 'n')::int = 1 then ' reserva' else ' reservas' end
+              || ' · ' || (v ->> 'personas') || case when (v ->> 'personas')::int = 1 then ' persona' else ' personas' end,
+            v ->> 'texto', 'bell', 4);
+          v_hecho := v_hecho || 'apertura ' || t.turno || ': ' || (v ->> 'n') || ' · ';
+        end if;
+        update public.reservas_recordatorios set detalle = (v ->> 'n') || ' reservas'
+         where clave = 'apertura:' || v_hoy || ':' || t.turno;
+        delete from public.reservas_recordatorios where creado < now() - interval '40 days' and clave <> 'latido';
+      end if;
+    end if;
+  end loop;
+
+  -- 2) A la hora de la reserva (hasta 10 min después, por si la tarea se atrasó). Un aviso por horario.
+  for g in
+    select r.hora, count(*) as n, sum(r.personas) as pers, array_agg(r.id) as ids,
+           string_agg(r.personas || ' p.', ' + ' order by r.id) as lista,
+           bool_or(r.estado = 'pendiente') as pend
+      from public.reservas r
+     where r.fecha = v_hoy and r.estado in ('pendiente', 'confirmada')
+       and (v_hoy + r.hora) <= v_local and (v_hoy + r.hora) > v_local - interval '10 minutes'
+       and not exists (select 1 from public.reservas_recordatorios k where k.clave = 'reserva:' || r.id)
+     group by r.hora order by r.hora
+  loop
+    insert into public.reservas_recordatorios (clave, detalle)
+      select 'reserva:' || i, to_char(g.hora, 'HH24:MI') from unnest(g.ids) i
+      on conflict (clave) do nothing;
+    perform public._aviso_ntfy(a.ntfy_tema,
+      'Reserva ahora · ' || to_char(g.hora, 'HH24:MI'),
+      case when g.n = 1 then g.pers || case when g.pers = 1 then ' persona' else ' personas' end
+           else g.n || ' reservas · ' || g.pers || ' personas (' || g.lista || ')' end
+        || case when g.pend then ' · sin confirmar' else '' end,
+      'alarm_clock', 4);
+    v_hecho := v_hecho || 'hora ' || to_char(g.hora, 'HH24:MI') || ': ' || g.n || ' · ';
+  end loop;
+
+  return case when v_hecho = '' then 'nada para avisar' else rtrim(v_hecho, ' ·') end;
+exception when others then
+  raise warning 'recordatorios de reservas: %', sqlerrm;
+  return 'error: ' || sqlerrm;
+end;
+$$;
+revoke all on function public._recordar_reservas(timestamptz) from public, anon, authenticated;
+
+-- Botón «Probar recordatorio» del admin: manda ahora el resumen de las reservas de hoy.
+create or replace function public.web_probar_recordatorio()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_tema text; v jsonb;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  select ntfy_tema into v_tema from public.web_avisos where id = 1;
+  if v_tema is null then raise exception 'falta activar los avisos al celular' using errcode = '22023'; end if;
+  v := public._reservas_resumen((now() at time zone 'Europe/Madrid')::date, false);
+  if (v ->> 'n')::int > 0 then
+    perform public._aviso_ntfy(v_tema,
+      'Prueba · Reservas de hoy · ' || (v ->> 'n') || case when (v ->> 'n')::int = 1 then ' reserva' else ' reservas' end
+        || ' · ' || (v ->> 'personas') || case when (v ->> 'personas')::int = 1 then ' persona' else ' personas' end,
+      v ->> 'texto', 'bell', 3);
+  else
+    perform public._aviso_ntfy(v_tema, 'Prueba · Reservas de hoy',
+      'Hoy no hay reservas. Cuando haya, acá llega la lista: hora y personas de cada una.', 'bell', 3);
+  end if;
+  return jsonb_build_object('ok', true, 'reservas', (v ->> 'n')::int);
+end;
+$$;
+revoke all on function public.web_probar_recordatorio() from public, anon;
+grant execute on function public.web_probar_recordatorio() to authenticated;
+
+-- Para el admin: si la tarea está programada y cuándo corrió por última vez.
+create or replace function public.web_recordatorios_estado()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_latido timestamptz; v_prog boolean;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  select creado into v_latido from public.reservas_recordatorios where clave = 'latido';
+  begin
+    select exists (select 1 from cron.job where jobname = 'terrys-recordar-reservas' and active) into v_prog;
+  exception when others then v_prog := null; end;
+  return jsonb_build_object('latido', v_latido, 'programada', v_prog, 'ahora', now(),
+    'ultimos', coalesce((select jsonb_agg(jsonb_build_object('clave', clave, 'creado', creado, 'detalle', detalle) order by creado desc)
+                           from (select * from public.reservas_recordatorios where clave <> 'latido' order by creado desc limit 6) u), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.web_recordatorios_estado() from public, anon;
+grant execute on function public.web_recordatorios_estado() to authenticated;
+
+-- La tarea programada: cada 5 minutos (la hora de Madrid la calcula la función, así que
+-- el cambio de hora de verano/invierno no la afecta). Y una limpieza diaria del historial
+-- de pg_cron, para que no crezca sin fin.
+do $$
+begin
+  perform cron.unschedule(jobid) from cron.job where jobname in ('terrys-recordar-reservas', 'terrys-limpiar-cron');
+  perform cron.schedule('terrys-recordar-reservas', '*/5 * * * *', 'select public._recordar_reservas()');
+  perform cron.schedule('terrys-limpiar-cron', '17 4 * * *',
+    'delete from cron.job_run_details where end_time < now() - interval ''7 days''');
+end;
+$$;
+
+-- Comprobación: tiene que devolver una fila con la tarea «terrys-recordar-reservas».
+select jobname, schedule, active from cron.job where jobname like 'terrys-%' order by jobname;
