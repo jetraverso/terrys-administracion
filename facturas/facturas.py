@@ -162,16 +162,20 @@ LINEAS = os.path.join(AQUI, 'lineas')
 
 def fecha_de_ruta(rel):
     """«2026/11_Noviembre/1103_Proveedor_Detalle.pdf» → 2026-11-03 (la fecha es la del nombre del archivo, como en Compras).
-    Si el nombre no trae fecha, el día 1 del mes de la carpeta."""
+    Vale con prefijos («X0104_…», «ALBARAN 0114_…»). Un archivo de diciembre guardado en la carpeta de enero es del año
+    anterior. Si el nombre no trae fecha, el día 1 del mes de la carpeta."""
+    import re
     partes = rel.split(os.sep)
-    n = partes[-1]
-    while n and not n[0].isdigit():          # «RECLAMAR_1116_…»
-        n = n.split('_', 1)[1] if '_' in n else ''
-    if len(partes) >= 3 and len(n) >= 4 and n[:4].isdigit():
-        return f'{partes[0]}-{n[:2]}-{n[2:4]}'
-    if len(partes) >= 3 and partes[1][:2].isdigit():      # sin fecha en el nombre: el día 1 del mes de la carpeta
-        return f'{partes[0]}-{partes[1][:2]}-01'
-    sys.exit('No se puede sacar la fecha del nombre: ' + rel)
+    if len(partes) < 3 or not partes[1][:2].isdigit():
+        sys.exit('No se puede sacar la fecha del nombre: ' + rel)
+    anio, mes_carpeta = int(partes[0]), int(partes[1][:2])
+    m = re.search(r'(?<!\d)(\d{2})(\d{2})_', partes[-1])
+    if m and 1 <= int(m.group(1)) <= 12 and 1 <= int(m.group(2)) <= 31:
+        mes = int(m.group(1))
+        if mes - mes_carpeta >= 6:
+            anio -= 1
+        return f'{anio}-{mes:02d}-{m.group(2)}'
+    return f'{anio}-{mes_carpeta:02d}-01'
 
 
 def stock_estado(ids):
