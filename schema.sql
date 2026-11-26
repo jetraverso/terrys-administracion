@@ -4331,3 +4331,301 @@ $$;
 
 -- Comprobación: tiene que devolver una fila con la tarea «terrys-recordar-reservas».
 select jobname, schedule, active from cron.job where jobname like 'terrys-%' order by jobname;
+
+-- =====================================================================
+-- PARTE 33 · Stock: productos, cantidades y precios de las facturas
+-- De cada factura / albarán / ticket de mercadería se guarda el detalle renglón por renglón
+-- (lo lee Claude de los mismos archivos de Drive que alimentan Compras y lo sube con
+-- facturas/facturas.py lineas). Con eso la solapa Stock del admin muestra qué se compra,
+-- cuánto y a qué precio, y cuándo cambia un precio.
+--   stock_facturas   un documento leído (o marcado «sin detalle»: luz, agua, comisiones…)
+--   stock_lineas     sus renglones: producto, cantidad, unidad, precio e importe SIN IVA
+--   stock_productos  el producto (nombre propio, categoría y unidad, editables en el admin)
+--   stock_claves     cómo aparece cada producto en las facturas (proveedor + código, o
+--                    proveedor + descripción si no trae código) → producto
+-- La relación con la fila de Compras se saca al consultar (mismo archivo de Drive, o mismo
+-- importe con fecha a ±5 días), así no importa qué se cargó primero.
+-- =====================================================================
+
+create table if not exists public.stock_productos (
+  id          bigint generated always as identity primary key,
+  empresa     text not null default 'terrys-burgers-sl',
+  nombre      text not null check (char_length(nombre) between 1 and 160),
+  proveedor   text not null default '',
+  categoria   text not null default '',
+  unidad      text not null default '',
+  nota        text not null default '',
+  editado     boolean not null default false,   -- lo cambiaron a mano en el admin: la carga no lo toca
+  creado      timestamptz not null default now(),
+  actualizado timestamptz not null default now()
+);
+
+create table if not exists public.stock_claves (
+  clave       text primary key,
+  producto_id bigint not null references public.stock_productos(id) on delete cascade
+);
+create index if not exists stock_claves_producto on public.stock_claves (producto_id);
+
+create table if not exists public.stock_facturas (
+  archivo     text primary key,                 -- id del archivo en Drive
+  empresa     text not null default 'terrys-burgers-sl',
+  ruta        text not null default '',
+  link        text not null default '',
+  fecha       date not null,
+  proveedor   text not null default '',
+  numero      text not null default '',
+  documento   text not null default '',         -- factura | albaran | ticket
+  base        numeric(12,2),                    -- base imponible del documento
+  total       numeric(12,2),                    -- total con IVA
+  sin_detalle boolean not null default false,   -- no es mercadería: no lleva renglones
+  nota        text not null default '',
+  creado      timestamptz not null default now(),
+  actualizado timestamptz not null default now()
+);
+create index if not exists stock_facturas_fecha on public.stock_facturas (empresa, fecha);
+
+create table if not exists public.stock_lineas (
+  id          bigint generated always as identity primary key,
+  archivo     text not null references public.stock_facturas(archivo) on delete cascade on update cascade,
+  n           int not null,
+  producto_id bigint not null references public.stock_productos(id),
+  codigo      text,
+  descripcion text not null,
+  cantidad    numeric(12,3) not null,
+  unidad      text not null default '',
+  precio      numeric(14,4) not null,           -- por unidad, sin IVA, con el descuento aplicado
+  importe     numeric(12,2) not null,           -- sin IVA
+  iva         numeric(5,2),
+  nota        text not null default ''
+);
+create index if not exists stock_lineas_archivo on public.stock_lineas (archivo);
+create index if not exists stock_lineas_producto on public.stock_lineas (producto_id);
+
+alter table public.stock_productos enable row level security;
+alter table public.stock_claves    enable row level security;
+alter table public.stock_facturas  enable row level security;
+alter table public.stock_lineas    enable row level security;
+revoke all on public.stock_productos, public.stock_claves, public.stock_facturas, public.stock_lineas from public, anon, authenticated;
+grant select on public.stock_productos, public.stock_claves, public.stock_facturas, public.stock_lineas to authenticated;
+grant update (nombre, categoria, unidad, nota, editado, actualizado) on public.stock_productos to authenticated;
+grant delete on public.stock_facturas to authenticated;      -- «Quitar detalle» en el admin (se lleva sus renglones)
+
+drop policy if exists stock_productos_admin on public.stock_productos;
+create policy stock_productos_admin on public.stock_productos for all to authenticated using (public.es_admin()) with check (public.es_admin());
+drop policy if exists stock_claves_admin on public.stock_claves;
+create policy stock_claves_admin on public.stock_claves for all to authenticated using (public.es_admin()) with check (public.es_admin());
+drop policy if exists stock_facturas_admin on public.stock_facturas;
+create policy stock_facturas_admin on public.stock_facturas for all to authenticated using (public.es_admin()) with check (public.es_admin());
+drop policy if exists stock_lineas_admin on public.stock_lineas;
+create policy stock_lineas_admin on public.stock_lineas for all to authenticated using (public.es_admin()) with check (public.es_admin());
+
+-- Cómo se reconoce un producto en las facturas: proveedor + código; sin código, proveedor + descripción.
+create or replace function public._stock_clave(p_proveedor text, p_codigo text, p_descripcion text)
+returns text language sql immutable as $$
+  select public._sin_acentos(btrim(coalesce(p_proveedor, ''))) || '|' ||
+         case when nullif(btrim(coalesce(p_codigo, '')), '') is not null then 'c:' || upper(btrim(p_codigo))
+              else 'd:' || regexp_replace(public._sin_acentos(btrim(coalesce(p_descripcion, ''))), '\s+', ' ', 'g') end;
+$$;
+
+-- Sube (o vuelve a subir, reemplazando) el detalle de un documento.
+-- p_datos: {archivo, link, ruta, fecha, proveedor, numero, documento, base, total, nota,
+--           sin_detalle: true  (sin renglones)   o
+--           lineas: [{codigo, descripcion, nombre, categoria, cantidad, unidad, precio, importe, iva, nota}]}
+create or replace function public.subir_lineas(p_token text, p_datos jsonb, p_empresa text default 'terrys-burgers-sl')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_archivo text := nullif(btrim(p_datos ->> 'archivo'), '');
+  v_prov    text := btrim(coalesce(p_datos ->> 'proveedor', ''));
+  v_sin     boolean := coalesce((p_datos ->> 'sin_detalle')::boolean, false);
+  v_fecha   date;
+  v_base    numeric(12,2);
+  v_total   numeric(12,2);
+  l         record;
+  v_clave   text;
+  v_pid     bigint;
+  v_desc    text;
+  v_cant    numeric;
+  v_imp     numeric;
+  v_precio  numeric;
+  v_n       int := 0;
+  v_nuevos  int := 0;
+  v_suma    numeric := 0;
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  begin
+    v_fecha := (p_datos ->> 'fecha')::date;
+    v_base  := nullif(p_datos ->> 'base', '')::numeric;
+    v_total := nullif(p_datos ->> 'total', '')::numeric;
+  exception when others then
+    raise exception 'datos inválidos: fecha, base o total' using errcode = '22023';
+  end;
+  if v_archivo is null or v_fecha is null then
+    raise exception 'datos inválidos: hacen falta archivo y fecha' using errcode = '22023';
+  end if;
+  if not v_sin and (v_prov = '' or jsonb_typeof(p_datos -> 'lineas') <> 'array' or jsonb_array_length(p_datos -> 'lineas') = 0) then
+    raise exception 'datos inválidos: hacen falta proveedor y lineas (o sin_detalle)' using errcode = '22023';
+  end if;
+
+  insert into public.stock_facturas (archivo, empresa, ruta, link, fecha, proveedor, numero, documento, base, total, sin_detalle, nota)
+  values (v_archivo, p_empresa, coalesce(p_datos ->> 'ruta', ''), coalesce(p_datos ->> 'link', ''), v_fecha, v_prov,
+          coalesce(p_datos ->> 'numero', ''), coalesce(p_datos ->> 'documento', ''), v_base, v_total, v_sin, coalesce(p_datos ->> 'nota', ''))
+  on conflict (archivo) do update
+    set ruta = excluded.ruta, link = excluded.link, fecha = excluded.fecha, proveedor = excluded.proveedor, numero = excluded.numero,
+        documento = excluded.documento, base = excluded.base, total = excluded.total, sin_detalle = excluded.sin_detalle,
+        nota = excluded.nota, actualizado = now();
+
+  delete from public.stock_lineas where archivo = v_archivo;
+
+  if not v_sin then
+    for l in select x, n from jsonb_array_elements(p_datos -> 'lineas') with ordinality as t(x, n) loop
+      v_desc := btrim(coalesce(l.x ->> 'descripcion', ''));
+      begin
+        v_cant   := (l.x ->> 'cantidad')::numeric;
+        v_imp    := (l.x ->> 'importe')::numeric;
+        v_precio := nullif(l.x ->> 'precio', '')::numeric;
+      exception when others then
+        raise exception 'renglón %: cantidad, precio o importe no son números', l.n using errcode = '22023';
+      end;
+      if v_desc = '' or v_cant is null or v_imp is null then
+        raise exception 'renglón %: faltan descripción, cantidad o importe', l.n using errcode = '22023';
+      end if;
+      if v_precio is null then v_precio := case when v_cant <> 0 then round(v_imp / v_cant, 4) else 0 end; end if;
+
+      v_clave := public._stock_clave(v_prov, l.x ->> 'codigo', v_desc);
+      select producto_id into v_pid from public.stock_claves where clave = v_clave;
+      if v_pid is null then
+        insert into public.stock_productos (empresa, nombre, proveedor, categoria, unidad)
+        values (p_empresa, left(coalesce(nullif(btrim(l.x ->> 'nombre'), ''), v_desc), 160), v_prov,
+                btrim(coalesce(l.x ->> 'categoria', '')), btrim(coalesce(l.x ->> 'unidad', '')))
+        returning id into v_pid;
+        insert into public.stock_claves (clave, producto_id) values (v_clave, v_pid);
+        v_nuevos := v_nuevos + 1;
+      else
+        -- completa lo que esté vacío; lo que se editó a mano no se toca
+        update public.stock_productos
+           set categoria = case when categoria = '' then btrim(coalesce(l.x ->> 'categoria', '')) else categoria end,
+               unidad    = case when unidad = '' then btrim(coalesce(l.x ->> 'unidad', '')) else unidad end
+         where id = v_pid and not editado and (categoria = '' or unidad = '');
+      end if;
+
+      insert into public.stock_lineas (archivo, n, producto_id, codigo, descripcion, cantidad, unidad, precio, importe, iva, nota)
+      values (v_archivo, l.n, v_pid, nullif(btrim(coalesce(l.x ->> 'codigo', '')), ''), v_desc, v_cant,
+              btrim(coalesce(l.x ->> 'unidad', '')), v_precio, v_imp, nullif(l.x ->> 'iva', '')::numeric, coalesce(l.x ->> 'nota', ''));
+      v_n := v_n + 1; v_suma := v_suma + v_imp;
+    end loop;
+  end if;
+
+  -- productos que quedaron sin ningún renglón (por una lectura corregida) y que nadie tocó
+  delete from public.stock_productos p
+   where p.empresa = p_empresa and not p.editado
+     and not exists (select 1 from public.stock_lineas s where s.producto_id = p.id);
+
+  return jsonb_build_object('estado', case when v_sin then 'sin_detalle' else 'ok' end, 'lineas', v_n, 'productos_nuevos', v_nuevos,
+                            'suma', round(v_suma, 2), 'base', v_base,
+                            'diferencia', case when v_base is null or v_sin then null else round(v_suma - v_base, 2) end);
+end;
+$$;
+revoke all on function public.subir_lineas(text, jsonb, text) from public;
+grant execute on function public.subir_lineas(text, jsonb, text) to anon, authenticated;
+
+-- Para la herramienta de carga: qué archivos ya tienen detalle y qué proveedores existen.
+create or replace function public.stock_estado(p_token text, p_archivos text[])
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+begin
+  if not public._token_valido('facturas', p_token) then
+    raise exception 'token inválido' using errcode = '28000';
+  end if;
+  return jsonb_build_object(
+    'archivos', coalesce((
+      select jsonb_object_agg(f.archivo, jsonb_build_object('sin_detalle', f.sin_detalle,
+               'lineas', (select count(*) from public.stock_lineas s where s.archivo = f.archivo)))
+        from public.stock_facturas f where f.archivo = any(p_archivos)), '{}'::jsonb),
+    'proveedores', coalesce((select jsonb_agg(distinct proveedor) from public.stock_productos where proveedor <> ''), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.stock_estado(text, text[]) from public;
+grant execute on function public.stock_estado(text, text[]) to anon, authenticated;
+
+-- Todo lo que necesita la solapa Stock, en una sola llamada (sin el tope de 1000 filas).
+-- p_desde: desde qué fecha (por defecto, los últimos 24 meses).
+create or replace function public.stock_datos(p_desde date default null, p_empresa text default 'terrys-burgers-sl')
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare v_desde date := coalesce(p_desde, (now() - interval '24 months')::date);
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  return jsonb_build_object(
+    'desde', v_desde,
+    'productos', coalesce((
+      select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', p.nombre, 'proveedor', p.proveedor, 'categoria', p.categoria,
+                                          'unidad', p.unidad, 'nota', p.nota) order by p.id)
+        from public.stock_productos p where p.empresa = p_empresa), '[]'::jsonb),
+    'facturas', coalesce((
+      select jsonb_agg(jsonb_build_object('archivo', f.archivo, 'fecha', f.fecha, 'proveedor', f.proveedor, 'numero', f.numero,
+               'documento', f.documento, 'base', f.base, 'total', f.total, 'link', f.link, 'ruta', f.ruta,
+               'sin_detalle', f.sin_detalle, 'nota', f.nota,
+               'mov', (select m.id from public.movimientos m
+                        where m.empresa = p_empresa
+                          and (m.archivo = f.archivo
+                               or (f.total is not null and m.egreso = f.total and m.fecha between f.fecha - 5 and f.fecha + 5))
+                        order by (m.archivo = f.archivo) desc nulls last, abs(m.fecha - f.fecha), m.id limit 1))
+             order by f.fecha, f.archivo)
+        from public.stock_facturas f where f.empresa = p_empresa and f.fecha >= v_desde), '[]'::jsonb),
+    'lineas', coalesce((
+      select jsonb_agg(jsonb_build_object('id', s.id, 'a', s.archivo, 'p', s.producto_id, 'f', f.fecha, 'cod', s.codigo, 'd', s.descripcion,
+               'c', s.cantidad, 'u', s.unidad, 'pr', s.precio, 'i', s.importe, 'iva', s.iva, 'nota', s.nota) order by f.fecha, s.archivo, s.n)
+        from public.stock_lineas s join public.stock_facturas f on f.archivo = s.archivo
+       where f.empresa = p_empresa and f.fecha >= v_desde), '[]'::jsonb),
+    -- filas de Compras con factura adjunta que todavía no tienen detalle ni están marcadas «sin detalle»
+    'sin_leer', coalesce((
+      select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'hacia', m.hacia, 'detalle', m.detalle, 'egreso', m.egreso) order by m.fecha, m.id)
+        from public.movimientos m
+       where m.empresa = p_empresa and m.archivo is not null and coalesce(m.egreso, 0) > 0 and m.fecha >= v_desde
+         and not exists (select 1 from public.stock_facturas f
+                          where f.archivo = m.archivo
+                             or (f.empresa = p_empresa and f.total is not null and f.total = m.egreso and f.fecha between m.fecha - 5 and m.fecha + 5))), '[]'::jsonb));
+end;
+$$;
+revoke all on function public.stock_datos(date, text) from public, anon;
+grant execute on function public.stock_datos(date, text) to authenticated;
+
+-- Une dos productos que son el mismo (p_de desaparece; sus compras y sus claves pasan a p_a).
+create or replace function public.stock_unir(p_de bigint, p_a bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare v_n int;
+begin
+  if not public.es_admin() then raise exception 'sin permiso' using errcode = '42501'; end if;
+  if p_de is null or p_a is null or p_de = p_a
+     or not exists (select 1 from public.stock_productos where id = p_de)
+     or not exists (select 1 from public.stock_productos where id = p_a) then
+    raise exception 'productos no válidos' using errcode = '22023';
+  end if;
+  update public.stock_lineas set producto_id = p_a where producto_id = p_de;
+  get diagnostics v_n = row_count;
+  update public.stock_claves set producto_id = p_a where producto_id = p_de;
+  delete from public.stock_productos where id = p_de;
+  update public.stock_productos set editado = true, actualizado = now() where id = p_a;
+  return jsonb_build_object('ok', true, 'renglones', v_n);
+end;
+$$;
+revoke all on function public.stock_unir(bigint, bigint) from public, anon;
+grant execute on function public.stock_unir(bigint, bigint) to authenticated;

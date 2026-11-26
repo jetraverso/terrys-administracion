@@ -39,6 +39,19 @@ Queda en `facturas/omitidos.json` (local) y en el listado aparece con `"omitida"
 
 - **Abonos / devoluciones a favor** (ej. Discer devolución de envase, importe negativo): ingreso por el valor absoluto.
 
+## Detalle para la solapa Stock
+
+Después de cargar cada documento en Compras (o de ver que ya estaba cargado):
+
+- Si es **mercadería** (comida, bebida, packaging, limpieza…): leer también el detalle renglón por renglón y guardarlo con
+  `/Users/juan_traverso/.claude/terrys-facturas detalle '<json>'`. Formato y reglas en `facturas/LINEAS.md` (leerlo antes).
+  Usar los nombres de proveedor que ya existen (`… stock AAAA-MM` los lista). Si la respuesta trae `aviso` o
+  `diferencia` distinta de 0, revisar la lectura; si no se resuelve, contarlo en el resumen.
+- Si **no es mercadería** (luz, agua, gas, seguros, comisiones, software, imprenta, arreglos):
+  `/Users/juan_traverso/.claude/terrys-facturas sin-detalle '<ruta>' '<motivo corto>'`.
+- Los archivos omitidos por duplicados no llevan ninguna de las dos cosas. Los omitidos porque Juan ya los había cargado
+  a mano sí llevan detalle (es una compra real).
+
 ## Después de subir
 
-Resumen para la persona: cuántas vinculadas, cuántas nuevas por revisar (con la lista y los importes), cuáles no se subieron y por qué, y cualquier duda (fotos borrosas, posibles duplicados, importes raros).
+Resumen para la persona: cuántas vinculadas, cuántas nuevas por revisar (con la lista y los importes), cuáles no se subieron y por qué, de cuántas se cargó el detalle para Stock, y cualquier duda (fotos borrosas, posibles duplicados, importes raros, precios que no cierran).

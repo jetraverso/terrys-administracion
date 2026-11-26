@@ -16,6 +16,13 @@ Lo usa Claude (no hace falta correrlo a mano):
         opcionales: "ingreso": true (abonos, liquidaciones: va a Ingresos; Tipo "Ingreso", Desde proveedor, Hacia "CAIXA"),
         "tipo"/"desde"/"hacia" para fijarlos, "reemplazar": true para corregir una fila propia todavía sin aprobar.
 
+Detalle para la solapa Stock (ver facturas/LINEAS.md):
+  python3 facturas/facturas.py detalle '<json>'             guarda el detalle de un documento (facturas/lineas/AAAA-MM/) y lo sube
+  python3 facturas/facturas.py lineas [2026-11] [todo]      sube los JSON de facturas/lineas/ que todavía no están en la base
+                                                            ("todo": vuelve a subir también los que ya estaban)
+  python3 facturas/facturas.py sin-detalle '<ruta>' '<motivo>'   marca un documento que no lleva renglones (luz, agua, comisiones…)
+  python3 facturas/facturas.py stock [2026-11]              qué archivos del mes tienen detalle, cuáles no y los proveedores que ya existen
+
 La carpeta de Drive tiene que estar sincronizada en esta Mac (Google Drive para escritorio):
 el id de cada archivo se lee del atributo que le pone Drive, y con ese id se arma el link
 y se evita cargar dos veces la misma factura aunque se renombre o se mueva.
@@ -54,7 +61,7 @@ def drive_id(ruta):
         return None
 
 
-def rpc(nombre, cuerpo):
+def rpc(nombre, cuerpo, fatal=True):
     req = urllib.request.Request(
         CFG['supabaseUrl'].rstrip('/') + '/rest/v1/rpc/' + nombre,
         data=json.dumps(cuerpo).encode('utf-8'),
@@ -63,7 +70,10 @@ def rpc(nombre, cuerpo):
         with urllib.request.urlopen(req, timeout=30) as r:
             return json.loads(r.read().decode('utf-8'))
     except urllib.error.HTTPError as e:
-        sys.exit(f"ERROR {e.code}: {e.read().decode('utf-8', 'replace')}")
+        msg = f"ERROR {e.code}: {e.read().decode('utf-8', 'replace')}"
+        if fatal:
+            sys.exit(msg)
+        return {'estado': 'error', 'error': msg}
 
 
 def archivos(mes=None):
@@ -145,6 +155,109 @@ def subir(datos):
     print(json.dumps({'ruta': datos['ruta'], **r}, ensure_ascii=False))
 
 
+# ---------- detalle de las facturas para la solapa Stock ----------
+LINEAS = os.path.join(AQUI, 'lineas')
+
+
+def fecha_de_ruta(rel):
+    """«2026/11_Noviembre/1103_Proveedor_Detalle.pdf» → 2026-11-03 (la fecha es la del nombre del archivo, como en Compras)."""
+    partes = rel.split(os.sep)
+    n = partes[-1]
+    while n and not n[0].isdigit():          # «RECLAMAR_1116_…»
+        n = n.split('_', 1)[1] if '_' in n else ''
+    if len(partes) < 3 or len(n) < 4 or not n[:4].isdigit():
+        sys.exit('No se puede sacar la fecha del nombre: ' + rel)
+    return f'{partes[0]}-{n[:2]}-{n[2:4]}'
+
+
+def stock_estado(ids):
+    return rpc('stock_estado', {'p_token': CFG['token'], 'p_archivos': ids}, fatal=False)
+
+
+def subir_lineas_de(datos):
+    ruta = os.path.join(CARPETA, datos['ruta'])
+    if not os.path.isfile(ruta):
+        return {'ruta': datos['ruta'], 'estado': 'error', 'error': 'no existe el archivo en Drive'}
+    fid = drive_id(ruta)
+    if not fid:
+        return {'ruta': datos['ruta'], 'estado': 'error', 'error': 'sin id de Drive (¿está sincronizado?)'}
+    cuerpo = {'archivo': fid, 'link': f'https://drive.google.com/file/d/{fid}/view', 'ruta': datos['ruta'],
+              'fecha': datos.get('fecha') or fecha_de_ruta(datos['ruta'])}
+    for k in ('proveedor', 'numero', 'documento', 'base', 'total', 'nota', 'sin_detalle', 'lineas'):
+        if datos.get(k) is not None:
+            cuerpo[k] = datos[k]
+    r = rpc('subir_lineas', {'p_token': CFG['token'], 'p_datos': cuerpo, 'p_empresa': CFG['empresa']}, fatal=False)
+    return {'ruta': datos['ruta'], **r}
+
+
+def detalle(datos):
+    """Guarda el detalle de un documento en facturas/lineas/AAAA-MM/ y lo sube. Si la subida falla queda guardado:
+    lo sube después `lineas`."""
+    if not datos.get('ruta') or not datos.get('proveedor') or not datos.get('lineas'):
+        sys.exit('Hacen falta ruta, proveedor y lineas (ver facturas/LINEAS.md)')
+    suma = round(sum(float(l['importe']) for l in datos['lineas']), 2)
+    f = fecha_de_ruta(datos['ruta'])
+    carpeta = os.path.join(LINEAS, f[:7])
+    os.makedirs(carpeta, exist_ok=True)
+    with open(os.path.join(carpeta, os.path.basename(datos['ruta']) + '.json'), 'w', encoding='utf-8') as fh:
+        json.dump(datos, fh, ensure_ascii=False, indent=1)
+    r = subir_lineas_de(datos)
+    if datos.get('base') is not None and abs(suma - float(datos['base'])) > 0.05:
+        r['aviso'] = f"la suma de los renglones ({suma}) no da la base ({datos['base']}): revisar la lectura"
+    print(json.dumps(r, ensure_ascii=False))
+
+
+def lineas(mes=None, todo=False):
+    """Sube los JSON de facturas/lineas/AAAA-MM/ que todavía no están en la base."""
+    js = []
+    for raiz, _, nombres in os.walk(LINEAS):
+        if mes and os.path.basename(raiz) != mes:
+            continue
+        for n in sorted(nombres):
+            if n.endswith('.json'):
+                js.append(json.load(open(os.path.join(raiz, n), encoding='utf-8')))
+    ids = {}
+    for d in js:
+        ruta = os.path.join(CARPETA, d['ruta'])
+        ids[d['ruta']] = drive_id(ruta) if os.path.isfile(ruta) else None
+    ya = stock_estado([i for i in ids.values() if i]).get('archivos', {}) if js else {}
+    out = []
+    for d in js:
+        if not todo and ids[d['ruta']] in ya:
+            continue
+        out.append(subir_lineas_de(d))
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+    mal = [o for o in out if o.get('estado') == 'error' or abs(o.get('diferencia') or 0) > 0.05]
+    print(f"\n{len(js)} documentos con detalle · {len(out)} subidos ahora · {len(mal)} para revisar", file=sys.stderr)
+
+
+def sin_detalle(rel, motivo):
+    print(json.dumps(subir_lineas_de({'ruta': rel, 'sin_detalle': True, 'nota': motivo,
+                                      'proveedor': (os.path.basename(rel).split('_') + ['', ''])[1]}), ensure_ascii=False))
+
+
+def stock(mes=None):
+    """Qué archivos tienen detalle en Stock, cuáles no, y los proveedores que ya existen (para escribirlos igual)."""
+    l = con_estado(mes)
+    e = stock_estado([a['id'] for a in l if a['id']])
+    arch = e.get('archivos', {})
+    locales = set()
+    for raiz, _, nombres in os.walk(LINEAS):
+        for n in nombres:
+            if n.endswith('.json'):
+                locales.add(n[:-5])
+    out = {'proveedores': e.get('proveedores', []), 'con_detalle': [], 'sin_detalle': [], 'falta': [], 'leido_sin_subir': []}
+    for a in l:
+        s = arch.get(a['id']) if a['id'] else None
+        if s:
+            out['sin_detalle' if s['sin_detalle'] else 'con_detalle'].append(a['ruta'])
+        elif os.path.basename(a['ruta']) in locales:
+            out['leido_sin_subir'].append(a['ruta'])
+        elif not a.get('omitida'):
+            out['falta'].append(a['ruta'])
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+
+
 def pedidos():
     print(json.dumps(rpc('pedidos_pendientes', {'p_token': CFG['token'], 'p_empresa': CFG['empresa']}), ensure_ascii=False))
 
@@ -174,5 +287,14 @@ if __name__ == '__main__':
         listar(sys.argv[2] if len(sys.argv) > 2 else None)
     elif len(sys.argv) == 3 and sys.argv[1] == 'subir':
         subir(json.loads(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'detalle':        # detalle '<json>'  (formato en LINEAS.md)
+        detalle(json.loads(sys.argv[2]))
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'lineas':         # lineas [2026-11] [todo]
+        args = sys.argv[2:]
+        lineas(next((a for a in args if a != 'todo'), None), 'todo' in args)
+    elif len(sys.argv) == 4 and sys.argv[1] == 'sin-detalle':    # sin-detalle '<ruta>' '<motivo>'
+        sin_detalle(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) >= 2 and sys.argv[1] == 'stock':          # stock [2026-11]
+        stock(sys.argv[2] if len(sys.argv) > 2 else None)
     else:
         sys.exit(__doc__)

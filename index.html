@@ -405,6 +405,41 @@ button.wcal-d{cursor:pointer} button.wcal-d:hover{filter:brightness(1.18)}
 @media (max-width:820px){ .wcal,.wag2{grid-template-columns:minmax(0,1fr)} }
 @media (max-width:520px){ .wcal-cu{padding:8px 6px 10px} .wcal-sem,.wcal-g{gap:3px} .wcal-d{padding:3px 2px 4px;min-height:56px} .wcal-d.hoy{padding:2px 1px 3px} .wcal-d b{font-size:12.5px} .wcal-d b em{display:none} .wcal-d span{font-size:10.5px;padding:1px 2px;letter-spacing:-.03em} .wtabla tr.wres .wh{width:auto} }
 
+/* ---------- stock (v3.32) ---------- */
+.st-cab{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.st-m{color:var(--muted);font-size:12.5px;font-weight:400}
+.st-up{color:var(--danger)}.st-dn{color:var(--ok)} em.st-up,em.st-dn{font-style:normal;font-size:12px;font-weight:700}
+.st-tools{display:flex;gap:6px;flex-wrap:wrap}
+.st-tools input,.st-tools select,.st-form input,.st-unir select{padding:6px 9px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;font:inherit;font-size:13.5px;min-width:0}
+.st-tools input{width:190px}
+.st-tabla td small{display:block;color:var(--muted);font-size:12px;font-weight:400;margin-top:1px}
+.st-tabla tr.st-fila{cursor:pointer}
+.st-tabla tr.st-fila:hover td,.st-tabla tr.st-fila:focus-visible td{background:rgba(255,255,255,.035)}
+.st-tabla tr.st-fila:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.st-tabla tr.st-fila.ab td{background:var(--surface-2);border-bottom-color:transparent}
+.st-tabla tr.st-grupo td{background:color-mix(in srgb,var(--ink) 9%,var(--surface));font-weight:700;font-size:12.5px;letter-spacing:.04em;text-transform:uppercase}
+.st-tabla tr.st-det>td{background:var(--surface-2);padding:6px 12px 16px;border-bottom:2px solid var(--line-2)}
+.st-det2{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(240px,1fr);gap:22px;align-items:start}
+.st-det .tablita tr.fuera td{color:var(--muted)}
+.st-t{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700;margin:8px 0 6px}
+.st-nota{color:var(--muted);font-size:12px;max-width:220px}
+.st-formas{display:flex;gap:6px;flex-wrap:wrap}.st-formas span{font-size:12px;padding:2px 8px;border:1px solid var(--line-2);border-radius:999px;color:var(--ink-2)}
+.st-spark{display:block;width:100%;max-width:260px;height:auto;color:var(--accent)}
+.st-spark-l{display:flex;justify-content:space-between;max-width:260px;font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.st-form{display:grid;gap:8px;margin-top:6px}
+.st-form label{display:grid;gap:3px;font-size:12px;color:var(--muted)}
+.st-form .st-f2{display:grid;grid-template-columns:1.6fr 1fr;gap:8px}
+.st-form button{justify-self:start}
+.st-unir{margin-top:14px;padding-top:6px;border-top:1px solid var(--line-2)}
+.st-unir select{max-width:100%;width:100%;margin-bottom:6px}
+.st-bar{display:grid;grid-template-columns:minmax(90px,150px) minmax(0,1fr) auto 38px;gap:8px;align-items:center;font-size:13px;padding:4px 0}
+.st-bar span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.st-bar i{display:block;height:9px;border-radius:5px;background:var(--surface-2);overflow:hidden}
+.st-bar i b{display:block;height:100%;border-radius:5px;background:var(--s-out)}
+.st-bar em{font-style:normal;font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.st-bar small{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+@media (max-width:820px){ .st-det2{grid-template-columns:minmax(0,1fr)} .stk .rep-grid{grid-template-columns:minmax(0,1fr)} .st-tools input{width:100%} }
+
 /* ---------- reportes ---------- */
 .tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px}
 .tools input[type=number]{padding:6px 8px;border:1px solid var(--line-2);border-radius:8px;background:var(--surface);color:inherit;text-align:right}
@@ -734,7 +769,7 @@ button.wcal-d{cursor:pointer} button.wcal-d:hover{filter:brightness(1.18)}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.31';
+const VERSION='3.32';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -988,13 +1023,14 @@ async function abrirApp(u){
 const LUGAR='terrys_admin_lugar';
 function guardarLugar(){
   if(!user||$('app').hidden) return;
-  try{ sessionStorage.setItem(LUGAR,JSON.stringify({vista,tab:tab.id,year,month,pedVer,pedRango,webVer,ordCentro,ordCat,y:Math.round(window.scrollY)})); }catch(_){}
+  try{ sessionStorage.setItem(LUGAR,JSON.stringify({vista,tab:tab.id,year,month,stkVer,pedVer,pedRango,webVer,ordCentro,ordCat,y:Math.round(window.scrollY)})); }catch(_){}
 }
 function leerLugar(){ try{ const l=JSON.parse(sessionStorage.getItem(LUGAR)||'null'); return l&&typeof l==='object'?l:null; }catch(_){ return null; } }
 function volverAlLugar(l){
   const uno=(v,lista)=>lista.includes(v);
   const t=TABS.find(x=>x.id===l.tab); if(t) tab=t;
-  if(uno(l.vista,['planilla','ventas','reportes','proyeccion','web','pedidos'])) vista=l.vista;
+  if(uno(l.vista,['planilla','stock','ventas','reportes','proyeccion','web','pedidos'])) vista=l.vista;
+  if(uno(l.stkVer,['productos','cambios','facturas'])) stkVer=l.stkVer;
   if(Number.isInteger(l.year)&&l.year>=2000&&l.year<=2100&&Number.isInteger(l.month)&&l.month>=-1&&l.month<=11){ year=l.year; month=l.month; }
   if(uno(l.pedVer,['pedidos','productos','mesas','camareros'])) pedVer=l.pedVer;
   if(uno(l.pedRango,['proximos','anteriores'])) pedRango=l.pedRango;
@@ -1083,7 +1119,7 @@ $('btnSalir').onclick=async()=>{
 let vista='planilla';   // 'planilla' | 'reportes'
 function renderTabs(){
   $('tabs').innerHTML=TABS.map(t=>`<button class="tab ${vista==='planilla'&&t.id===tab.id?'on':''}" data-tab="${esc(t.id)}">${esc(t.titulo)}</button>`).join('')
-    +`<button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button><button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button><button class="tab ${vista==='proyeccion'?'on':''}" data-vista="proyeccion">Proyección</button><button class="tab ${vista==='web'?'on':''}" data-vista="web">Reservas${webPend?` <span class="tab-n">${webPend}</span>`:''}</button><button class="tab ${vista==='pedidos'?'on':''}" data-vista="pedidos">Pedidos${pedPend?` <span class="tab-n">${pedPend}</span>`:''}</button>`;
+    +`<button class="tab ${vista==='stock'?'on':''}" data-vista="stock">Stock</button><button class="tab ${vista==='ventas'?'on':''}" data-vista="ventas">Ventas</button><button class="tab ${vista==='reportes'?'on':''}" data-vista="reportes">Reportes</button><button class="tab ${vista==='proyeccion'?'on':''}" data-vista="proyeccion">Proyección</button><button class="tab ${vista==='web'?'on':''}" data-vista="web">Reservas${webPend?` <span class="tab-n">${webPend}</span>`:''}</button><button class="tab ${vista==='pedidos'?'on':''}" data-vista="pedidos">Pedidos${pedPend?` <span class="tab-n">${pedPend}</span>`:''}</button>`;
 }
 function aplicarVista(){
   const rep=vista!=='planilla';
@@ -1127,7 +1163,7 @@ async function cargarMemoria(){
     if(tab.empresa===e&&user) recalc();
   }catch(_){ delete memoria[e]; }
 }
-function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); renderReportes(); } else if(vista==='ventas'){ recalc(); renderVentas(); } else if(vista==='proyeccion'){ recalc(); renderProyeccion(); } else if(vista==='web'){ renderWeb(); } else if(vista==='pedidos'){ renderPedidosVista(); } else { renderTabla(); recalc(); } }
+function renderTodo(){ renderPeriodo(); if(vista==='reportes'){ recalc(); renderReportes(); } else if(vista==='ventas'){ recalc(); renderVentas(); } else if(vista==='proyeccion'){ recalc(); renderProyeccion(); } else if(vista==='web'){ renderWeb(); } else if(vista==='pedidos'){ renderPedidosVista(); } else if(vista==='stock'){ recalc(); renderStock(); } else { renderTabla(); recalc(); } }
 
 /* ---------- web pública (terrysburgers.com): reservas, consultas de eventos, agenda ---------- */
 let webVer='proximas', webPend=0, pedPend=0;
@@ -2251,6 +2287,203 @@ $('reportes').addEventListener('submit',async e=>{
   toast('Fecha agregada a la agenda'); renderWeb();
 });
 
+/* ---------- stock: productos, cantidades y precios de las facturas (parte 33) ---------- */
+// De cada factura de mercadería se guarda el detalle (lo sube facturas/facturas.py lineas). Acá se mira por
+// período (el mes o el año de la tira de arriba): qué se compró, cuánto, a qué precio y qué precios cambiaron.
+// Todos los importes son SIN IVA. Un cambio de precio compara cada compra con la compra anterior del mismo
+// producto (otra fecha, misma unidad) y cuenta desde 0,5 %.
+let stkD=null, stkVer='productos', stkQ='', stkProv='', stkCat='', stkOrden='gasto', stkAb=null, stkFacAb=null;
+const STK_CATS=['Carne','Pan','Lácteos y quesos','Verduras y frutas','Salsas y condimentos','Fritos y congelados','Bebidas sin alcohol','Bebidas con alcohol','Postres','Packaging','Limpieza','Otros','Cargos y envases'];
+const nfCant=new Intl.NumberFormat('es-ES',{maximumFractionDigits:3}), nfPre=new Intl.NumberFormat('es-ES',{minimumFractionDigits:2,maximumFractionDigits:3});
+const stkPre=n=>nfPre.format(n)+' €', stkPct=p=>(p>0?'+':'−')+nf.format(Math.abs(p*100)).replace(/,00$/,'')+' %';
+const stkU=(c,u)=>nfCant.format(c)+(u?' '+esc(u):'');
+async function stkCargar(force){
+  if(stkD&&!force) return stkD;
+  const {data,error}=await sbc.rpc('stock_datos');
+  if(error) throw error;
+  const d=data||{productos:[],facturas:[],lineas:[],sin_leer:[]};
+  d.prod=new Map(d.productos.map(p=>[p.id,p])); d.fac=new Map(d.facturas.map(f=>[f.archivo,f]));
+  for(const l of d.lineas){ l.c=+l.c; l.pr=+l.pr; l.i=+l.i; }
+  // historial por producto, en orden, y los cambios de precio
+  d.hist=new Map(); for(const l of d.lineas){ if(!d.hist.has(l.p)) d.hist.set(l.p,[]); d.hist.get(l.p).push(l); }
+  d.cambios=[];
+  for(const [pid,h] of d.hist){
+    let ant=null;
+    const cargo=(d.prod.get(pid)||{}).categoria==='Cargos y envases';   // portes, punto verde…: cuentan en el gasto, no tienen «precio»
+    for(const l of h){
+      l.vale=l.c>0&&l.pr>0&&!cargo&&l.u!=='compra';        // «compra» = al peso sin kilos en el ticket: no se compara
+      if(!l.vale) continue;                                // devoluciones y regalos tampoco marcan precio
+      const base=ant&&ant.f===l.f?ant.ant:ant;             // dos compras el mismo día se comparan con la de antes de ese día
+      if(base&&base.u===l.u){
+        l.ant=base;
+        const pct=(l.pr-base.pr)/base.pr;
+        if(Math.abs(pct)>=0.005) d.cambios.push({p:pid,l,de:base.pr,a:l.pr,pct,impacto:(l.pr-base.pr)*l.c});
+      }
+      ant=l;
+    }
+  }
+  return stkD=d;
+}
+const stkEnPer=f=>String(f).startsWith(month<0?year+'-':`${year}-${pad(month+1)}-`);
+function stkSpark(h){
+  const v=h.filter(l=>l.vale); if(v.length<2) return '';
+  const mn=Math.min(...v.map(l=>l.pr)), mx=Math.max(...v.map(l=>l.pr)), W=220, H=44, r=mx-mn||1;
+  const pts=v.map((l,i)=>[6+i*(W-12)/(v.length-1), H-7-(l.pr-mn)/r*(H-14)]);
+  return `<svg class="st-spark" viewBox="0 0 ${W} ${H}" role="img" aria-label="Evolución del precio: de ${nfPre.format(v[0].pr)} a ${nfPre.format(v[v.length-1].pr)} euros"><polyline points="${pts.map(p=>p.map(n=>n.toFixed(1)).join(',')).join(' ')}" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>`<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="3" fill="currentColor"/>`).join('')}</svg><div class="st-spark-l"><span>mín. ${stkPre(mn)}</span><span>máx. ${stkPre(mx)}</span></div>`;
+}
+function stkDetalle(p,h){
+  const D=stkD, otros=D.productos.filter(x=>x.id!==p.id&&D.hist.has(x.id)).sort((a,b)=>(a.proveedor===p.proveedor?0:1)-(b.proveedor===p.proveedor?0:1)||a.nombre.localeCompare(b.nombre,'es'));
+  const formas=[...new Set(h.map(l=>(l.cod?l.cod+' · ':'')+l.d))];
+  const filas=[...h].reverse().map(l=>{ const f=D.fac.get(l.a)||{}, pct=l.ant?(l.pr-l.ant.pr)/l.ant.pr:0;
+    return `<tr class="${stkEnPer(l.f)?'':'fuera'}"><td>${fmtFecha(l.f)}</td><td>${f.link?`<a href="${esc(f.link)}" target="_blank" rel="noopener">${esc(f.numero||f.documento||'ver')}</a>`:esc(f.numero||'')}</td>
+      <td class="r">${stkU(l.c,l.u)}</td><td class="r">${stkPre(l.pr)}${l.ant&&Math.abs(pct)>=0.005?` <em class="${pct>0?'st-up':'st-dn'}">${stkPct(pct)}</em>`:''}</td><td class="r">${eur(l.i)}</td><td class="st-nota">${esc(l.nota||'')}</td></tr>`; }).join('');
+  return `<tr class="st-det"><td colspan="7"><div class="st-det2">
+    <div><div class="st-t">Todas las compras</div><div class="wscroll"><table class="tablita"><thead><tr><th>Fecha</th><th>Documento</th><th class="r">Cantidad</th><th class="r">Precio</th><th class="r">Importe</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>
+      <div class="st-t" style="margin-top:12px">Así figura en las facturas</div><div class="st-formas">${formas.map(f=>`<span>${esc(f)}</span>`).join('')}</div></div>
+    <div>${stkSpark(h)?`<div class="st-t">Precio por ${esc(h[h.length-1].u||'unidad')}</div>${stkSpark(h)}`:''}
+      <form class="st-form" data-st-form="${p.id}"><div class="st-t">Editar el producto</div>
+        <label>Nombre<input name="nombre" maxlength="160" required value="${esc(p.nombre)}"></label>
+        <div class="st-f2"><label>Categoría<input name="categoria" list="stCats" maxlength="60" value="${esc(p.categoria)}"></label><label>Unidad<input name="unidad" maxlength="20" value="${esc(p.unidad)}"></label></div>
+        <label>Nota<input name="nota" maxlength="300" value="${esc(p.nota||'')}" placeholder="Opcional"></label>
+        <button class="btn primary" type="submit">Guardar</button></form>
+      ${otros.length?`<div class="st-unir"><div class="st-t">¿Es el mismo que otro producto?</div><select id="stUnir" aria-label="Producto con el que se une"><option value="">Elegí el producto…</option>${otros.map(x=>`<option value="${x.id}">${esc(x.nombre)} · ${esc(x.proveedor)}</option>`).join('')}</select>
+        <button class="btn" type="button" data-st-unir="${p.id}">Unir</button><div class="sub" style="margin:6px 0 0">Las compras de «${esc(p.nombre)}» pasan al producto elegido y este desaparece. Las próximas facturas ya entran unidas.</div></div>`:''}</div>
+  </div></td></tr>`;
+}
+async function renderStock(force){
+  const tk=++repTk, cont=$('reportes');
+  if(!SB){ cont.innerHTML='<div class="aviso">La solapa Stock necesita Supabase: en modo demo no hay facturas leídas.</div>'; return; }
+  if(!stkD) cont.innerHTML='<div class="panel"><div class="vacio">Cargando…</div></div>';
+  let D;
+  try{ D=await stkCargar(force); }
+  catch(e){ if(tk!==repTk) return; const m=errMsg(e);
+    cont.innerHTML=`<div class="aviso">No se pudo cargar el stock: ${esc(m)}${/stock_datos|does not exist|schema cache|PGRST202/i.test(m)?' (falta correr la parte 33 del schema.sql en Supabase)':''}</div>`; return; }
+  if(tk!==repTk||vista!=='stock') return;
+  renderMeses();
+  const nomPer=month<0?`${year}`:`${MESES[month].toLowerCase()} de ${year}`;
+  const lin=D.lineas.filter(l=>stkEnPer(l.f)), facs=D.facturas.filter(f=>stkEnPer(f.fecha)), conDet=facs.filter(f=>!f.sin_detalle), sinLeer=D.sin_leer.filter(m=>stkEnPer(m.fecha));
+  const camb=D.cambios.filter(c=>stkEnPer(c.l.f)), sub=camb.filter(c=>c.pct>0), baj=camb.filter(c=>c.pct<0);
+  const gasto=lin.reduce((s,l)=>s+l.i,0);
+  // por producto
+  const por=new Map();
+  for(const l of lin){ let x=por.get(l.p); if(!x){ x={p:D.prod.get(l.p)||{id:l.p,nombre:l.d,proveedor:'',categoria:'',unidad:l.u},cant:0,gasto:0,facs:new Set(),ult:null,us:new Set()}; por.set(l.p,x); }
+    x.cant+=l.c; x.gasto+=l.i; x.facs.add(l.a); x.us.add(l.u); if(l.vale){ x.ult=l; if(!x.prim) x.prim=l; } }
+  const lista=[...por.values()];
+  // «Antes»: el precio con el que se llegó al período (la última compra previa) o, si no hay, el de la primera compra del período
+  const ini=month<0?`${year}-01-01`:`${year}-${pad(month+1)}-01`;
+  for(const x of lista){
+    if(!x.ult) continue;
+    const prev=(D.hist.get(x.p.id)||[]).filter(l=>l.f<ini&&l.vale&&l.u===x.ult.u).pop();
+    x.ant=prev||(x.prim&&x.prim.f<x.ult.f&&x.prim.u===x.ult.u?x.prim:null);
+    x.pct=x.ant?(x.ult.pr-x.ant.pr)/x.ant.pr:null; if(x.pct!=null&&Math.abs(x.pct)<0.005) x.pct=0;
+  }
+  const provs=[...new Set(lista.map(x=>x.p.proveedor).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es')), cats=[...new Set(lista.map(x=>x.p.categoria).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'es'));
+  if(stkProv&&!provs.includes(stkProv)) stkProv=''; if(stkCat&&!cats.includes(stkCat)) stkCat='';
+  const tarjetas=`<div class="cards">
+    <div class="card out"><div class="k">Compras de mercadería</div><div class="v num">${eur(gasto)}</div><div class="s">sin IVA · ${pl(conDet.length,'factura leída','facturas leídas')}</div></div>
+    <div class="card"><div class="k">Productos</div><div class="v num">${lista.length}</div><div class="s">de ${pl(provs.length,'proveedor','proveedores')}</div></div>
+    <div class="card ${sub.length?'alert':''}"><div class="k">Subieron de precio</div><div class="v num">${new Set(sub.map(c=>c.p)).size}</div><div class="s">${sub.length?`+${eur(sub.reduce((s,c)=>s+c.impacto,0))} en estas compras`:'ninguno en el período'}</div></div>
+    <div class="card"><div class="k">Bajaron de precio</div><div class="v num">${new Set(baj.map(c=>c.p)).size}</div><div class="s">${baj.length?`−${eur(Math.abs(baj.reduce((s,c)=>s+c.impacto,0)))} en estas compras`:'ninguno en el período'}</div></div>
+    <div class="card ${sinLeer.length?'alert':''}"><div class="k">Sin leer</div><div class="v num">${sinLeer.length}</div><div class="s">facturas de Compras sin detalle</div></div></div>`;
+  const seg=`<div class="wseg">${[['productos','Productos'],['cambios',`Cambios de precio${camb.length?` (${camb.length})`:''}`],['facturas',`Facturas (${conDet.length})`]].map(([k,t])=>`<button class="btn${stkVer===k?' primary':''}" data-st-ver="${k}">${t}</button>`).join('')}<button class="btn" data-st-recargar>Actualizar</button></div>`;
+  let cuerpo='';
+  if(!D.lineas.length){
+    cuerpo=`<div class="panel"><div class="vacio">Todavía no hay ninguna factura con el detalle cargado. Se cargan junto con las facturas de Drive (Claude lee cada renglón: producto, cantidad y precio).</div></div>`;
+  }else if(stkVer==='productos'){
+    const q=norm(stkQ);
+    let ver=lista.filter(x=>(!stkProv||x.p.proveedor===stkProv)&&(!stkCat||x.p.categoria===stkCat)&&(!q||norm(x.p.nombre+' '+x.p.proveedor+' '+x.p.categoria).includes(q)));
+    const ord={gasto:(a,b)=>b.gasto-a.gasto, nombre:(a,b)=>a.p.nombre.localeCompare(b.p.nombre,'es'), var:(a,b)=>(b.pct??-9)-(a.pct??-9),
+               cat:(a,b)=>(a.p.categoria||'~').localeCompare(b.p.categoria||'~','es')||b.gasto-a.gasto, prov:(a,b)=>a.p.proveedor.localeCompare(b.p.proveedor,'es')||b.gasto-a.gasto}[stkOrden];
+    ver.sort(ord);
+    const grupo=stkOrden==='cat'?x=>x.p.categoria||'Sin categoría':stkOrden==='prov'?x=>x.p.proveedor||'Sin proveedor':null;
+    let ultG=null;
+    const filas=ver.map(x=>{ const ab=stkAb===x.p.id, u=x.us.size===1?[...x.us][0]:'';
+      let h='';
+      if(grupo&&grupo(x)!==ultG){ ultG=grupo(x); const g=ver.filter(y=>grupo(y)===ultG); h+=`<tr class="st-grupo"><td colspan="3">${esc(ultG)}</td><td class="r">${eur(g.reduce((s,y)=>s+y.gasto,0))}</td><td colspan="3"></td></tr>`; }
+      h+=`<tr class="st-fila${ab?' ab':''}" data-st-prod="${x.p.id}" tabindex="0" aria-expanded="${ab}"><td><b>${esc(x.p.nombre)}</b><small>${esc([x.p.proveedor,x.p.categoria].filter(Boolean).join(' · '))}</small></td>
+        <td class="r">${x.facs.size}</td><td class="r">${x.us.size===1?stkU(x.cant,u):'<span title="Se compró en unidades distintas">varias</span>'}</td><td class="r"><b>${eur(x.gasto)}</b></td>
+        <td class="r">${x.ult?stkPre(x.ult.pr)+`<small>${fmtFecha(x.ult.f).slice(0,5)}${x.ult.u?' · por '+esc(x.ult.u):''}</small>`:'<span class="st-m">no se compara</span>'}</td>
+        <td class="r">${!x.ult?'':x.ant?stkPre(x.ant.pr)+`<small>${fmtFecha(x.ant.f).slice(0,5)}</small>`:`<span class="st-m">${x.facs.size>1?'mismo día':'única compra'}</span>`}</td>
+        <td class="r">${x.pct==null?'':x.pct===0?'<span class="st-m">igual</span>':`<b class="${x.pct>0?'st-up':'st-dn'}">${x.pct>0?'▲':'▼'} ${stkPct(x.pct)}</b>`}</td></tr>`;
+      if(ab) h+=stkDetalle(x.p,D.hist.get(x.p.id)||[]);
+      return h; }).join('');
+    const barras=(tit,clave)=>{ const m=new Map(); for(const x of lista){ const k=x.p[clave]||'Sin dato'; m.set(k,(m.get(k)||0)+x.gasto); }
+      const l=[...m].sort((a,b)=>b[1]-a[1]), mx=Math.max(...l.map(x=>x[1]),1);
+      return `<div class="panel"><h2>${tit}</h2><div class="sub">Compras de ${nomPer}, sin IVA.</div>${l.map(([k,v])=>`<div class="st-bar"><span>${esc(k)}</span><i><b style="width:${Math.max(1,v/mx*100).toFixed(1)}%"></b></i><em>${eur(v)}</em><small>${gasto?Math.round(v/gasto*100):0} %</small></div>`).join('')}</div>`; };
+    cuerpo=`<div class="rep-grid">${barras('Por categoría','categoria')}${barras('Por proveedor','proveedor')}</div>
+      <div class="panel"><div class="wcab"><h2>Productos comprados</h2>
+        <div class="st-tools"><input type="search" id="stQ" placeholder="Buscar producto…" value="${esc(stkQ)}" aria-label="Buscar producto">
+          <select data-st-sel="prov" aria-label="Proveedor"><option value="">Todos los proveedores</option>${provs.map(p=>`<option${p===stkProv?' selected':''}>${esc(p)}</option>`).join('')}</select>
+          <select data-st-sel="cat" aria-label="Categoría"><option value="">Todas las categorías</option>${cats.map(c=>`<option${c===stkCat?' selected':''}>${esc(c)}</option>`).join('')}</select>
+          <select data-st-sel="orden" aria-label="Orden">${[['gasto','Más gasto primero'],['var','Más aumento primero'],['cat','Por categoría'],['prov','Por proveedor'],['nombre','Por nombre']].map(([k,t])=>`<option value="${k}"${k===stkOrden?' selected':''}>${t}</option>`).join('')}</select></div></div>
+        <div class="sub">${pl(ver.length,'producto','productos')} en ${nomPer}. «Antes» es el precio con el que se llegó al período (la última compra anterior) o, si no hay, el de la primera compra del período. Tocá un producto para ver todas sus compras, corregir el nombre o unirlo con otro.</div>
+        ${ver.length?`<div class="wscroll"><table class="tablita st-tabla"><thead><tr><th>Producto</th><th class="r">Compras</th><th class="r">Cantidad</th><th class="r">Gasto</th><th class="r">Último precio</th><th class="r">Antes</th><th class="r">Cambio</th></tr></thead><tbody>${filas}</tbody></table></div>`:'<div class="vacio">Ningún producto con ese filtro.</div>'}
+        <datalist id="stCats">${STK_CATS.map(c=>`<option value="${esc(c)}">`).join('')}</datalist></div>`;
+  }else if(stkVer==='cambios'){
+    const filas=[...camb].sort((a,b)=>Math.abs(b.impacto)-Math.abs(a.impacto)).map(c=>{ const p=D.prod.get(c.p)||{nombre:c.l.d,proveedor:''};
+      return `<tr><td><b>${esc(p.nombre)}</b><small>${esc(p.proveedor)}</small></td><td>${fmtFecha(c.l.f)}</td><td class="r">${stkPre(c.de)}<small>${fmtFecha(c.l.ant.f).slice(0,5)}</small></td><td class="r"><b>${stkPre(c.a)}</b><small>por ${esc(c.l.u||'unidad')}</small></td>
+        <td class="r"><b class="${c.pct>0?'st-up':'st-dn'}">${c.pct>0?'▲':'▼'} ${stkPct(c.pct)}</b></td><td class="r">${stkU(c.l.c,c.l.u)}</td><td class="r ${c.impacto>0?'st-up':'st-dn'}">${c.impacto>0?'+':'−'}${eur(Math.abs(c.impacto))}</td><td class="st-nota">${esc(c.l.nota||'')}</td></tr>`; }).join('');
+    cuerpo=`<div class="panel"><h2>Cambios de precio</h2><div class="sub">Compras de ${nomPer} que salieron a otro precio que la compra anterior del mismo producto (desde 0,5 %). «Diferencia» es lo que esa compra costó de más o de menos por el cambio.</div>
+      ${camb.length?`<div class="wscroll"><table class="tablita st-tabla"><thead><tr><th>Producto</th><th>Fecha</th><th class="r">Antes</th><th class="r">Ahora</th><th class="r">Cambio</th><th class="r">Cantidad</th><th class="r">Diferencia</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`:'<div class="vacio">Ningún precio cambió en el período (o todavía no hay una compra anterior para comparar).</div>'}</div>`;
+  }else{
+    const filas=conDet.map(f=>{ const ls=D.lineas.filter(l=>l.a===f.archivo), suma=ls.reduce((s,l)=>s+l.i,0), dif=f.base==null?null:suma-(+f.base), ab=stkFacAb===f.archivo;
+      let h=`<tr class="st-fila${ab?' ab':''}" data-st-fac="${esc(f.archivo)}" tabindex="0" aria-expanded="${ab}"><td>${fmtFecha(f.fecha)}</td><td><b>${esc(f.proveedor)}</b><small>${esc([f.documento,f.numero].filter(Boolean).join(' '))}</small></td><td class="r">${ls.length}</td><td class="r">${eur(suma)}</td><td class="r">${f.total!=null?eur(+f.total):''}</td>
+        <td>${dif==null?'':Math.abs(dif)<=0.05?'<span class="st-dn">✓ cierra</span>':`<span class="st-up">⚠ ${dif>0?'+':'−'}${eur(Math.abs(dif))} contra la base</span>`}</td><td>${f.mov?'<span class="st-m">en Compras</span>':'<span class="st-up">sin fila en Compras</span>'}</td>
+        <td class="r">${f.link?`<a href="${esc(f.link)}" target="_blank" rel="noopener" data-st-link>Ver</a>`:''}</td></tr>`;
+      if(ab) h+=`<tr class="st-det"><td colspan="8"><div class="wscroll"><table class="tablita"><thead><tr><th>Producto</th><th>Como figura</th><th class="r">Cantidad</th><th class="r">Precio</th><th class="r">Importe</th><th class="r">IVA</th><th></th></tr></thead><tbody>${ls.map(l=>`<tr><td><b>${esc((D.prod.get(l.p)||{}).nombre||'')}</b></td><td>${esc((l.cod?l.cod+' · ':'')+l.d)}</td><td class="r">${stkU(l.c,l.u)}</td><td class="r">${stkPre(l.pr)}</td><td class="r">${eur(l.i)}</td><td class="r">${l.iva!=null?nfCant.format(l.iva)+' %':''}</td><td class="st-nota">${esc(l.nota||'')}</td></tr>`).join('')}</tbody></table></div>
+        ${f.nota?`<div class="sub" style="margin:8px 0 0">Nota de la lectura: ${esc(f.nota)}</div>`:''}<div style="margin-top:10px"><button class="btn" data-st-quitar="${esc(f.archivo)}" title="Borra el detalle de este documento; la fila de Compras no se toca">Quitar el detalle de este documento</button></div></td></tr>`;
+      return h; }).join('');
+    const sinDet=facs.filter(f=>f.sin_detalle);
+    cuerpo=`<div class="panel"><h2>Facturas con el detalle cargado</h2><div class="sub">Documentos de ${nomPer} leídos renglón por renglón. «Cierra» = la suma de los renglones da la base imponible del documento. Tocá uno para ver sus renglones.</div>
+      ${conDet.length?`<div class="wscroll"><table class="tablita st-tabla"><thead><tr><th>Fecha</th><th>Proveedor</th><th class="r">Renglones</th><th class="r">Suma sin IVA</th><th class="r">Total con IVA</th><th>Control</th><th>Compras</th><th></th></tr></thead><tbody>${filas}</tbody></table></div>`:'<div class="vacio">Ninguna en el período.</div>'}</div>
+      <div class="panel"><h2>Sin leer todavía</h2><div class="sub">Filas de Compras de ${nomPer} con factura adjunta que todavía no tienen detalle${sinDet.length?` (aparte hay ${pl(sinDet.length,'documento que no lleva','documentos que no llevan')} detalle: servicios y gastos)`:''}.</div>
+      ${sinLeer.length?`<div class="wscroll"><table class="tablita"><thead><tr><th>Fecha</th><th>Proveedor</th><th>Detalle</th><th class="r">Egreso</th></tr></thead><tbody>${sinLeer.map(m=>`<tr><td>${fmtFecha(m.fecha)}</td><td><b>${esc(m.hacia)}</b></td><td>${esc(m.detalle)}</td><td class="r">${eur(+m.egreso)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="vacio">Nada pendiente: todas las facturas del período están leídas o marcadas sin detalle.</div>'}</div>`;
+  }
+  const y=window.scrollY, foco=document.activeElement&&document.activeElement.id==='stQ'?document.activeElement.selectionStart:null;
+  cont.innerHTML=`<div class="stk">${tarjetas}<div class="st-cab">${seg}<span class="st-m">Importes sin IVA</span></div>${cuerpo}</div>`;
+  if(foco!=null){ const q=$('stQ'); if(q){ q.focus(); q.setSelectionRange(foco,foco); } }
+  window.scrollTo(0,y);
+}
+$('reportes').addEventListener('click',async e=>{
+  if(vista!=='stock') return;
+  const v=e.target.closest('[data-st-ver]'); if(v){ stkVer=v.dataset.stVer; stkAb=null; stkFacAb=null; renderStock(); return; }
+  if(e.target.closest('[data-st-recargar]')){ await renderStock(true); toast('Stock actualizado'); return; }
+  const u=e.target.closest('[data-st-unir]');
+  if(u){ const a=+($('stUnir').value||0), de=+u.dataset.stUnir; if(!a){ toast('Elegí con qué producto se une'); return; }
+    const pa=stkD.prod.get(a), pd=stkD.prod.get(de);
+    if(!confirm(`¿Unir «${pd.nombre}» con «${pa.nombre}»? Todas las compras quedan en «${pa.nombre}» y no se puede deshacer.`)) return;
+    const {error}=await sbc.rpc('stock_unir',{p_de:de,p_a:a});
+    if(error){ toast('No se pudo unir: '+errMsg(error)); return; }
+    stkAb=a; await renderStock(true); toast('Productos unidos'); return; }
+  const qd=e.target.closest('[data-st-quitar]');
+  if(qd){ if(!confirm('¿Quitar el detalle de este documento? Sus renglones dejan de contar en Stock. La fila de Compras no se toca.')) return;
+    const {error}=await sbc.from('stock_facturas').delete().eq('archivo',qd.dataset.stQuitar);
+    if(error){ toast('No se pudo quitar: '+errMsg(error)); return; }
+    stkFacAb=null; await renderStock(true); toast('Detalle quitado'); return; }
+  if(e.target.closest('.st-det,a,[data-st-link]')) return;
+  const p=e.target.closest('[data-st-prod]'); if(p){ const id=+p.dataset.stProd; stkAb=stkAb===id?null:id; renderStock(); return; }
+  const f=e.target.closest('[data-st-fac]'); if(f){ stkFacAb=stkFacAb===f.dataset.stFac?null:f.dataset.stFac; renderStock(); }
+});
+$('reportes').addEventListener('keydown',e=>{
+  if(vista!=='stock'||(e.key!=='Enter'&&e.key!==' ')) return;
+  const f=e.target.matches&&e.target.matches('tr.st-fila')?e.target:null; if(f){ e.preventDefault(); f.click(); }
+});
+$('reportes').addEventListener('input',e=>{ if(vista==='stock'&&e.target.id==='stQ'){ stkQ=e.target.value; renderStock(); } });
+$('reportes').addEventListener('change',e=>{
+  if(vista!=='stock'||!e.target.dataset.stSel) return;
+  const k=e.target.dataset.stSel; if(k==='prov') stkProv=e.target.value; else if(k==='cat') stkCat=e.target.value; else stkOrden=e.target.value;
+  renderStock();
+});
+$('reportes').addEventListener('submit',async e=>{
+  if(vista!=='stock'||!e.target.dataset.stForm) return;
+  e.preventDefault();
+  const id=+e.target.dataset.stForm, f=new FormData(e.target), o={nombre:String(f.get('nombre')||'').trim(),categoria:String(f.get('categoria')||'').trim(),unidad:String(f.get('unidad')||'').trim(),nota:String(f.get('nota')||'').trim()};
+  if(!o.nombre){ toast('El producto necesita un nombre'); return; }
+  const {error}=await sbc.from('stock_productos').update({...o,editado:true,actualizado:new Date().toISOString()}).eq('id',id);
+  if(error){ toast('No se pudo guardar: '+errMsg(error)); return; }
+  toast('Producto guardado'); renderStock(true);
+});
+
 /* ---------- período ---------- */
 function renderPeriodo(){
   const sub=tab.sociedad||tab.titulo;
@@ -2262,6 +2495,7 @@ function renderMeses(){
   const esHoy=m=>year===hoyD.getFullYear()&&m===hoyD.getMonth();
   const ven=vista==='ventas'?(cacheVentas[tab.empresa+'|'+year]||null):null;
   if(ven){ for(const t of tot){ t.n=0; t.ven=0; } for(const d of ven) if(d.resumen){ const m=+d.dia.slice(5,7)-1; tot[m].n++; tot[m].ven+=d.resumen.b; } }
+  if(vista==='stock'&&stkD){ for(const t of tot){ t.n=0; t.out=0; } for(const l of stkD.lineas) if(String(l.f).startsWith(year+'-')){ const m=+String(l.f).slice(5,7)-1; tot[m].n++; tot[m].out+=l.i; } }
   let h=`<button class="mchip ${month<0?'on':''}" data-m="-1"><b>${year}</b><small>año completo</small></button>`;
   h+=tot.map((t,m)=>`<button class="mchip ${m===month?'on':''} ${t.n?'':'vacio'} ${esHoy(m)?'hoy':''}" data-m="${m}" aria-label="${MESES[m]} ${year}"><b>${MES3[m]}</b><small>${t.n?(ven?'':'−')+nf0.format(ven?t.ven:t.out)+' €':'sin datos'}</small></button>`).join('');
   $('months').innerHTML=h;

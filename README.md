@@ -73,6 +73,16 @@ De arriba abajo: **Reservas** (pendientes y confirmadas agrupadas por día, con 
 
 **Colores de las reservas** (v3.31): en la lista y en el calendario, verde = confirmada, naranja = pendiente de confirmar, rojo = ya pasó (día anterior, o de hoy con más de 2 horas desde su hora).
 
+## Solapa Stock (v3.32, `schema.sql` parte 33)
+
+Qué se compra, cuánto y a qué precio, sacado del detalle de las facturas de mercadería. Va después de Compras y usa la misma tira de meses (un mes o el año completo). Todos los importes son sin IVA.
+
+- **Productos**: gasto por categoría y por proveedor, y la lista de productos comprados en el período con compras, cantidad, gasto, último precio, precio «antes» (el de la última compra previa al período o, si no hay, el de la primera del período) y el cambio. Tocar un producto muestra todas sus compras con el link al documento y la evolución del precio, y permite corregir nombre, categoría y unidad o **unirlo** con otro (las próximas facturas ya entran unidas).
+- **Cambios de precio**: cada compra del período que salió a otro precio que la anterior del mismo producto (desde 0,5 %), con lo que costó de más o de menos. No entran la categoría «Cargos y envases» ni las compras al peso sin kilos (unidad `compra`).
+- **Facturas**: los documentos leídos, con el control de que la suma de renglones dé la base imponible, sus renglones, y las filas de Compras del período que todavía no tienen detalle.
+
+El detalle lo lee Claude de los mismos archivos de Drive que alimentan Compras (`facturas/LINEAS.md` explica el formato; se guarda en `facturas/lineas/`, local, y se sube con `facturas.py detalle` / `lineas`; lo que no es mercadería se marca con `sin-detalle`). Tablas `stock_facturas`, `stock_lineas`, `stock_productos` y `stock_claves`; funciones `subir_lineas` y `stock_estado` (token `facturas`), `stock_datos` y `stock_unir` (admin). Todavía no calcula existencias: para eso faltan el consumo (ventas de Ágora por receta) y los conteos.
+
 ## Actualizar sin perder el lugar
 
 Al actualizar la página (o si el navegador la recarga solo) se vuelve a donde se estaba: solapa, subvista de Pedidos y Reservas, mes o año y altura de la pantalla. Se guarda al salir en `sessionStorage` (`terrys_admin_lugar`), así que vale para esa pestaña: abrir la página en otra pestaña, o salir con «Salir», arranca en Compras.
