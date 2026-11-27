@@ -636,6 +636,7 @@ button.wcal-d{cursor:pointer} button.wcal-d:hover{filter:brightness(1.18)}
     <input id="lgPass" type="password" name="password" autocomplete="current-password" required>
     <button class="btn primary" id="lgBtn" type="submit">Entrar</button>
     <div class="login-err" id="lgErr" role="alert"></div>
+    <div class="lock-links"><button type="button" id="lgOlvide">¿Olvidaste la contraseña?</button></div>
     <div class="login-demo" id="lgDemo" hidden>Modo demo: todavía no hay base de datos conectada. Entrá con cualquier email y la contraseña 1234. Los datos quedan solo en este navegador.</div>
   </form>
 
@@ -769,7 +770,7 @@ button.wcal-d{cursor:pointer} button.wcal-d:hover{filter:brightness(1.18)}
 const SUPABASE_URL='https://cgkpklimplpedgxbgzvu.supabase.co';
 const SUPABASE_KEY='sb_publishable_yG1hrdoynoxBBYh9LX7QpA_we_bb_qC';
 
-const VERSION='3.32';
+const VERSION='3.33';
 
 /* Solapas. Para sumar otra sociedad con la misma planilla, agregá una línea
    con otro "empresa". Las solapas de otro tipo se agregan más adelante. */
@@ -1013,6 +1014,7 @@ async function abrirApp(u){
   const lugar=leerLugar(); if(lugar) volverAlLugar(lugar);
   renderTabs(); aplicarVista(); pintarCopia(); await cargar(); vigilarPedido(); contarPendientesWeb();
   if(lugar&&lugar.y>0) volverAltura(lugar.y);
+  if(recuperando&&SB){ recuperando=false; $('btnPass').click(); }
 }
 
 /* ---------- recordar el lugar ----------
@@ -1109,6 +1111,28 @@ $('loginForm').addEventListener('submit',async e=>{
     $('lgErr').textContent=/invalid login/i.test(m)?'Email o contraseña incorrectos.':/not confirmed/i.test(m)?'El email todavía no está confirmado en Supabase.':'No se pudo entrar: '+m;
   }finally{ $('lgBtn').disabled=false; $('lgBtn').textContent='Entrar'; }
 });
+/* ---------- olvidé la contraseña ----------
+   Supabase manda un mail con un enlace que vuelve a esta página con la sesión de recuperación.
+   Se pide igual el código de la app (aal2) y después se abre «Cambiar contraseña». */
+let recuperando=false;
+$('lgOlvide').onclick=async()=>{
+  if(!SB){ $('lgErr').textContent='En modo demo la contraseña es 1234.'; return; }
+  const email=$('lgEmail').value.trim();
+  if(!/^\S+@\S+\.\S+$/.test(email)){ $('lgErr').textContent='Escribí tu email arriba y tocá de nuevo «¿Olvidaste la contraseña?».'; $('lgEmail').focus(); return; }
+  const b=$('lgOlvide'); b.disabled=true;
+  try{
+    const {error}=await sbc.auth.resetPasswordForEmail(email,{redirectTo:location.origin+location.pathname});
+    if(error) throw error;
+    $('lgErr').style.color='var(--ok, #3fb950)';
+    $('lgErr').textContent='Listo: si el email tiene acceso, te llega un mail de Supabase con un enlace para poner una contraseña nueva (mirá también en spam).';
+  }catch(err){
+    $('lgErr').style.color='';
+    const m=errMsg(err);
+    $('lgErr').textContent=/rate|seconds|too many/i.test(m)?'Ya se pidió hace poco. Esperá unos minutos y probá de nuevo.':'No se pudo mandar el mail: '+m;
+  }finally{ b.disabled=false; }
+};
+$('lgEmail').addEventListener('input',()=>{ $('lgErr').style.color=''; });
+
 $('btnSalir').onclick=async()=>{
   try{ sessionStorage.removeItem(LUGAR); }catch(_){}
   if(SB) await sbc.auth.signOut(); else { try{ sessionStorage.removeItem('terrys_admin_demo_user'); }catch(_){} }
@@ -3893,8 +3917,18 @@ $('btnCopia').onclick=async()=>{
   renderCabecera();
   if(SB){
     if(!window.supabase){ showLogin('No se pudo cargar la librería de Supabase. Revisá la conexión y recargá.'); return; }
+    if(/type=recovery/.test(location.hash)) recuperando=true;
+    const errLink=/error_description=([^&]+)/.exec(location.hash);
     sbc=window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
-    sbc.auth.onAuthStateChange(ev=>{ if(ev==='SIGNED_OUT'&&user) showLogin('La sesión se cerró. Volvé a entrar.'); });
+    sbc.auth.onAuthStateChange(ev=>{
+      if(ev==='PASSWORD_RECOVERY') recuperando=true;
+      if(ev==='SIGNED_OUT'&&user) showLogin('La sesión se cerró. Volvé a entrar.');
+    });
+    if(errLink){
+      history.replaceState(null,'',location.pathname+location.search);
+      showLogin(/expired|invalid/i.test(decodeURIComponent(errLink[1]))?'El enlace del mail ya venció o ya se usó. Pedí uno nuevo con «¿Olvidaste la contraseña?».':'El enlace del mail no funcionó: '+decodeURIComponent(errLink[1].replace(/\+/g,' ')));
+      return;
+    }
     const {data:{session}}=await sbc.auth.getSession();
     if(session) await entrar(session.user); else showLogin();
   }else{
