@@ -4629,3 +4629,135 @@ end;
 $$;
 revoke all on function public.stock_unir(bigint, bigint) from public, anon;
 grant execute on function public.stock_unir(bigint, bigint) to authenticated;
+
+-- =====================================================================
+-- PARTE 34 · Reservas: cambiar el estado desde update.terrysburgers.com
+--             y aviso al celular que abre la reserva
+-- · chequeos_reservas() ahora trae también las canceladas y rechazadas (la página
+--   las muestra aparte, plegadas) para poder volver atrás un cambio.
+-- · chequeos_reserva_estado(id, estado): el usuario de caja (o admin) cambia el
+--   estado. Caja, solo de reservas de ayer en adelante. Queda anotado quién y cuándo.
+-- · El aviso de ntfy de cada reserva nueva, al tocarlo, abre esa reserva en
+--   update.terrysburgers.com (con el botón de WhatsApp para confirmarla). En ntfy
+--   sigue sin ir nombre ni teléfono: solo el número interno de la reserva.
+-- =====================================================================
+
+alter table public.reservas add column if not exists estado_por text;
+
+-- 1) Las reservas para la página (de hoy en adelante, todas).
+create or replace function public.chequeos_reservas(p_dias int default 30)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  hoy date := (now() at time zone 'Europe/Madrid')::date;
+  r   jsonb;
+begin
+  if not public.premios_es_staff() then raise exception 'Sin permiso'; end if;
+  if to_regclass('public.reservas') is null then return '[]'::jsonb; end if;
+  execute $q$
+    select coalesce(jsonb_agg(jsonb_build_object(
+        'id', id, 'fecha', fecha, 'hora', to_char(hora, 'HH24:MI'), 'personas', personas,
+        'nombre', nombre, 'telefono', telefono, 'comentario', comentario, 'estado', estado,
+        'nota', nota, 'creada', creada, 'actualizada', actualizada, 'estado_por', estado_por)
+        order by fecha, hora, id), '[]'::jsonb)
+      from public.reservas
+     where fecha between $1 and $1 + $2
+  $q$ into r using hoy, least(greatest(coalesce(p_dias, 30), 1), 90);
+  return r;
+end $$;
+revoke execute on function public.chequeos_reservas(int) from public, anon;
+grant  execute on function public.chequeos_reservas(int) to authenticated;
+
+-- 2) Cambiar el estado.
+create or replace function public.chequeos_reserva_estado(p_id bigint, p_estado text)
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  hoy   date := (now() at time zone 'Europe/Madrid')::date;
+  quien text := coalesce(auth.jwt() ->> 'email', 'caja');
+  r     public.reservas;
+begin
+  if not public.premios_es_staff() then raise exception 'Sin permiso' using errcode = '42501'; end if;
+  if p_estado not in ('pendiente', 'confirmada', 'rechazada', 'cancelada') then
+    raise exception 'Estado no válido' using errcode = '22023';
+  end if;
+  select * into r from public.reservas where id = p_id for update;
+  if not found then raise exception 'No existe esa reserva' using errcode = 'P0002'; end if;
+  if r.fecha < hoy - 1 and not coalesce(public.premios_es_admin(), false) then
+    raise exception 'Esa reserva ya pasó: cambiala desde Administración' using errcode = '42501';
+  end if;
+  update public.reservas
+     set estado = p_estado, actualizada = now(),
+         estado_por = left(quien, 120)
+   where id = p_id
+   returning * into r;
+  return jsonb_build_object('id', r.id, 'estado', r.estado, 'actualizada', r.actualizada, 'estado_por', r.estado_por);
+end $$;
+revoke execute on function public.chequeos_reserva_estado(bigint, text) from public, anon;
+grant  execute on function public.chequeos_reserva_estado(bigint, text) to authenticated;
+
+-- 3) Aviso ntfy con dirección propia al tocarlo (sin dirección, sigue abriendo el admin).
+drop function if exists public._aviso_ntfy(text, text, text, text, int);
+create or replace function public._aviso_ntfy(p_tema text, p_titulo text, p_mensaje text, p_tag text,
+                                              p_prioridad int default 3, p_click text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_token text;
+begin
+  if p_tema is null then return; end if;
+  select ntfy_token into v_token from public.web_avisos where id = 1;
+  perform net.http_post(
+    url  := 'https://ntfy.sh/',
+    body := jsonb_build_object(
+      'topic', p_tema, 'title', p_titulo, 'message', p_mensaje,
+      'tags', jsonb_build_array(p_tag), 'priority', p_prioridad,
+      'click', coalesce(p_click, 'https://admin.terrysburgers.com/')),
+    headers := case when v_token is null then '{"Content-Type": "application/json"}'::jsonb
+                    else jsonb_build_object('Content-Type', 'application/json', 'Authorization', 'Bearer ' || v_token) end);
+exception when others then
+  raise warning 'aviso ntfy no enviado: %', sqlerrm;   -- nunca frena la reserva ni el pedido
+end;
+$$;
+revoke all on function public._aviso_ntfy(text, text, text, text, int, text) from public, anon, authenticated;
+
+-- El aviso de reserva nueva abre la reserva en update.terrysburgers.com.
+create or replace function public.web_avisar()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  a public.web_avisos;
+  v_hoy date := (now() at time zone 'Europe/Madrid')::date;
+begin
+  select * into a from public.web_avisos where id = 1;
+  if a.ntfy_tema is null then return new; end if;
+  if tg_table_name = 'reservas' and a.reservas then
+    perform public._aviso_ntfy(a.ntfy_tema,
+      case when new.fecha = v_hoy then 'Reserva nueva para HOY' else 'Reserva nueva' end,
+      public._dia_corto(new.fecha) || ' · ' || to_char(new.hora, 'HH24:MI') || ' · ' ||
+        new.personas || case when new.personas = 1 then ' persona' else ' personas' end ||
+        E'\nTocá para abrirla y confirmar por WhatsApp',
+      'hamburger', case when new.fecha = v_hoy then 5 else 4 end,
+      'https://update.terrysburgers.com/?reserva=' || new.id);
+  elsif tg_table_name = 'eventos_consultas' and a.consultas then
+    perform public._aviso_ntfy(a.ntfy_tema, 'Consulta de evento',
+      case new.tipo when 'privado' then 'Evento privado' when 'catering' then 'Catering' else 'Otra consulta' end ||
+        coalesce(' · ' || public._dia_corto(new.fecha), '') ||
+        coalesce(' · ' || new.personas || ' personas', ''),
+      'tada', 4);
+  elsif tg_table_name = 'pedidos_take' and a.pedidos then
+    perform public._aviso_ntfy(a.ntfy_tema,
+      case when new.dia = v_hoy then 'Pedido take away para HOY' else 'Pedido take away' end,
+      public._dia_corto(new.dia) || ' · retira ' || to_char(new.hora, 'HH24:MI') || ' · ' ||
+        new.unidades || case when new.unidades = 1 then ' producto' else ' productos' end || ' · ' ||
+        replace(to_char(new.total, 'FM9990.00'), '.', ',') || ' €',
+      'takeout_box', 5);
+  end if;
+  return new;
+end;
+$$;
+revoke all on function public.web_avisar() from public, anon, authenticated;
